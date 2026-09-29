@@ -102,6 +102,26 @@ test('racks can be inserted, reordered, moved to another row and removed', () =>
   assert.ok(!M.removeFloor(p, 'f1'), 'a plan keeps one floor');
 });
 
+test('rows and floors move within their limits', () => {
+  const p = M.createEmptyProject(1);
+  const f2 = M.addFloor(p, { racks: 1 });
+  const rowB = M.addRow(p, 'f1', { racks: 1 });
+  assert.ok(M.moveRow(p, rowB.id, 'f1', 0));
+  assert.deepEqual(p.floors[0].rows.map((r) => r.name), ['Row B', 'Row A']);
+  assert.ok(M.moveRow(p, rowB.id, f2.id));
+  assert.deepEqual(f2.rows.map((r) => r.name), ['Row A', 'Row B'], 'to the end of another floor');
+  assert.ok(!M.moveRow(p, 'row1', f2.id), 'a floor keeps one row');
+  while (f2.rows.length < 8) M.addRow(p, f2.id, { racks: 1 });
+  assert.equal(M.insertRow(p, f2), null, 'a floor holds eight rows');
+  M.addRow(p, 'f1', { racks: 1 });
+  assert.ok(!M.moveRow(p, p.floors[0].rows[1].id, f2.id), 'a full floor takes no row');
+
+  assert.ok(M.moveFloor(p, f2.id, 0));
+  assert.deepEqual(p.floors.map((f) => f.id), [f2.id, 'f1']);
+  while (p.floors.length < 6) M.addFloor(p);
+  assert.equal(M.insertFloor(p), null, 'a plan holds six floors');
+});
+
 test('row rack count can be set between 1 and 16', () => {
   const p = M.createExampleProject();
   M.setRowRackCount(p, 'row1', 5);
@@ -297,6 +317,23 @@ test('names count up in series', () => {
   ]);
   assert.equal(M.nextFreeName(p, 'cn-001'), 'cn-003');
   assert.equal(M.nextFreeName(p, 'db'), 'db-2');
+
+  const copies = M.copiesAt(p, [
+    { id: 'd1', loc: { rack: 'r2', kind: 'u', at: 1 } },
+    { id: 'd2', loc: { rack: 'r2', kind: 'u', at: 3 } },
+  ]);
+  assert.deepEqual(copies.map((c) => [c.name, c.type, c.loc.rack, c.loc.at]), [['cn-003', 'compute-node', 'r2', 1], ['cn-004', 'compute-node', 'r2', 3]]);
+  assert.ok(copies.every((c) => !M.deviceById(p, c.id)), 'new ids');
+  assert.equal(p.devices.length, 2, 'the plan is left as it is');
+});
+
+test('slugs are plain ASCII words joined by dashes', () => {
+  assert.equal(M.slug('Hall 2 expansion'), 'hall-2-expansion');
+  assert.equal(M.slug('  Halle Süd (Rév. 3)! '), 'halle-sud-rev-3');
+  assert.equal(M.slug('Compute node, series 2', 20), 'compute-node-series', 'no dash left at the cut');
+  assert.equal(M.slug('机房'), '');
+  assert.equal(M.cleanDeviceType({ label: 'Résumé server' }).defaultName, 'resume-server-01');
+  assert.equal(M.cleanDeviceType({ label: '机房' }).defaultName, 'dev-01');
 });
 
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {

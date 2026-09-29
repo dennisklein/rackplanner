@@ -266,6 +266,57 @@ test('a custom device type appears in the parts bin and can be placed', async ({
   await expect(page.locator('#cat-height')).toHaveValue('2');
 });
 
+test('names left empty fall back to a default; title block fields are one undo step', async ({ page }) => {
+  await page.fill('#plan-name', '');
+  await page.press('#plan-name', 'Enter');
+  await expect(page.locator('#plan-name')).toHaveValue('Untitled rack plan');
+
+  await page.locator('.rack-head[data-rack="r2"]').click();
+  await page.fill('#insp-rack-name', '');
+  await page.press('#insp-rack-name', 'Enter');
+  await expect(page.locator('#insp-rack-name')).toHaveValue('Rack A02');
+  await page.click('#btn-row');
+  await page.click('[data-row-action="settings"]');
+  await page.fill('#insp-row-name', '');
+  await page.press('#insp-row-name', 'Enter');
+  await expect(page.locator('#insp-row-name')).toHaveValue('Row A');
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  await page.locator('.ftab[aria-pressed="true"]').click();
+  await page.fill('#insp-floor-name', ' ');
+  await page.press('#insp-floor-name', 'Enter');
+  await expect(page.locator('#insp-floor-name')).toHaveValue('Floor 1');
+  await device(page, 'cn-001').click();
+  await page.fill('#insp-name', '');
+  await page.press('#insp-name', 'Enter');
+  await expect(page.locator('#insp-name')).not.toHaveValue('');
+
+  await page.keyboard.press('Escape');
+  await page.fill('#info-site', 'Hall 9');
+  await page.press('#info-site', 'Enter');
+  await expect(page.locator('.scene')).toContainText('Hall 9 · Floor 1 · Row A');
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.scene')).toContainText('Hall 2 · Floor 1 · Row A');
+});
+
+test('a rack can be emptied and a device type copied, with undo', async ({ page }) => {
+  await page.locator('.rack-head[data-rack="r1"]').click();
+  await page.click('#insp-clear-rack');
+  await page.click('#confirm-ok');
+  await expect(devices(page)).toHaveCount(37 - 15);
+  await expect(page.locator('#insp-clear-rack')).toBeDisabled();
+  await page.keyboard.press('Control+z');
+  await expect(devices(page)).toHaveCount(37);
+
+  await page.click('#btn-catalog');
+  await page.click('.cat-item[data-id="storage-node"]');
+  await page.click('#cat-new');
+  await page.click('[data-template="copy"]');
+  await expect(page.locator('#cat-label')).toHaveValue('Storage node 2');
+  await expect(page.locator('#cat-height')).toHaveValue('4');
+  await page.click('#dlg-catalog [data-close]');
+  await expect(page.locator('.part:has-text("Storage node 2")')).toBeVisible();
+});
+
 test('the closed place dialog ignores the browser’s own undo', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

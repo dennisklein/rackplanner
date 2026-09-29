@@ -231,7 +231,7 @@
   const DETAIL_R = BAY_W - EAR - 6;
   const DETAIL_W = DETAIL_R - DETAIL_X;
 
-  function rj45Ports(sc, hU) {
+  function rj45Ports(sc, h, hU) {
     const cols = 24;
     const per = 6;
     const gIn = 1;
@@ -248,7 +248,7 @@
     return `<path d="${d}" fill="${sc.port}"/>`;
   }
 
-  function qsfpCages(sc, hU) {
+  function qsfpCages(sc, h, hU) {
     const cols = 12;
     const gIn = 1.6;
     const gOut = 5;
@@ -266,6 +266,15 @@
       }
     }
     return `<path d="${outer}" fill="${sc.bay}" stroke="${sc.detail}" stroke-width="0.6"/><path d="${inner}" fill="${sc.port}"/>`;
+  }
+
+  /** Drive bays with their handles and LEDs, each given as one path. */
+  function bayPaths(sc, bays, handles, leds) {
+    return (
+      `<path d="${bays}" fill="${sc.bay}" stroke="${sc.detail}" stroke-width="0.7"/>` +
+      `<path d="${handles}" stroke="${sc.detail}" stroke-width="1.1" stroke-linecap="round"/>` +
+      `<path d="${leds}" fill="${sc.detail}"/>`
+    );
   }
 
   function computeBays(sc, h, hU) {
@@ -286,11 +295,7 @@
         leds += rectPath(x + w - 3.2, y + 2.5, 1.6, 1.6);
       }
     }
-    return (
-      `<path d="${bays}" fill="${sc.bay}" stroke="${sc.detail}" stroke-width="0.7"/>` +
-      `<path d="${handles}" stroke="${sc.detail}" stroke-width="1.1" stroke-linecap="round"/>` +
-      `<path d="${leds}" fill="${sc.detail}"/>`
-    );
+    return bayPaths(sc, bays, handles, leds);
   }
 
   function storageBays(sc, h, hU) {
@@ -310,11 +315,7 @@
         leds += rectPath(x + px - 6, y + 2.5, 1.8, 1.8);
       }
     }
-    return (
-      `<path d="${bays}" fill="${sc.bay}" stroke="${sc.detail}" stroke-width="0.7"/>` +
-      `<path d="${handles}" stroke="${sc.detail}" stroke-width="1.1" stroke-linecap="round"/>` +
-      `<path d="${leds}" fill="${sc.detail}"/>`
-    );
+    return bayPaths(sc, bays, handles, leds);
   }
 
   function controlPanel(sc, h) {
@@ -336,7 +337,7 @@
     );
   }
 
-  function enclosureDrawers(sc, theme, h, hU) {
+  function enclosureDrawers(sc, h, hU, theme) {
     const n = Math.max(1, Math.floor(hU / 2));
     const pitch = (h - 4) / n;
     const dh = pitch - 4;
@@ -382,7 +383,7 @@
     );
   }
 
-  function patchJacks(sc, hU) {
+  function patchJacks(sc, h, hU) {
     const cols = 24;
     const per = 6;
     const pw = 3.6;
@@ -400,7 +401,7 @@
     return `<path d="${labels}" fill="${sc.bay}"/><path d="${jacks}" fill="${sc.port}"/>`;
   }
 
-  function pduOutlets(sc, hU) {
+  function pduOutlets(sc, h, hU) {
     const n = 12;
     const pitch = DETAIL_W / n;
     let body = '';
@@ -415,7 +416,8 @@
     return `<path d="${body}" fill="${sc.bay}" stroke="${sc.detail}" stroke-width="0.6"/><path d="${holes}" fill="${sc.port}"/>`;
   }
 
-  function upsPanel(sc, T, h, hU) {
+  function upsPanel(sc, h, hU, theme) {
+    const T = THEMES[theme];
     let s =
       `<rect x="${DETAIL_X}" y="4" width="34" height="12" rx="1" fill="${T.display}"/>` +
       `<rect x="${DETAIL_X + 3}" y="7" width="18" height="2" fill="${T.displayInk}"/>` +
@@ -429,13 +431,13 @@
     return s;
   }
 
-  function blankGrooves(sc, hU) {
+  function blankGrooves(sc, h, hU) {
     let d = '';
     for (let k = 0; k < hU; k++) d += `M${DETAIL_X - 10} ${k * U + 10}h${DETAIL_W + 10}`;
     return `<path d="${d}" stroke="${sc.bay}" stroke-width="2" stroke-linecap="round"/>`;
   }
 
-  function genericVents(sc, theme, h) {
+  function genericVents(sc, h, hU, theme) {
     return (
       `<rect x="${DETAIL_X}" y="4" width="${DETAIL_W}" height="${h - 8}" rx="1" fill="${sc.bay}"/>` +
       `<rect x="${DETAIL_X + 2}" y="6" width="${DETAIL_W - 4}" height="${h - 12}" fill="url(#rp-perf-${theme})"/>`
@@ -463,18 +465,36 @@
     const detail = `RESERVED · ${hU}U${powerW ? ' · ' + formatPower(powerW) : ''}`;
     if (hU === 1) {
       const nm = fitText(name, FONTS.name1, 120, measure);
-      s += `<rect x="${LABEL_X - 3}" y="3" width="${r1((measure || approxMeasure)(nm, FONTS.name1.css) + 6)}" height="14" fill="${T.reserved}"/>`;
+      s += `<rect x="${LABEL_X - 3}" y="3" width="${r1(measure(nm, FONTS.name1.css) + 6)}" height="14" fill="${T.reserved}"/>`;
       s += text(LABEL_X, h / 2 + 3.9, nm, FONTS.name1, T.ink);
       s += text(w - 10, h / 2 + 3, detail, FONTS.tag, T.ink2, ' text-anchor="end" letter-spacing="0.8"');
     } else {
       const nm = fitText(name, FONTS.name, w - 2 * LABEL_X, measure);
-      const tw = Math.max((measure || approxMeasure)(nm, FONTS.name.css), (measure || approxMeasure)(detail, FONTS.tag.css) + 8) + 8;
+      const tw = Math.max(measure(nm, FONTS.name.css), measure(detail, FONTS.tag.css) + 8) + 8;
       s += `<rect x="${LABEL_X - 4}" y="4" width="${r1(tw)}" height="30" fill="${T.reserved}"/>`;
       s += text(LABEL_X, 16, nm, FONTS.name, T.ink);
       s += text(LABEL_X, 29, detail, FONTS.tag, T.ink2, ' letter-spacing="0.8"');
     }
     return s;
   }
+
+  /**
+   * How each face is drawn: its details, as draw(sc, h, hU, theme), and a
+   * small panel that devices of 3U and more get.
+   */
+  const FACE_ART = {
+    rj45: [rj45Ports],
+    qsfp: [qsfpCages],
+    compute: [computeBays],
+    storage: [storageBays, controlPanel],
+    jbod: [enclosureDrawers, statusLeds],
+    gpu: [gpuFans, controlPanel],
+    patch: [patchJacks],
+    pdu: [pduOutlets],
+    ups: [upsPanel, statusLeds],
+    blank: [blankGrooves],
+    generic: [genericVents, statusLeds],
+  };
 
   /**
    * Front of a device of `type` named `name`, `hU` units tall (the type's
@@ -495,45 +515,9 @@
       s += `<circle cx="${w - EAR / 2 - 0.5}" cy="${y}" r="1.7" fill="${sc.screw}"/>`;
     }
 
-    switch (type.face) {
-      case 'rj45':
-        s += rj45Ports(sc, units);
-        break;
-      case 'qsfp':
-        s += qsfpCages(sc, units);
-        break;
-      case 'compute':
-        s += computeBays(sc, h, units);
-        break;
-      case 'storage':
-        s += storageBays(sc, h, units);
-        if (units >= 3) s += controlPanel(sc, h);
-        break;
-      case 'jbod':
-        s += enclosureDrawers(sc, theme, h, units);
-        if (units >= 3) s += statusLeds(sc, h);
-        break;
-      case 'gpu':
-        s += gpuFans(sc, h, units);
-        if (units >= 3) s += controlPanel(sc, h);
-        break;
-      case 'patch':
-        s += patchJacks(sc, units);
-        break;
-      case 'pdu':
-        s += pduOutlets(sc, units);
-        break;
-      case 'ups':
-        s += upsPanel(sc, T, h, units);
-        if (units >= 3) s += statusLeds(sc, h);
-        break;
-      case 'blank':
-        s += blankGrooves(sc, units);
-        break;
-      default:
-        s += genericVents(sc, theme, h);
-        if (units >= 3) s += statusLeds(sc, h);
-    }
+    const [draw, panel] = FACE_ART[type.face] || FACE_ART.generic;
+    s += draw(sc, h, units, theme);
+    if (panel && units >= 3) s += panel(sc, h);
 
     const labelMax = DETAIL_X - LABEL_X - 6;
     if (units === 1) {
@@ -572,12 +556,11 @@
     const x = r.x;
     const y = r.headTop;
     const rack = r.rack;
-    const m = measure || approxMeasure;
     const statText = `${st.used + st.reserved}/${st.units} U · ${st.powerBudgetW ? `${kw(st.powerW)}/${kw(st.powerBudgetW)} kW` : formatPower(st.powerW)}`;
     const warn = st.overPower || st.overWeight;
-    const statW = m(statText + (warn ? ' !' : ''), FONTS.stat.css);
+    const statW = measure(statText + (warn ? ' !' : ''), FONTS.stat.css);
     const name = fitText(rack.name, FONTS.tape, Math.max(60, RACK_W - statW - 36), measure);
-    const tw = m(name, FONTS.tape.css) + 18;
+    const tw = measure(name, FONTS.tape.css) + 18;
     let s = `<g class="rack-head" data-rack="${esc(rack.id)}">`;
     if (o.interactive) s += `<rect x="${x}" y="${y - 4}" width="${RACK_W}" height="${HEADER - 4}" fill="#000" fill-opacity="0"/>`;
     s += `<rect x="${x + 1}" y="${y + 5}" width="${r1(tw)}" height="21" rx="1.5" fill="${T.tapeShade}"/>`;
@@ -652,7 +635,7 @@
       s += `<rect x="${r1(sr.x + 0.5)}" y="${r1(sr.y + 0.5)}" width="${SLOT_W - 1}" height="${SLOT_H - 1}" rx="1.5" fill="none" stroke="${T.slotDash}" stroke-dasharray="3 2.5"/>`;
       const cx = r1(sr.x + SLOT_W / 2 + 3.2);
       const cy = r1(sr.y + SLOT_H / 2);
-      s += `<text x="${cx}" y="${cy}" transform="rotate(-90 ${cx} ${cy})" text-anchor="middle" font-family="${FONT_MONO}" font-size="8.5" font-weight="500" fill="${T.ink3}" letter-spacing="1">SIDE V${k + 1} · 1U</text>`;
+      s += text(cx, cy, `SIDE V${k + 1} · 1U`, FONTS.rail, T.ink3, ` transform="rotate(-90 ${cx} ${cy})" text-anchor="middle" letter-spacing="1"`);
     }
     return s;
   }
@@ -724,7 +707,6 @@
    * the title block, or above it when the sheet is too narrow for both.
    */
   function legendLayout(project, lay, rowDevices, measure) {
-    const m = measure || approxMeasure;
     const counts = new Map();
     let unassigned = 0;
     for (const d of rowDevices) {
@@ -741,8 +723,8 @@
     let x = 0;
     let row = 0;
     for (const it of items) {
-      it.label = fitText(it.name, FONTS.legend, 200, m);
-      it.w = 20 + m(it.label, FONTS.legend.css) + 8 + m(String(it.count), FONTS.stat.css) + 26;
+      it.label = fitText(it.name, FONTS.legend, 200, measure);
+      it.w = 20 + measure(it.label, FONTS.legend.css) + 8 + measure(String(it.count), FONTS.stat.css) + 26;
       if (x > 0 && x + it.w > maxW) {
         x = 0;
         row++;
@@ -799,7 +781,7 @@
     s += val(x + c1 + 7, y + 88, o.sheet ? `${o.sheet.index + 1} / ${o.sheet.count}` : '1 / 1', rightW);
     const n = lay.racks.length;
     const heights = [...new Set(lay.racks.map((r) => r.units))].sort((a, b) => b - a).join('/');
-    s += text(x + 7, y + 106.5, fitText(`${n} rack${n === 1 ? '' : 's'} · 19″ · ${heights}U · 1U = 44.45 mm`, FONTS.small, TITLE_W - 14, measure), FONTS.small, T.ink2);
+    s += text(x + 7, y + 106.5, fitText(`${M.plural(n, 'rack')} · 19″ · ${heights}U · 1U = 44.45 mm`, FONTS.small, TITLE_W - 14, measure), FONTS.small, T.ink2);
     return s;
   }
 
@@ -864,6 +846,7 @@
     const o = opts || {};
     const theme = o.theme === 'dark' ? 'dark' : 'light';
     const T = THEMES[theme];
+    const measure = o.measure || approxMeasure;
     const color = ok ? T.ok : T.bad;
     let s = `<g pointer-events="none">`;
     for (const it of items) {
@@ -874,7 +857,7 @@
       const sc = schemeFor(it.color || null, theme);
       // A device taller than 1U cannot be drawn into a side slot; only mark the slot.
       if (!(it.loc.kind === 'side' && hU !== 1)) {
-        s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${deviceFace(type, it.name || type.label, sc, theme, o.measure, hU, { color: it.color })}</g>`;
+        s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${deviceFace(type, it.name || type.label, sc, theme, measure, hU, { color: it.color })}</g>`;
       }
       if (!ok) s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r.w}" height="${r.h}" fill="${T.bad}" fill-opacity="0.18"/>`;
       s += `<rect x="${r1(r.x - 1.5)}" y="${r1(r.y - 1.5)}" width="${r.w + 3}" height="${r.h + 3}" rx="2.5" fill="none" stroke="${color}" stroke-width="2"/>`;
@@ -918,7 +901,7 @@
     return {
       width: BAY_W,
       height: hU * U,
-      body: defs(th, THEMES[th]) + deviceFace(type, name || type.label, schemeFor(color || null, th), th, measure, hU, { color }),
+      body: defs(th, THEMES[th]) + deviceFace(type, name || type.label, schemeFor(color || null, th), th, measure || approxMeasure, hU, { color }),
     };
   }
 
@@ -951,6 +934,7 @@
 
   return {
     geometry: { U, BAY_W, RACK_W, RAIL, FRAME, GAP, MX, SLOT_W, SLOT_H, HEADER, ADD_W },
+    esc,
     sheetWidth,
     rowLayout,
     locRect,

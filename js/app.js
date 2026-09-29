@@ -26,17 +26,25 @@
 
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
-  const esc = (s) =>
-    String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const esc = R.esc;
+  const plural = M.plural;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const pad2 = (n) => String(n).padStart(2, '0');
   const icon = (id, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
-  const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + 's'}`;
   const fmtPower = R.formatPower;
   const fmtKg = (kg) => `${Math.round(kg).toLocaleString('en')} kg`;
   const fmtKw = (w) => `${(Math.round(w / 100) / 10).toLocaleString('en', { minimumFractionDigits: 1 })} kW`;
+  /** "3.2 kW of 12.0 kW", or just "3.2 kW" without a budget. */
+  const withBudget = (fmt, value, budget) => fmt(value) + (budget ? ` of ${fmt(budget)}` : '');
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const shortRack = (name) => name.replace(/^rack\s+/i, '');
+  const FULL = {
+    rack: `A row holds up to ${M.LIMITS.racks} racks`,
+    row: `A floor holds up to ${M.LIMITS.rows} rows`,
+    floor: `A plan holds up to ${M.LIMITS.floors} floors`,
+  };
+  /** Height of a new device of `type` while it is placed: reserved space starts at 2U. */
+  const startHeight = (type) => (type.variable ? 2 : type.height);
 
   // Browser storage can be missing or throw (private windows, sandboxes, a full quota).
   const storage = {
@@ -87,34 +95,21 @@
     return w;
   }
 
-  function todayISO() {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  }
+  const isoDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const todayISO = () => isoDate(new Date());
 
   function relTime(ms) {
     const s = Math.round((Date.now() - ms) / 1000);
     if (s < 45) return 'just now';
     if (s < 3600) return `${Math.round(s / 60)} min ago`;
     if (s < 86400) return plural(Math.round(s / 3600), 'hour') + ' ago';
-    const d = new Date(ms);
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    return isoDate(new Date(ms));
   }
 
   function detectTheme() {
     const t = document.documentElement.getAttribute('data-theme');
     if (t === 'dark' || t === 'light') return t;
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-
-  function slug(s) {
-    return (s || '')
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .replace(/[\s_-]+/g, '-')
-      .slice(0, 60);
   }
 
   // ---------------------------------------------------------------- state
@@ -156,7 +151,7 @@
     storage.set(PREFS_KEY, JSON.stringify(prefs));
   }
 
-  /** Makes `loaded.project` the open plan, with a fresh undo history. */
+  /** Makes `p`, saved as plan `id`, the open plan, with a fresh undo history. */
   function openPlan(id, p) {
     planId = id;
     project = p;
@@ -248,6 +243,26 @@
     return true;
   }
 
+  /** Commits `make(draft)`, which returns what it added, or null to leave the plan as it is. */
+  function commitAdd(make) {
+    let made = null;
+    commit((p) => {
+      made = make(p);
+      return made ? undefined : false;
+    });
+    return made;
+  }
+
+  /** Commits `change(draft)`, which returns an error message and leaves the plan as it is, or null. */
+  function commitOrError(change) {
+    let err = null;
+    commit((p) => {
+      err = change(p);
+      return err ? false : undefined;
+    });
+    return err;
+  }
+
   function restore(json) {
     projectJSON = json;
     project = JSON.parse(json);
@@ -330,10 +345,7 @@
     prefs.view = ui.view;
     savePrefs();
     if (o.render !== false) render();
-    if (changed && !o.keepScroll) {
-      el.canvas.scrollTop = 0;
-      el.canvas.scrollLeft = 0;
-    }
+    if (changed && !o.keepScroll) scrollToOrigin();
   }
 
   /**
@@ -349,13 +361,7 @@
       if (row !== ui.rowId || ui.view !== 'sheet') setRow(row, { view: 'sheet', render: false });
     }
     render();
-    if (list.length && (o.focus || o.reveal)) {
-      const g = findDevEl(list[0]);
-      if (g) {
-        if (o.focus) g.focus({ preventScroll: true });
-        ensureVisible(g);
-      }
-    }
+    if (list.length && (o.focus || o.reveal)) revealDevice(list[0], o.focus);
   }
   function selectDevice(id, focus) {
     selectDevices([id], { focus, reveal: focus });
@@ -372,10 +378,7 @@
       if (row && (row !== ui.rowId || (opts && opts.sheet))) setRow(row, { view: 'sheet', render: false });
     }
     render();
-    if (kind === 'rack' && opts && opts.reveal) {
-      const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(id)}"]`);
-      if (head) ensureVisible(head);
-    }
+    if (kind === 'rack' && opts && opts.reveal) revealRack(id);
   }
 
   function clearSelection() {
@@ -416,8 +419,21 @@
   function findDevEl(id) {
     return el.svg.querySelector(`.dev[data-id="${CSS.escape(id)}"]`);
   }
-  function ghostLayer() {
-    return el.svg.querySelector('#ghost-layer');
+  /** Scrolls a device into view; `focus` also gives it keyboard focus. */
+  function revealDevice(id, focus) {
+    const g = findDevEl(id);
+    if (!g) return;
+    if (focus) g.focus({ preventScroll: true });
+    ensureVisible(g);
+  }
+  function revealRack(id) {
+    const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(id)}"]`);
+    if (head) ensureVisible(head);
+  }
+  /** Replaces the previews drawn over the sheet (placement ghosts, the selection rectangle). */
+  function setGhosts(html) {
+    const layer = el.svg.querySelector('#ghost-layer');
+    if (layer) layer.innerHTML = html;
   }
 
   /** Devices to show at full strength: the focused cluster and search matches. */
@@ -516,7 +532,7 @@
   function statsLine(t) {
     const occ = t.used + t.reserved;
     let s = `${plural(t.racks, 'rack')} · ${pct(occ, t.units)}% of ${t.units} U`;
-    s += ` · ${fmtKw(t.powerW)}${t.powerBudgetW ? ` of ${fmtKw(t.powerBudgetW)}` : ''}`;
+    s += ` · ${withBudget(fmtKw, t.powerW, t.powerBudgetW)}`;
     if (t.overPower || t.overWeight) s += ` · ${plural(t.overPower + t.overWeight, 'budget')} exceeded`;
     return s;
   }
@@ -563,7 +579,7 @@
         if (m.over) cls.push('is-over');
         if (hits) cls.push('is-hit');
         if (sel && sel.kind === 'rack' && sel.id === rack.id) cls.push('is-selected');
-        const label = `${rack.name}: ${st.used + st.reserved} of ${st.units} U used, ${fmtPower(st.powerW)}${st.powerBudgetW ? ` of ${fmtPower(st.powerBudgetW)}` : ''}, ${fmtKg(st.weightKg)}${m.over ? ', over budget' : ''}${hits ? `, ${plural(hits, 'match', 'matches')}` : ''}`;
+        const label = `${rack.name}: ${st.used + st.reserved} of ${st.units} U used, ${withBudget(fmtPower, st.powerW, st.powerBudgetW)}, ${fmtKg(st.weightKg)}${m.over ? ', over budget' : ''}${hits ? `, ${plural(hits, 'match', 'matches')}` : ''}`;
         html +=
           `<button type="button" class="${cls.join(' ')}" data-rack="${esc(rack.id)}" title="${esc(label)}" aria-label="${esc(label)}">` +
           `<span class="fm-elev" style="height:${st.units * 2}px">${blocks}</span>` +
@@ -684,34 +700,22 @@
   // Structure edits ----------------------------------------------------
 
   function addFloor() {
-    let made = null;
-    commit((p) => {
-      made = M.addFloor(p);
-      return made ? undefined : false;
-    });
-    if (!made) return toast(`A plan holds up to ${M.LIMITS.floors} floors`, { warn: true });
+    const made = commitAdd((p) => M.addFloor(p));
+    if (!made) return toast(FULL.floor, { warn: true });
     setRow(made.rows[0].id);
     toast(`Added ${made.name} with ${made.rows[0].name}`, { action: 'Undo', onAction: undo });
   }
 
   function addRowTo(floorId, index) {
-    let made = null;
-    commit((p) => {
-      made = M.addRow(p, floorId, { index });
-      return made ? undefined : false;
-    });
-    if (!made) return toast(`A floor holds up to ${M.LIMITS.rows} rows`, { warn: true });
+    const made = commitAdd((p) => M.addRow(p, floorId, { index }));
+    if (!made) return toast(FULL.row, { warn: true });
     setRow(made.id, { view: ui.view });
     toast(`Added ${made.name} with ${plural(made.racks.length, 'rack')}`, { action: 'Undo', onAction: undo });
   }
 
   function addRackTo(rowId, index) {
-    let made = null;
-    commit((p) => {
-      made = M.addRack(p, rowId, { index });
-      return made ? undefined : false;
-    });
-    if (!made) return toast(`A row holds up to ${M.LIMITS.racks} racks`, { warn: true });
+    const made = commitAdd((p) => M.addRack(p, rowId, { index }));
+    if (!made) return toast(FULL.rack, { warn: true });
     toast(`Added ${made.name}`, { action: 'Undo', onAction: undo });
     return made;
   }
@@ -719,22 +723,13 @@
   function duplicateStructure(kind, id) {
     const name = kind === 'rack' ? M.rackById(project, id).name : kind === 'row' ? M.rowById(project, id).name : M.floorById(project, id).name;
     const before = project.devices.length;
-    let made = null;
-    commit((p) => {
-      made = kind === 'rack' ? M.duplicateRack(p, id) : kind === 'row' ? M.duplicateRow(p, id) : M.duplicateFloor(p, id);
-      return made ? undefined : false;
-    });
-    if (!made) {
-      const full = { rack: `A row holds up to ${M.LIMITS.racks} racks`, row: `A floor holds up to ${M.LIMITS.rows} rows`, floor: `A plan holds up to ${M.LIMITS.floors} floors` };
-      return toast(full[kind], { warn: true });
-    }
+    const made = commitAdd((p) => (kind === 'rack' ? M.duplicateRack(p, id) : kind === 'row' ? M.duplicateRow(p, id) : M.duplicateFloor(p, id)));
+    if (!made) return toast(FULL[kind], { warn: true });
     const n = project.devices.length - before;
-    ui.selection = { kind, id: made.id };
-    if (kind === 'rack') render();
-    else setRow(kind === 'row' ? made.id : made.rows[0].id);
-    if (kind === 'rack') {
-      const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(made.id)}"]`);
-      if (head) ensureVisible(head);
+    if (kind === 'rack') selectThing('rack', made.id, { reveal: true });
+    else {
+      ui.selection = { kind, id: made.id };
+      setRow(kind === 'row' ? made.id : made.rows[0].id);
     }
     toast(`Added ${made.name}, a copy of ${name}${n ? ` with ${plural(n, 'device')}` : ''}`, { action: 'Undo', onAction: undo });
   }
@@ -905,13 +900,12 @@
   }
 
   /** <option>s for every rack, grouped by floor and row. */
-  function rackOptions(selectedId, disable) {
+  function rackOptions(selectedId) {
     let s = '';
     for (const { floor, row } of M.allRows(project)) {
       s += `<optgroup label="${esc(`${floor.name} · ${row.name}`)}">`;
       for (const r of row.racks) {
-        const off = disable && disable(r, row);
-        s += `<option value="${esc(r.id)}"${r.id === selectedId ? ' selected' : ''}${off ? ' disabled' : ''}>${esc(r.name)}</option>`;
+        s += `<option value="${esc(r.id)}"${r.id === selectedId ? ' selected' : ''}>${esc(r.name)}</option>`;
       }
       s += `</optgroup>`;
     }
@@ -926,6 +920,31 @@
     );
   }
 
+  /** Power and weight against their budgets, for a rack's stats or totals from M.sumStats. */
+  function budgetMeters(st) {
+    return (
+      meterHTML('Power', st.powerW, st.powerBudgetW, withBudget(fmtKw, st.powerW, st.powerBudgetW), st.overPower > 0) +
+      meterHTML('Weight', st.weightKg, st.weightBudgetKg, withBudget(fmtKg, st.weightKg, st.weightBudgetKg), st.overWeight > 0)
+    );
+  }
+
+  /** A button with a usage bar: used and reserved units of `st`. */
+  function usageBar(attrs, name, value, st) {
+    return (
+      `<button type="button" class="rack-bar${st.overPower || st.overWeight ? ' is-over' : ''}" ${attrs}>` +
+      `<span class="rb-name">${esc(name)}</span><span class="rb-val">${esc(value)}</span>` +
+      `<span class="rb-track"><span class="rb-fill" style="width:${pct(st.used, st.units)}%"></span><span class="rb-res" style="width:${pct(st.reserved, st.units)}%"></span></span></button>`
+    );
+  }
+  function rackBars(row, stats) {
+    return row.racks
+      .map((r) => {
+        const st = stats.get(r.id);
+        return usageBar(`data-rack="${esc(r.id)}"`, r.name, `${st.used + st.reserved}/${st.units} U · ${fmtKw(st.powerW)}`, st);
+      })
+      .join('');
+  }
+
   function renderInspector() {
     const s = ui.selection;
     if (s && s.kind === 'devices') {
@@ -937,19 +956,32 @@
     else renderOverview();
   }
 
-  /** Text or number input bound to a device property, committed live. */
-  function bindField(input, id, prop, parse) {
+  /**
+   * Commits every keystroke in a text field through `apply(draft, value)`;
+   * typing in a row is one undo step. A field left empty gets `fallback()`.
+   */
+  function bindText(input, key, apply, fallback) {
     input.addEventListener('input', () => {
-      if (parse) return;
       const v = input.value;
-      commit((p) => void (M.deviceById(p, id)[prop] = v), { key: `${prop}:${id}`, inspector: false });
+      commit((p) => void apply(p, v), { key, inspector: false });
     });
-    if (parse) {
-      input.addEventListener('change', () => {
-        const v = parse(input.value);
-        commit((p) => void (M.deviceById(p, id)[prop] = v), { inspector: false });
-      });
-    }
+    if (!fallback) return;
+    input.addEventListener('change', () => {
+      if (input.value.trim()) return;
+      const v = fallback();
+      commit((p) => void apply(p, v), { key });
+      input.value = v;
+    });
+  }
+
+  /** A field bound to a device property: text as typed, or `parse`d when the field is left. */
+  function bindField(input, id, prop, parse) {
+    const apply = (p, v) => (M.deviceById(p, id)[prop] = v);
+    if (!parse) return bindText(input, `${prop}:${id}`, apply);
+    input.addEventListener('change', () => {
+      const v = parse(input.value);
+      commit((p) => void apply(p, v), { inspector: false });
+    });
   }
   const parseOptNum = (max) => (v) => (String(v).trim() === '' ? null : M.clampNum(v, 0, max, null));
 
@@ -1006,16 +1038,7 @@
       `</div>`;
 
     const id = d.id;
-    const nameInput = $('#insp-name');
-    nameInput.addEventListener('input', () => {
-      const v = nameInput.value;
-      commit((p) => void (M.deviceById(p, id).name = v), { key: 'name:' + id, inspector: false });
-    });
-    nameInput.addEventListener('change', () => {
-      if (nameInput.value.trim()) return;
-      const fallback = M.suggestName(project, d.type);
-      commit((p) => void (M.deviceById(p, id).name = fallback), { key: 'name:' + id });
-    });
+    bindText($('#insp-name'), 'name:' + id, (p, v) => (M.deviceById(p, id).name = v), () => M.suggestName(project, d.type));
     $$('input[name="insp-cluster"]', el.inspector).forEach((r) =>
       r.addEventListener('change', () => {
         if (r.value === '__new') {
@@ -1148,8 +1171,7 @@
       `<div><dt>Free</dt><dd>${st.free} U</dd></div>` +
       (st.largestFree !== undefined ? `<div><dt>Largest free block</dt><dd>${st.largestFree} U</dd></div>` : `<div><dt>Racks</dt><dd>${st.racks}</dd></div>`) +
       `</dl>` +
-      meterHTML('Power', st.powerW, st.powerBudgetW, `${fmtKw(st.powerW)}${st.powerBudgetW ? ` of ${fmtKw(st.powerBudgetW)}` : ''}`, st.overPower) +
-      meterHTML('Weight', st.weightKg, st.weightBudgetKg, `${fmtKg(st.weightKg)}${st.weightBudgetKg ? ` of ${fmtKg(st.weightBudgetKg)}` : ''}`, st.overWeight) +
+      budgetMeters(st) +
       `</section>`
     );
   }
@@ -1211,21 +1233,9 @@
       `</div>`;
 
     const id = rack.id;
-    const input = $('#insp-rack-name');
-    input.addEventListener('input', () => {
-      const v = input.value;
-      commit((p) => void (M.rackById(p, id).name = v), { key: 'rack:' + id, inspector: false });
-    });
-    input.addEventListener('change', () => {
-      if (input.value.trim()) return;
-      commit((p) => void (M.rackById(p, id).name = M.defaultRackName(p, pos.row.id, pos.index)), { key: 'rack:' + id });
-    });
+    bindText($('#insp-rack-name'), 'rack:' + id, (p, v) => (M.rackById(p, id).name = v), () => M.defaultRackName(project, pos.row.id, pos.index));
     $('#insp-rack-type').addEventListener('change', (e) => {
-      let err = null;
-      commit((p) => {
-        err = M.setRackType(p, id, e.target.value);
-        return err ? false : undefined;
-      });
+      const err = commitOrError((p) => M.setRackType(p, id, e.target.value));
       if (err) {
         toast(`Can’t change the type: ${err}`, { warn: true });
         renderInspector();
@@ -1253,7 +1263,7 @@
         body: `This removes all ${plural(devs.length, 'device')} from ${rack.name}. Undo brings them back.`,
         ok: 'Remove devices',
       });
-      if (ok) commit((p) => void (p.devices = p.devices.filter((d) => d.loc.rack !== id)));
+      if (ok) commit((p) => void M.removeDevicesIn(p, new Set([id])));
     });
     $('#insp-del-rack').addEventListener('click', () => deleteRack(id));
   }
@@ -1269,16 +1279,6 @@
         return `<option value="${esc(f.id)}"${f === pos.floor ? ' selected' : ''}${full ? ' disabled' : ''}>${esc(f.name)}${full ? ' (full)' : ''}</option>`;
       })
       .join('');
-    const bars = row.racks
-      .map((r) => {
-        const st = stats.get(r.id);
-        return (
-          `<button type="button" class="rack-bar${st.overPower || st.overWeight ? ' is-over' : ''}" data-rack="${esc(r.id)}">` +
-          `<span class="rb-name">${esc(r.name)}</span><span class="rb-val">${st.used + st.reserved}/${st.units} U · ${fmtKw(st.powerW)}</span>` +
-          `<span class="rb-track"><span class="rb-fill" style="width:${pct(st.used, st.units)}%"></span><span class="rb-res" style="width:${pct(st.reserved, st.units)}%"></span></span></button>`
-        );
-      })
-      .join('');
     el.inspector.innerHTML =
       `<div class="insp-head"><div class="kicker">${icon('map', 'ic-sm')}Row · ${esc(pos.floor.name)}</div>` +
       `<label for="insp-row-name" class="sr-only">Row name</label>` +
@@ -1289,7 +1289,7 @@
       `<div class="stepper" role="group" aria-label="Number of racks"><button type="button" class="btn icon sm" id="row-less" aria-label="One rack fewer"${row.racks.length <= 1 ? ' disabled' : ''}>${icon('minus')}</button>` +
       `<span class="stepper-val mono">${row.racks.length}</span><button type="button" class="btn icon sm" id="row-more" aria-label="One rack more"${row.racks.length >= M.LIMITS.racks ? ' disabled' : ''}>${icon('plus')}</button>` +
       `<span class="sec-hint">of up to ${M.LIMITS.racks}, added or removed at the end</span></div>` +
-      `<div class="rack-bars">${bars}</div>` +
+      `<div class="rack-bars">${rackBars(row, stats)}</div>` +
       `<button type="button" class="btn sm" id="row-renumber" title="Rack names by position: ${esc(M.defaultRackName(project, row.id, 0))}, ${esc(M.defaultRackName(project, row.id, 1))}, …">Rename racks by position</button></section>` +
       `<section class="insp-sec"><h3>Place</h3>` +
       `<div class="field"><label for="insp-row-floor">Floor</label><select id="insp-row-floor"${pos.floor.rows.length <= 1 ? ' disabled title="The only row of its floor"' : ''}>${floorOpts}</select></div>` +
@@ -1304,15 +1304,7 @@
       `</div>`;
 
     const id = row.id;
-    const input = $('#insp-row-name');
-    input.addEventListener('input', () => {
-      const v = input.value;
-      commit((p) => void (M.rowById(p, id).name = v), { key: 'row:' + id, inspector: false });
-    });
-    input.addEventListener('change', () => {
-      if (input.value.trim()) return;
-      commit((p) => void (M.rowById(p, id).name = `Row ${M.letters(pos.rowIndex)}`), { key: 'row:' + id });
-    });
+    bindText($('#insp-row-name'), 'row:' + id, (p, v) => (M.rowById(p, id).name = v), () => `Row ${M.letters(pos.rowIndex)}`);
     $('#row-less').addEventListener('click', () => setRowRackCount(id, row.racks.length - 1));
     $('#row-more').addEventListener('click', () => setRowRackCount(id, row.racks.length + 1));
     $('#row-renumber').addEventListener('click', () => commit((p) => void M.renumberRacks(p, id)));
@@ -1339,11 +1331,7 @@
     const rows = floor.rows
       .map((row) => {
         const rs = M.statsWithin(project, row.id, stats);
-        return (
-          `<button type="button" class="rack-bar${rs.overPower || rs.overWeight ? ' is-over' : ''}" data-open-row="${esc(row.id)}">` +
-          `<span class="rb-name">${esc(row.name)}</span><span class="rb-val">${esc(`${plural(rs.racks, 'rack')} · ${fmtKw(rs.powerW)}`)}</span>` +
-          `<span class="rb-track"><span class="rb-fill" style="width:${pct(rs.used, rs.units)}%"></span><span class="rb-res" style="width:${pct(rs.reserved, rs.units)}%"></span></span></button>`
-        );
+        return usageBar(`data-open-row="${esc(row.id)}"`, row.name, `${plural(rs.racks, 'rack')} · ${fmtKw(rs.powerW)}`, rs);
       })
       .join('');
     el.inspector.innerHTML =
@@ -1359,19 +1347,11 @@
       `<div class="insp-actions">` +
       `<button type="button" class="btn" id="floor-map">${icon('map')}Floor map</button>` +
       `<button type="button" class="btn" id="floor-add-row"${floor.rows.length >= M.LIMITS.rows ? ' disabled' : ''}>${icon('plus')}Add row</button>` +
-      `<button type="button" class="btn" id="floor-dup"${project.floors.length >= M.LIMITS.floors ? ' disabled title="The plan has six floors"' : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate floor</button>` +
+      `<button type="button" class="btn" id="floor-dup"${project.floors.length >= M.LIMITS.floors ? ` disabled title="${FULL.floor}"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate floor</button>` +
       `<button type="button" class="btn danger-text" id="floor-del"${project.floors.length <= 1 ? ' disabled title="A plan needs at least one floor"' : ''}>${icon('trash')}Delete floor</button>` +
       `</div>`;
     const id = floor.id;
-    const input = $('#insp-floor-name');
-    input.addEventListener('input', () => {
-      const v = input.value;
-      commit((p) => void (M.floorById(p, id).name = v), { key: 'floor:' + id, inspector: false });
-    });
-    input.addEventListener('change', () => {
-      if (input.value.trim()) return;
-      commit((p) => void (M.floorById(p, id).name = `Floor ${i + 1}`), { key: 'floor:' + id });
-    });
+    bindText($('#insp-floor-name'), 'floor:' + id, (p, v) => (M.floorById(p, id).name = v), () => `Floor ${i + 1}`);
     $$('[data-open-row]', el.inspector).forEach((b) => b.addEventListener('click', () => setRow(b.dataset.openRow, { view: 'sheet' })));
     $$('[data-floor-act]', el.inspector).forEach((b) => b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)))));
     $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
@@ -1384,16 +1364,6 @@
     const stats = M.statsByRack(project);
     const t = M.statsWithin(project, null, stats);
     const pos = currentRow();
-    const bars = pos.row.racks
-      .map((r) => {
-        const st = stats.get(r.id);
-        return (
-          `<button type="button" class="rack-bar${st.overPower || st.overWeight ? ' is-over' : ''}" data-rack="${esc(r.id)}">` +
-          `<span class="rb-name">${esc(r.name)}</span><span class="rb-val">${st.used + st.reserved}/${st.units} U · ${fmtKw(st.powerW)}</span>` +
-          `<span class="rb-track"><span class="rb-fill" style="width:${pct(st.used, st.units)}%"></span><span class="rb-res" style="width:${pct(st.reserved, st.units)}%"></span></span></button>`
-        );
-      })
-      .join('');
     const counts = new Map();
     for (const d of project.devices) counts.set(d.type, (counts.get(d.type) || 0) + 1);
     const typeRows = M.placeableTypes(project)
@@ -1425,11 +1395,10 @@
       `<div><dt>Units used</dt><dd>${t.used} <small>of ${t.units}</small></dd></div>` +
       `<div><dt>Reserved</dt><dd>${t.reserved} U</dd></div>` +
       `</dl>` +
-      meterHTML('Power', t.powerW, t.powerBudgetW, `${fmtKw(t.powerW)}${t.powerBudgetW ? ` of ${fmtKw(t.powerBudgetW)}` : ''}`, t.overPower > 0) +
-      meterHTML('Weight', t.weightKg, t.weightBudgetKg, `${fmtKg(t.weightKg)}${t.weightBudgetKg ? ` of ${fmtKg(t.weightBudgetKg)}` : ''}`, t.overWeight > 0) +
+      budgetMeters(t) +
       (t.overPower || t.overWeight ? `<p class="warn-note">${esc(`${plural(t.overPower, 'rack')} over the power budget, ${plural(t.overWeight, 'rack')} over the weight limit.`)}</p>` : '') +
       `</section>` +
-      `<section class="insp-sec"><h3>${esc(`${pos.floor.name} · ${pos.row.name}`)}</h3><div class="rack-bars">${bars}</div></section>` +
+      `<section class="insp-sec"><h3>${esc(`${pos.floor.name} · ${pos.row.name}`)}</h3><div class="rack-bars">${rackBars(pos.row, stats)}</div></section>` +
       `<section class="insp-sec"><h3>By device type</h3>` +
       (typeRows
         ? `<table class="type-table"><thead><tr><th>Type</th><th>Count</th><th>U</th><th>kW</th></tr></thead><tbody>${typeRows}</tbody></table>`
@@ -1451,13 +1420,7 @@
       `<dt><kbd>0</kbd> <kbd>1</kbd></dt><dd>Fit sheet, 100%</dd>` +
       `<dt><kbd>Esc</kbd></dt><dd>Cancel, deselect, clear search</dd>` +
       `</dl></section>`;
-    for (const k of ['site', 'author', 'revision']) {
-      const input = $(`#info-${k}`);
-      input.addEventListener('input', () => {
-        const v = input.value;
-        commit((p) => void (p.info[k] = v), { key: 'info:' + k, inspector: false });
-      });
-    }
+    for (const k of ['site', 'author', 'revision']) bindText($(`#info-${k}`), 'info:' + k, (p, v) => (p.info[k] = v));
   }
 
   el.inspector.addEventListener('click', (e) => {
@@ -1485,21 +1448,15 @@
     }
     const changed = commit((p) => void (M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at }));
     if (!changed) render();
-    if (opts && (opts.reveal || opts.follow)) {
-      const g = findDevEl(id);
-      if (g) {
-        if (opts.reveal) g.focus({ preventScroll: true });
-        ensureVisible(g);
-      }
-    }
+    if (opts && (opts.reveal || opts.follow)) revealDevice(id, opts.reveal);
     return changed;
   }
 
-  function applyMoves(moves, opts) {
+  function applyMoves(moves) {
     if (!moves || !moves.length) return false;
     const check = M.canMoveAll(project, moves);
     if (!check.ok) {
-      if (!(opts && opts.quiet)) toast(check.reason, { warn: true });
+      toast(check.reason, { warn: true });
       return false;
     }
     ui.selection = { kind: 'devices', ids: moves.map((m) => m.id) };
@@ -1564,7 +1521,7 @@
     if (!loc) return toast(`No free space left for a copy of ${d.name}`, { warn: true });
     const check = M.canPlace(project, d.type, loc, null, d.height);
     if (!check.ok) return toast(check.reason, { warn: true });
-    const copy = Object.assign(M.clone(d), { id: M.uid('d'), name: M.nextFreeName(project, d.name), loc: { rack: loc.rack, kind: loc.kind, at: loc.at } });
+    const [copy] = M.copiesAt(project, [{ id, loc }]);
     ui.selection = { kind: 'devices', ids: [copy.id] };
     const row = rowOfRack(loc.rack);
     if (row !== ui.rowId) setRow(row, { render: false });
@@ -1578,19 +1535,11 @@
     const targets = M.copyTargets(project, ids);
     if (!targets) return toast(`No room left for a copy of the ${plural(ids.length, 'device')}`, { warn: true });
     copyGroup(targets, 'Duplicated');
-    const g = findDevEl(ui.selection.ids[0]);
-    if (g) ensureVisible(g);
+    revealDevice(ui.selection.ids[0]);
   }
 
   function copyGroup(moves, verb) {
-    const copies = [];
-    const scratch = Object.assign({}, project, { devices: project.devices.slice() });
-    for (const m of moves) {
-      const d = M.deviceById(project, m.id);
-      const c = Object.assign(M.clone(d), { id: M.uid('d'), name: M.nextFreeName(scratch, d.name), loc: m.loc });
-      copies.push(c);
-      scratch.devices.push(c);
-    }
+    const copies = M.copiesAt(project, moves);
     ui.selection = { kind: 'devices', ids: copies.map((c) => c.id) };
     commit((p) => void p.devices.push(...copies));
     const first = copies[0];
@@ -1665,6 +1614,10 @@
     if (ui.view === 'map') return;
     fitZoom('width', false);
     if (ui.zoom < 0.5) setZoom(0.5, null, false);
+    scrollToOrigin();
+  }
+
+  function scrollToOrigin() {
     el.canvas.scrollTop = 0;
     el.canvas.scrollLeft = 0;
   }
@@ -1677,10 +1630,7 @@
     const zw = cw / ui.sceneW;
     const zh = ch / ui.sceneH;
     setZoom(mode === 'width' ? Math.min(1, zw) : Math.min(zw, zh), null, remember);
-    if (mode !== 'width') {
-      el.canvas.scrollTop = 0;
-      el.canvas.scrollLeft = 0;
-    }
+    if (mode !== 'width') scrollToOrigin();
   }
 
   // --------------------------------------------------- pointer interaction
@@ -1696,32 +1646,27 @@
   }
 
   function drawGhost(typeId, loc, ok, device, height) {
-    const layer = ghostLayer();
-    if (!layer) return;
-    if (!loc) {
-      layer.innerHTML = '';
-      return;
-    }
+    if (!loc) return setGhosts('');
     const hint = device ? null : M.suggestPlacement(project, typeId, loc, 1);
     const clusterId = device ? device.cluster : hint.cluster !== undefined ? hint.cluster : prefs.lastCluster;
-    layer.innerHTML = R.renderGhost(project, typeId, loc, ok, {
-      theme: ui.theme,
-      measure,
-      layout: ui.layout,
-      height: device ? device.height : height,
-      color: clusterColor(clusterId),
-      name: device ? device.name : hint.name,
-    });
+    setGhosts(
+      R.renderGhost(project, typeId, loc, ok, {
+        theme: ui.theme,
+        measure,
+        layout: ui.layout,
+        height: device ? device.height : height,
+        color: clusterColor(clusterId),
+        name: device ? device.name : hint.name,
+      })
+    );
   }
 
   function drawGhosts(moves, ok) {
-    const layer = ghostLayer();
-    if (!layer) return;
     const items = moves.map((m) => {
       const d = M.deviceById(project, m.id);
       return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(d.cluster) };
     });
-    layer.innerHTML = R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId });
+    setGhosts(R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId }));
   }
 
   function showChip(e, title, detail, state) {
@@ -1735,17 +1680,20 @@
 
   function hideDragFeedback() {
     el.chip.hidden = true;
-    const layer = ghostLayer();
-    if (layer) layer.innerHTML = '';
+    setGhosts('');
+  }
+
+  function capturePointer(node, pointerId) {
+    try {
+      node.setPointerCapture(pointerId);
+    } catch (err) {
+      /* pointer capture is a convenience */
+    }
   }
 
   function startDrag(e, d) {
     ui.drag = Object.assign({ pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, loc: null, ok: false, copy: false, ids: [], moves: null }, d);
-    try {
-      d.captureEl.setPointerCapture(e.pointerId);
-    } catch (err) {
-      /* pointer capture is a convenience */
-    }
+    capturePointer(d.captureEl, e.pointerId);
   }
 
   function autoScroll(e) {
@@ -1795,7 +1743,7 @@
       d.ok = check.ok;
       d.reason = check.ok ? '' : check.reason;
       if (d.moves) drawGhosts(d.moves, d.ok);
-      else hideGhostOnly();
+      else setGhosts('');
       const title = `${d.copy ? 'Copy' : 'Move'} ${plural(d.ids.length, 'device')}`;
       const detail = loc && d.ok ? `${loc.kind === 'u' ? 'by ' + (loc.at - primary.loc.at) + ' U' : 'side slots'}${d.moves && d.moves[0].loc.rack !== primary.loc.rack ? ', other racks' : ''}` : d.reason;
       return showChip(e, title, detail, loc ? (d.ok ? 'ok' : 'bad') : '');
@@ -1808,11 +1756,6 @@
     const title = primary ? (d.copy ? `Copy of ${primary.name}` : primary.name) : M.typeOf(project, d.typeId).label;
     const detail = loc ? (d.ok ? M.formatLoc(project, loc, d.typeId, primary ? primary.height : d.height) : d.reason) : 'Drop it on a rack';
     showChip(e, title, detail, loc ? (d.ok ? 'ok' : 'bad') : '');
-  }
-
-  function hideGhostOnly() {
-    const layer = ghostLayer();
-    if (layer) layer.innerHTML = '';
   }
 
   function endDrag() {
@@ -1852,22 +1795,14 @@
 
   function startPan(e) {
     ui.pan = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, sl: el.canvas.scrollLeft, st: el.canvas.scrollTop, moved: false, button: e.button };
-    try {
-      el.svg.setPointerCapture(e.pointerId);
-    } catch (err) {
-      /* ignore */
-    }
+    capturePointer(el.svg, e.pointerId);
   }
 
   // Shift-drag on the empty sheet selects the devices inside a rectangle.
   function startMarquee(e) {
     const pt = toScene(e);
     ui.marquee = { pointerId: e.pointerId, x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, add: e.ctrlKey || e.metaKey, base: selIds() };
-    try {
-      el.svg.setPointerCapture(e.pointerId);
-    } catch (err) {
-      /* ignore */
-    }
+    capturePointer(el.svg, e.pointerId);
   }
   function marqueeIds(m) {
     const x = Math.min(m.x0, m.x1);
@@ -1889,7 +1824,6 @@
     m.x1 = pt.x;
     m.y1 = pt.y;
     autoScroll(e);
-    const layer = ghostLayer();
     const T = R.THEMES[ui.theme];
     const ids = marqueeIds(m);
     let s = `<rect x="${Math.min(m.x0, m.x1)}" y="${Math.min(m.y0, m.y1)}" width="${Math.abs(m.x1 - m.x0)}" height="${Math.abs(m.y1 - m.y0)}" fill="${T.handle}" fill-opacity="0.12" stroke="${T.select}" stroke-dasharray="4 3" pointer-events="none"/>`;
@@ -1898,7 +1832,7 @@
       const b = R.locRect(project, d.loc, d.type, d.height, ui.layout);
       s += `<rect x="${b.x - 2}" y="${b.y - 2}" width="${b.w + 4}" height="${b.h + 4}" rx="2" fill="none" stroke="${T.select}" stroke-width="1.5" pointer-events="none"/>`;
     }
-    if (layer) layer.innerHTML = s;
+    setGhosts(s);
     showChip(e, `Select ${plural(ids.length, 'device')}`, m.add ? 'added to the selection' : '', ids.length ? 'ok' : '');
   }
   function endMarquee() {
@@ -1916,8 +1850,8 @@
     e.preventDefault();
     if (ui.view === 'map') return;
     const type = M.typeOf(project, card.dataset.type);
-    const h = type.variable ? 2 : type.height;
-    startDrag(e, { source: 'palette', typeId: type.id, height: type.variable ? h : undefined, grab: (h * G.U) / 2, captureEl: card });
+    const h = startHeight(type);
+    startDrag(e, { source: 'palette', typeId: type.id, height: h, grab: (h * G.U) / 2, captureEl: card });
   });
   el.parts.addEventListener('click', (e) => {
     const card = e.target.closest('.part');
@@ -2001,13 +1935,18 @@
     }
   });
 
-  el.svg.addEventListener('pointermove', (e) => {
-    if (!ui.armed || ui.drag || e.pointerType === 'touch') return;
+  /** Where the armed type would go at the pointer, and whether it fits there. */
+  function armedTarget(e) {
     const type = M.typeOf(project, ui.armed);
-    const h = type.variable ? 2 : type.height;
+    const h = startHeight(type);
     const pt = toScene(e);
     const loc = R.locateDrop(project, ui.rowId, type.id, pt.x, pt.y, (h * G.U) / 2, h);
-    const check = loc ? M.canPlace(project, type.id, loc, null, h) : null;
+    return { type, h, loc, check: loc ? M.canPlace(project, type.id, loc, null, h) : null };
+  }
+
+  el.svg.addEventListener('pointermove', (e) => {
+    if (!ui.armed || ui.drag || e.pointerType === 'touch') return;
+    const { type, h, loc, check } = armedTarget(e);
     drawGhost(type.id, loc, !!(check && check.ok), null, h);
     showChip(e, type.label, loc ? (check.ok ? M.formatLoc(project, loc, type.id, h) : check.reason) : 'Point at a rack', loc ? (check.ok ? 'ok' : 'bad') : '');
   });
@@ -2016,12 +1955,8 @@
   });
 
   function placeArmedAt(e) {
-    const type = M.typeOf(project, ui.armed);
-    const h = type.variable ? 2 : type.height;
-    const pt = toScene(e);
-    const loc = R.locateDrop(project, ui.rowId, type.id, pt.x, pt.y, (h * G.U) / 2, h);
+    const { type, loc, check } = armedTarget(e);
     if (!loc) return;
-    const check = M.canPlace(project, type.id, loc, null, h);
     if (!check.ok) return toast(check.reason, { warn: true });
     disarm();
     openPlaceDialog(type.id, loc);
@@ -2159,14 +2094,14 @@
     const q = ui.query.trim();
     const res = M.search(project, q, 6);
     const groups = [
-      ['floors', 'Floors'],
-      ['rows', 'Rows'],
-      ['racks', 'Racks'],
-      ['devices', 'Devices'],
+      ['floors', 'Floors', 'map'],
+      ['rows', 'Rows', 'map'],
+      ['racks', 'Racks', 'rack'],
+      ['devices', 'Devices', 'rack'],
     ];
     const items = [];
     let html = '';
-    for (const [key, label] of groups) {
+    for (const [key, label, kind] of groups) {
       if (!res[key].length) continue;
       const more = res.counts[key] - res[key].length;
       html += `<div class="sr-group" role="presentation"><span>${label}</span><span class="mono">${res.counts[key]}</span></div>`;
@@ -2175,7 +2110,7 @@
         items.push(it);
         html +=
           `<div class="sr-item${i === ui.searchActive ? ' is-active' : ''}" role="option" id="sr-${i}" data-i="${i}" aria-selected="${i === ui.searchActive}">` +
-          `<span class="sr-kind">${icon(key === 'devices' ? 'rack' : key === 'floors' ? 'map' : key === 'rows' ? 'map' : 'rack', 'ic-sm')}</span>` +
+          `<span class="sr-kind">${icon(kind, 'ic-sm')}</span>` +
           `<span class="sr-name">${esc(it.name)}</span><span class="sr-detail">${esc(it.detail)}</span></div>`;
       }
       if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' ? ' (highlighted in the racks)' : ''}</div>`;
@@ -2190,6 +2125,11 @@
     el.search.setAttribute('aria-activedescendant', ui.searchActive >= 0 ? `sr-${ui.searchActive}` : '');
     const active = el.searchResults.querySelector('.is-active');
     if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function focusSearch() {
+    el.search.focus();
+    el.search.select();
   }
 
   function closeSearch() {
@@ -2633,14 +2573,18 @@
 
   // Catalog dialog -----------------------------------------------------
 
-  const cat = { tab: 'devices', id: null, error: '', pressed: false, pending: false };
+  const cat = { tab: 'devices', id: null, error: '', pressed: false, pending: false, skipClick: false };
 
   function openCatalog(tab, id) {
     cat.tab = tab || cat.tab;
-    cat.id = id || null;
+    selectCatalogItem(id || null);
+    openDialog($('#dlg-catalog'));
+  }
+
+  function selectCatalogItem(id) {
+    cat.id = id;
     cat.error = '';
     renderCatalog();
-    openDialog($('#dlg-catalog'));
   }
 
   function catalogUse(tab, id) {
@@ -2757,11 +2701,7 @@
     if (input.dataset.num !== undefined) value = Number(value);
     if (input.dataset.kw !== undefined) value = Number(value) * 1000;
     const id = cat.id;
-    let err = null;
-    commit((p) => {
-      err = cat.tab === 'devices' ? M.updateDeviceType(p, id, { [prop]: value }) : M.updateRackType(p, id, { [prop]: value });
-      return err ? false : undefined;
-    });
+    const err = commitOrError((p) => (cat.tab === 'devices' ? M.updateDeviceType(p, id, { [prop]: value }) : M.updateRackType(p, id, { [prop]: value })));
     cat.error = err || '';
     refreshCatalog();
   }
@@ -2787,24 +2727,16 @@
       commit((p) => void M.deleteDeviceType(p, id));
       toast(`Deleted the type ${t.label}`, { action: 'Undo', onAction: undo });
     } else {
-      let err = null;
-      commit((p) => {
-        err = M.deleteRackType(p, id);
-        return err ? false : undefined;
-      });
+      const err = commitOrError((p) => M.deleteRackType(p, id));
       if (err) return showError('#cat-error', err);
     }
-    cat.id = null;
-    cat.error = '';
-    renderCatalog();
+    selectCatalogItem(null);
   });
   /** Moves a type to `toIndex` of its list and keeps it selected. */
   function moveCatalogItem(id, toIndex, refocus) {
     const move = cat.tab === 'devices' ? M.moveDeviceType : M.moveRackType;
     commit((p) => (move(p, id, toIndex) ? undefined : false));
-    cat.id = id;
-    cat.error = '';
-    renderCatalog();
+    selectCatalogItem(id);
     const item = $(`#cat-list .cat-item[data-id="${CSS.escape(id)}"]`);
     if (item && refocus) item.focus();
     if (item) item.scrollIntoView({ block: 'nearest' });
@@ -2830,9 +2762,7 @@
     if (e.altKey) return moveCatalogItem(item.dataset.id, i + dir, true);
     const next = items[i + dir];
     if (!next) return;
-    cat.id = next.dataset.id;
-    cat.error = '';
-    renderCatalog();
+    selectCatalogItem(next.dataset.id);
     $(`#cat-list .cat-item[data-id="${CSS.escape(cat.id)}"]`).focus();
   });
 
@@ -2900,39 +2830,25 @@
   $('#cat-list').addEventListener('click', (e) => {
     const item = e.target.closest('.cat-item');
     if (!item || cat.skipClick) return;
-    cat.id = item.dataset.id;
-    cat.error = '';
-    renderCatalog();
+    selectCatalogItem(item.dataset.id);
   });
   $$('#dlg-catalog [role="tab"]').forEach((b) =>
     b.addEventListener('click', () => {
       cat.tab = b.dataset.tab;
-      cat.id = null;
-      cat.error = '';
-      renderCatalog();
+      selectCatalogItem(null);
     })
   );
-  $('#cat-new').addEventListener('click', () => toggleMenu($('#cat-new'), $('#menu-cat-new')));
   $('#menu-cat-new').addEventListener('click', (e) => {
     const item = e.target.closest('[data-template]');
     if (!item) return;
     closeMenus();
     const tpl = item.dataset.template;
-    let made = null;
-    commit((p) => {
-      if (cat.tab === 'devices') {
-        const src = tpl === 'copy' ? Object.assign({}, M.typeOf(p, cat.id)) : M.TYPE_TEMPLATES[Number(tpl)];
-        made = M.addDeviceType(p, src);
-      } else {
-        const src = tpl === 'copy' ? Object.assign({}, M.rackTypeById(p, cat.id)) : { name: 'Custom rack', units: 42, sideSlots: 2, powerW: 8000, weightKg: 1000 };
-        made = M.addRackType(p, src);
-      }
-      return made ? undefined : false;
+    const made = commitAdd((p) => {
+      if (cat.tab === 'devices') return M.addDeviceType(p, tpl === 'copy' ? M.typeOf(p, cat.id) : M.TYPE_TEMPLATES[Number(tpl)]);
+      return M.addRackType(p, tpl === 'copy' ? M.rackTypeById(p, cat.id) : { name: 'Custom rack', units: 42, sideSlots: 2, powerW: 8000, weightKg: 1000 });
     });
     if (!made) return toast(`The catalog is full`, { warn: true });
-    cat.id = made.id;
-    cat.error = '';
-    renderCatalog();
+    selectCatalogItem(made.id);
     const first = $('#cat-form input');
     if (first) first.select();
   });
@@ -3022,7 +2938,7 @@
       });
       openDialog($('#dlg-plans'));
       if (!ok) return;
-      const text = lib.load(id);
+      const saved = lib.load(id);
       const wasOpen = id === planId;
       if (wasOpen) {
         // Nothing may save the deleted plan back while switching away from it.
@@ -3041,7 +2957,7 @@
       toast(`Deleted ${entry.name}`, {
         action: 'Undo',
         onAction: () => {
-          if (text && lib.save(id, text.project)) renderPlans();
+          if (saved && lib.save(id, saved.project)) renderPlans();
         },
       });
     }
@@ -3148,20 +3064,19 @@
     if (first) first.focus();
   }
 
+  // Menu buttons, their menus, and what fills a menu before it opens.
   [
     ['#btn-export', '#menu-export'],
     ['#btn-new', '#menu-new'],
-    ['#btn-row', '#menu-row'],
+    ['#btn-row', '#menu-row', renderRowMenu],
     ['#cat-new', '#menu-cat-new'],
-  ].forEach(([b, m]) => {
+  ].forEach(([b, m, fill]) => {
     const btn = $(b);
     const menu = $(m);
-    if (b !== '#cat-new') {
-      btn.addEventListener('click', () => {
-        if (b === '#btn-row') renderRowMenu();
-        toggleMenu(btn, menu);
-      });
-    }
+    btn.addEventListener('click', () => {
+      if (fill) fill();
+      toggleMenu(btn, menu);
+    });
     menu.addEventListener('keydown', (e) => {
       const items = $$('button', menu);
       const i = items.indexOf(document.activeElement);
@@ -3215,10 +3130,10 @@
   // --------------------------------------------------------------- export
 
   function fileBase(rowScoped) {
-    const base = slug(project.name) || 'rack-plan';
+    const base = M.slug(project.name) || 'rack-plan';
     if (!rowScoped || M.allRows(project).length === 1) return base;
     const pos = currentRow();
-    return `${base}-${slug(pos.floor.name)}-${slug(pos.row.name)}`.slice(0, 100);
+    return `${base}-${M.slug(pos.floor.name)}-${M.slug(pos.row.name)}`.slice(0, 100);
   }
 
   function download(filename, blob) {
@@ -3436,15 +3351,7 @@
   $('#btn-zoom-fit').addEventListener('click', () => fitZoom('sheet'));
   el.zoomLevel.addEventListener('click', () => setZoom(1));
 
-  el.planName.addEventListener('input', () => {
-    const v = el.planName.value;
-    commit((p) => void (p.name = v), { key: 'plan-name', inspector: false });
-  });
-  el.planName.addEventListener('change', () => {
-    if (el.planName.value.trim()) return;
-    commit((p) => void (p.name = 'Untitled rack plan'), { key: 'plan-name' });
-    el.planName.value = project.name;
-  });
+  bindText(el.planName, 'plan-name', (p, v) => (p.name = v), () => 'Untitled rack plan');
 
   // ------------------------------------------------------------- keyboard
 
@@ -3458,24 +3365,24 @@
       formControl && t.tagName !== 'SELECT' && !(t.tagName === 'INPUT' && /^(radio|checkbox|button|submit|reset|color|file|range)$/.test(t.type));
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key;
+    const letter = key.length === 1 ? key.toLowerCase() : '';
 
-    if (mod && !e.altKey && (key === 'z' || key === 'Z')) {
+    if (mod && !e.altKey && letter === 'z') {
       if (textEntry) return;
       e.preventDefault();
       if (e.shiftKey) redo();
       else undo();
       return;
     }
-    if (mod && (key === 'y' || key === 'Y')) {
+    if (mod && letter === 'y') {
       if (textEntry) return;
       e.preventDefault();
       redo();
       return;
     }
-    if (mod && (key === 'k' || key === 'K')) {
+    if (mod && letter === 'k') {
       e.preventDefault();
-      el.search.focus();
-      el.search.select();
+      focusSearch();
       return;
     }
     if (formControl) {
@@ -3531,23 +3438,22 @@
         return;
       }
     }
-    if (mod && !e.shiftKey && !e.altKey && (key === 'd' || key === 'D') && ui.selection) {
+    if (mod && !e.shiftKey && !e.altKey && letter === 'd' && ui.selection) {
       e.preventDefault();
       const s = ui.selection;
       return s.kind === 'devices' ? duplicateDevices(s.ids) : duplicateStructure(s.kind, s.id);
     }
-    if (mod && (key === 'a' || key === 'A') && ui.view === 'sheet') {
+    if (mod && letter === 'a' && ui.view === 'sheet') {
       e.preventDefault();
       return selectDevices(M.devicesWithin(project, ui.rowId).map((x) => x.id));
     }
     if (mod || e.altKey) return;
     if (key === '/') {
       e.preventDefault();
-      el.search.focus();
-      el.search.select();
+      focusSearch();
     } else if (key === '[') stepRow(-1);
     else if (key === ']') stepRow(1);
-    else if (key === 'm' || key === 'M') setView(ui.view === 'map' ? 'sheet' : 'map');
+    else if (letter === 'm') setView(ui.view === 'map' ? 'sheet' : 'map');
     else if (key === '+' || key === '=') setZoom(ui.zoom * 1.2);
     else if (key === '-' || key === '_') setZoom(ui.zoom / 1.2);
     else if (key === '0') fitZoom('sheet');
@@ -3597,8 +3503,7 @@
   render();
   if (prefs.zoom) {
     setZoom(prefs.zoom, null, false);
-    el.canvas.scrollTop = 0;
-    el.canvas.scrollLeft = 0;
+    scrollToOrigin();
   } else fitWidth();
   openSharedFromHash();
 

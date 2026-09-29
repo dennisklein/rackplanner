@@ -13,50 +13,33 @@
   'use strict';
 
   const L = M.LIMITS;
-  const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const str = M.str;
   // Ids may be written as numbers in hand-made files; they are kept as strings.
   const idOf = (v) => (typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v)) ? String(v).trim().slice(0, 80) : '');
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
   // ------------------------------------------------------------ validation
 
-  function readDeviceTypes(raw, warnings) {
-    if (!Array.isArray(raw.deviceTypes)) return M.clone(M.DEFAULT_DEVICE_TYPES);
+  /**
+   * Reads the device or rack types of a catalog (`kind` names them in
+   * warnings). Every type needs its own id, not one of `taken`; `clean`
+   * makes the rest valid. Null when the file has no such list.
+   */
+  function readTypes(list, kind, labelKey, clean, max, taken, warnings) {
+    if (!Array.isArray(list)) return null;
     const out = [];
-    const ids = new Set([M.RESERVED.id]);
-    raw.deviceTypes.forEach((t, i) => {
+    const ids = new Set(taken);
+    list.forEach((t, i) => {
       if (!isObj(t)) return;
-      const label = str(t.label, 60) || `#${i + 1}`;
+      const label = str(t[labelKey], 60) || `#${i + 1}`;
       const id = idOf(t.id);
-      if (!id) return void warnings.push(`Skipped device type ${label}: it has no id.`);
-      if (ids.has(id)) return void warnings.push(`Skipped device type ${label}: its id “${id}” is used twice.`);
-      if (out.length >= L.deviceTypes) return void warnings.push(`Skipped device type ${label}: a catalog holds ${L.deviceTypes} types.`);
+      if (!id) return void warnings.push(`Skipped ${kind} ${label}: it has no id.`);
+      if (ids.has(id)) return void warnings.push(`Skipped ${kind} ${label}: its id “${id}” is used twice.`);
+      if (out.length >= max) return void warnings.push(`Skipped ${kind} ${label}: a catalog holds ${max} types.`);
       ids.add(id);
-      const clean = M.cleanDeviceType(t);
-      clean.id = id;
-      out.push(clean);
+      out.push(Object.assign(clean(t), { id }));
     });
     return out;
-  }
-
-  function readRackTypes(raw, warnings) {
-    if (!Array.isArray(raw.rackTypes)) return M.clone(M.DEFAULT_RACK_TYPES);
-    const out = [];
-    const ids = new Set();
-    raw.rackTypes.forEach((t, i) => {
-      if (!isObj(t)) return;
-      const name = str(t.name, 60) || `#${i + 1}`;
-      const id = idOf(t.id);
-      if (!id) return void warnings.push(`Skipped rack type ${name}: it has no id.`);
-      if (ids.has(id)) return void warnings.push(`Skipped rack type ${name}: its id “${id}” is used twice.`);
-      if (out.length >= L.rackTypes) return void warnings.push(`Skipped rack type ${name}: a catalog holds ${L.rackTypes} types.`);
-      ids.add(id);
-      const clean = M.cleanRackType(t);
-      clean.id = id;
-      out.push(clean);
-    });
-    return out.length ? out : M.clone(M.DEFAULT_RACK_TYPES);
   }
 
   /**
@@ -77,6 +60,11 @@
     if (Array.isArray(raw.floors)) {
       // Floors, rows and racks share one id space, so an id names one thing.
       const used = new Set();
+      const claim = (fileId, prefix) => {
+        const id = fileId && !used.has(fileId) ? fileId : M.nextId(prefix, used);
+        used.add(id);
+        return id;
+      };
       const unnamed = new Set();
       let droppedFloors = 0;
       for (const f of raw.floors.filter(isObj)) {
@@ -84,30 +72,20 @@
           droppedFloors++;
           continue;
         }
-        const floor = { id: '', name: str(f.name, 60) || M.nextFloorName(p), rows: [] };
-        let fid = idOf(f.id);
-        if (!fid || used.has(fid)) fid = M.nextId('f', used);
-        floor.id = fid;
-        used.add(fid);
+        const floor = { id: claim(idOf(f.id), 'f'), name: str(f.name, 60) || M.nextFloorName(p), rows: [] };
         let droppedRows = 0;
         for (const r of (Array.isArray(f.rows) ? f.rows : []).filter(isObj)) {
           if (floor.rows.length >= L.rows) {
             droppedRows++;
             continue;
           }
-          const row = { id: '', name: str(r.name, 60) || M.nextRowName(floor), racks: [] };
-          let rid = idOf(r.id);
-          if (!rid || used.has(rid)) rid = M.nextId('row', used);
-          row.id = rid;
-          used.add(rid);
+          const row = { id: claim(idOf(r.id), 'row'), name: str(r.name, 60) || M.nextRowName(floor), racks: [] };
           const racks = (Array.isArray(r.racks) ? r.racks : []).filter(isObj);
           if (racks.length > L.racks) warnings.push(`${floor.name} · ${row.name}: only the first ${L.racks} racks were kept.`);
           for (const k of racks.slice(0, L.racks)) {
             const name = str(k.name, 60);
             const fileId = idOf(k.id);
-            let id = fileId;
-            if (!id || used.has(id)) id = M.nextId('r', used);
-            used.add(id);
+            const id = claim(fileId, 'r');
             if (fileId && !rackIds.has(fileId)) rackIds.set(fileId, id);
             else if (fileId) warnings.push(`Rack id “${fileId}” is used twice; devices go to the first rack with it.`);
             if (!name) unnamed.add(id);
@@ -157,17 +135,10 @@
     const warnings = [];
     // Version 1 counted units from the bottom of the rack.
     const bottomUp = Number(raw.version) === 1;
-    const p = {
-      version: M.SCHEMA_VERSION,
-      name: str(raw.name, 120) || 'Untitled rack plan',
-      info: { site: '', author: '', revision: '' },
-      deviceTypes: readDeviceTypes(raw, warnings),
-      rackTypes: readRackTypes(raw, warnings),
-      floors: [],
-      clusters: [],
-      devices: [],
-      meta: {},
-    };
+    const p = M.newProjectShell({ name: str(raw.name, 120) || 'Untitled rack plan' });
+    p.deviceTypes = readTypes(raw.deviceTypes, 'device type', 'label', M.cleanDeviceType, L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
+    const rackTypes = readTypes(raw.rackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
+    if (rackTypes && rackTypes.length) p.rackTypes = rackTypes;
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
     const rackIds = readLayout(raw, p, warnings);
 
@@ -396,30 +367,18 @@
     if (col.name === undefined && col.type === undefined) throw new Error('The CSV needs a “Name” or “Type” column.');
 
     const warnings = [];
-    const raw = base ? JSON.parse(serialize(base)) : JSON.parse(serialize(Object.assign(M.createEmptyProject(), { floors: [], name: 'Imported plan' })));
-    // Work on a project object so the model's naming helpers apply.
-    const work = Object.assign({}, raw, { devices: [] });
+    // A plain copy of the plan (its devices in file form), so the model's
+    // naming and catalog helpers apply; normalizeProject checks the result.
+    const work = JSON.parse(serialize(base || M.newProjectShell({ name: 'Imported plan' })));
     const lower = (s) => String(s || '').trim().toLowerCase();
 
     function findFloor(name) {
-      if (!name) return work.floors[0] || createFloor('');
-      return work.floors.find((f) => lower(f.name) === lower(name)) || createFloor(name);
-    }
-    function createFloor(name) {
-      if (work.floors.length >= L.floors) return null;
-      const f = { id: M.nextId('f', M.structureIds(work)), name: name || M.nextFloorName(work), rows: [] };
-      work.floors.push(f);
-      return f;
+      if (!name) return work.floors[0] || M.insertFloor(work);
+      return work.floors.find((f) => lower(f.name) === lower(name)) || M.insertFloor(work, name);
     }
     function findRow(floor, name) {
-      if (!name) return floor.rows[0] || createRow(floor, '');
-      return floor.rows.find((r) => lower(r.name) === lower(name)) || createRow(floor, name);
-    }
-    function createRow(floor, name) {
-      if (floor.rows.length >= L.rows) return null;
-      const r = { id: M.nextId('row', M.structureIds(work)), name: name || M.nextRowName(floor), racks: [] };
-      floor.rows.push(r);
-      return r;
+      if (!name) return floor.rows[0] || M.insertRow(work, floor);
+      return floor.rows.find((r) => lower(r.name) === lower(name)) || M.insertRow(work, floor, name);
     }
     const rackCache = new Map();
     function findRack(floorName, rowName, rackName) {
@@ -481,9 +440,10 @@
       const type = findType(label, height);
       if (!type) return void warnings.push(`Skipped ${what}: unknown device type “${label}” and no height to create it.`);
       if (!type.variable && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
-      const rack = findRack(get(r, 'floor'), get(r, 'row'), get(r, 'rack'));
+      // Names are cut to the length the plan keeps, so later lines find what earlier ones created.
+      const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
       if (!rack) return;
-      const d = { id: M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: raw.devices.concat(devices) }, type.defaultName, 1, true), cluster: findCluster(get(r, 'cluster')), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
+      const d = { id: M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: work.devices.concat(devices) }, type.defaultName, 1, true), cluster: findCluster(get(r, 'cluster')), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
       for (const f of M.FIELDS) d[f.key] = get(r, f.key);
       const power = get(r, 'powerW');
       const weight = get(r, 'weightKg');
@@ -492,12 +452,9 @@
       if (type.variable) d.height = height || 1;
       devices.push(d);
     });
-    raw.floors = work.floors;
-    raw.clusters = work.clusters;
-    raw.deviceTypes = work.deviceTypes;
-    raw.devices = raw.devices.concat(devices);
-    if (!raw.floors.length) throw new Error('The CSV has no devices that could be placed.');
-    const result = normalizeProject(raw);
+    work.devices = work.devices.concat(devices);
+    if (!work.floors.length) throw new Error('The CSV has no devices that could be placed.');
+    const result = normalizeProject(work);
     const added = result.project.devices.length - (base ? base.devices.length : 0);
     return { project: result.project, warnings: warnings.concat(result.warnings), added };
   }
@@ -556,6 +513,5 @@
     importCSV,
     encodeShare,
     decodeShare,
-    plural,
   };
 });

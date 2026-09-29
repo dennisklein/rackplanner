@@ -139,7 +139,23 @@
 
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const pad2 = (n) => String(n).padStart(2, '0');
+  /** A trimmed string of at most `max` characters; '' for anything else. */
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  /** "1 rack", "3 racks"; `many` for irregular plurals. */
+  const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + 's'}`;
+  const namesOf = (list) => new Set(list.map((x) => x.name));
+
+  /** Lowercase ASCII words joined by dashes, for file names and ids: "Halle Süd 2" → halle-sud-2. */
+  function slug(s, max) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+/, '')
+      .slice(0, max || 60)
+      .replace(/-+$/, '');
+  }
 
   function clampInt(v, lo, hi, dflt) {
     const n = Math.round(Number(v));
@@ -156,11 +172,16 @@
     return `${prefix}-${Date.now().toString(36)}${uidCounter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   }
 
+  /** The first of make(start), make(start + 1), … that is not in `used`. */
+  function firstFree(used, start, make) {
+    let i = start;
+    while (used.has(make(i))) i++;
+    return make(i);
+  }
+
   /** Smallest `${prefix}${k}` not in `used`. */
   function nextId(prefix, used) {
-    let k = 1;
-    while (used.has(prefix + k)) k++;
-    return prefix + k;
+    return firstFree(used, 1, (k) => prefix + k);
   }
 
   function normalizeHex(value) {
@@ -303,17 +324,6 @@
 
   // --------------------------------------------------------------- catalogs
 
-  function slug(s) {
-    return (
-      String(s || '')
-        .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 20) || 'dev'
-    );
-  }
-
   /** A valid device type from untrusted input (the id is left to the caller). */
   function cleanDeviceType(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
@@ -325,7 +335,7 @@
       spec: str(r.spec, 60),
       height: clampInt(r.height, 1, LIMITS.deviceHeight, 1),
       face: FACE_IDS.has(r.face) ? r.face : 'generic',
-      defaultName: str(r.defaultName, 80) || `${slug(label)}-01`,
+      defaultName: str(r.defaultName, 80) || `${slug(label, 20) || 'dev'}-01`,
       powerW: clampNum(r.powerW, 0, 100000, 0),
       weightKg: clampNum(r.weightKg, 0, 5000, 0),
     };
@@ -352,10 +362,7 @@
 
   function uniqueLabel(list, key, base) {
     const used = new Set(list.map((x) => x[key]));
-    if (!used.has(base)) return base;
-    let i = 2;
-    while (used.has(`${base} ${i}`)) i++;
-    return `${base} ${i}`;
+    return used.has(base) ? firstFree(used, 2, (i) => `${base} ${i}`) : base;
   }
 
   /** Adds a device type from `template`; null when the catalog is full. */
@@ -396,20 +403,29 @@
     project.devices = project.devices.filter((d) => d.type !== id);
   }
 
-  function moveInList(list, id, toIndex) {
-    const i = list.findIndex((t) => t.id === id);
-    const j = Math.max(0, Math.min(list.length - 1, toIndex));
-    if (i < 0 || i === j) return false;
-    list.splice(j, 0, list.splice(i, 1)[0]);
+  /**
+   * Moves item `i` of list `from` to position `toIndex` of list `to` (the
+   * end when null; `to` may be `from`). Between two lists, `from` keeps at
+   * least one item and `to` takes at most `max`.
+   */
+  function moveItem(from, i, to, toIndex, max) {
+    if (i < 0 || (to !== from && (to.length >= max || from.length <= 1))) return false;
+    const [item] = from.splice(i, 1);
+    to.splice(Math.max(0, Math.min(to.length, toIndex == null ? to.length : toIndex)), 0, item);
     return true;
+  }
+
+  function moveType(list, id, toIndex) {
+    const i = list.findIndex((t) => t.id === id);
+    return i !== Math.max(0, Math.min(list.length - 1, toIndex)) && moveItem(list, i, list, toIndex);
   }
   /** Moves a device type to position `toIndex` of the catalog; the parts panel follows this order. */
   function moveDeviceType(project, id, toIndex) {
-    return moveInList(project.deviceTypes, id, toIndex);
+    return moveType(project.deviceTypes, id, toIndex);
   }
   /** Moves a rack type to position `toIndex`; the first one is used for racks in new rows. */
   function moveRackType(project, id, toIndex) {
-    return moveInList(project.rackTypes, id, toIndex);
+    return moveType(project.rackTypes, id, toIndex);
   }
 
   function addRackType(project, template) {
@@ -468,16 +484,10 @@
   // ------------------------------------------------------------- structure
 
   function nextFloorName(project) {
-    const used = new Set(project.floors.map((f) => f.name));
-    let i = project.floors.length + 1;
-    while (used.has(`Floor ${i}`)) i++;
-    return `Floor ${i}`;
+    return firstFree(namesOf(project.floors), project.floors.length + 1, (i) => `Floor ${i}`);
   }
   function nextRowName(floor) {
-    const used = new Set(floor.rows.map((r) => r.name));
-    let i = floor.rows.length;
-    while (used.has(`Row ${letters(i)}`)) i++;
-    return `Row ${letters(i)}`;
+    return firstFree(namesOf(floor.rows), floor.rows.length, (i) => `Row ${letters(i)}`);
   }
 
   /** Short code of a row for rack names: "Row C" → C; on floor 2 → 2C. */
@@ -493,25 +503,26 @@
     return `Rack ${rowCode(project, rowId)}${pad2(index + 1)}`;
   }
   function nextRackName(project, rowId) {
-    const row = rowById(project, rowId);
-    const used = new Set(row ? row.racks.map((r) => r.name) : []);
-    let i = row ? row.racks.length : 0;
-    while (used.has(defaultRackName(project, rowId, i))) i++;
-    return defaultRackName(project, rowId, i);
+    const racks = (rowById(project, rowId) || { racks: [] }).racks;
+    return firstFree(namesOf(racks), racks.length, (i) => defaultRackName(project, rowId, i));
   }
 
-  function newProjectShell() {
-    return {
-      version: SCHEMA_VERSION,
-      name: 'Untitled rack plan',
-      info: { site: '', author: '', revision: '' },
-      deviceTypes: clone(DEFAULT_DEVICE_TYPES),
-      rackTypes: clone(DEFAULT_RACK_TYPES),
-      floors: [],
-      clusters: [],
-      devices: [],
-      meta: {},
-    };
+  /** A plan with the standard catalog and nothing on it, not even a floor; `props` overrides. */
+  function newProjectShell(props) {
+    return Object.assign(
+      {
+        version: SCHEMA_VERSION,
+        name: 'Untitled rack plan',
+        info: { site: '', author: '', revision: '' },
+        deviceTypes: clone(DEFAULT_DEVICE_TYPES),
+        rackTypes: clone(DEFAULT_RACK_TYPES),
+        floors: [],
+        clusters: [],
+        devices: [],
+        meta: {},
+      },
+      props
+    );
   }
 
   function clampRackCount(n) {
@@ -535,13 +546,30 @@
     return p;
   }
 
+  /**
+   * Inserts a floor without rows at `index` (default: the end), named `name`
+   * or Floor N. Null when the plan has six floors.
+   */
+  function insertFloor(project, name, index) {
+    if (project.floors.length >= LIMITS.floors) return null;
+    const floor = { id: nextId('f', structureIds(project)), name: str(name, 60) || nextFloorName(project), rows: [] };
+    project.floors.splice(index == null ? project.floors.length : index, 0, floor);
+    return floor;
+  }
+
+  /** Inserts a row without racks into `floor`, like insertFloor. Null when the floor has eight rows. */
+  function insertRow(project, floor, name, index) {
+    if (floor.rows.length >= LIMITS.rows) return null;
+    const row = { id: nextId('row', structureIds(project)), name: str(name, 60) || nextRowName(floor), racks: [] };
+    floor.rows.splice(index == null ? floor.rows.length : index, 0, row);
+    return row;
+  }
+
   /** Adds a floor with one row of racks; null when the plan has six floors. */
   function addFloor(project, opts) {
     const o = opts || {};
-    if (project.floors.length >= LIMITS.floors) return null;
-    const floor = { id: nextId('f', structureIds(project)), name: str(o.name, 60) || nextFloorName(project), rows: [] };
-    project.floors.splice(o.index == null ? project.floors.length : o.index, 0, floor);
-    addRow(project, floor.id, { racks: o.racks == null ? DEFAULT_RACKS : o.racks, type: o.type });
+    const floor = insertFloor(project, o.name, o.index);
+    if (floor) addRow(project, floor.id, { racks: o.racks == null ? DEFAULT_RACKS : o.racks, type: o.type });
     return floor;
   }
 
@@ -549,9 +577,8 @@
   function addRow(project, floorId, opts) {
     const o = opts || {};
     const floor = floorById(project, floorId);
-    if (!floor || floor.rows.length >= LIMITS.rows) return null;
-    const row = { id: nextId('row', structureIds(project)), name: str(o.name, 60) || nextRowName(floor), racks: [] };
-    floor.rows.splice(o.index == null ? floor.rows.length : o.index, 0, row);
+    const row = floor && insertRow(project, floor, o.name, o.index);
+    if (!row) return null;
     const n = clampInt(o.racks, 1, LIMITS.racks, DEFAULT_RACKS);
     for (let i = 0; i < n; i++) addRack(project, row.id, { type: o.type });
     return row;
@@ -577,12 +604,17 @@
     return rack;
   }
 
+  /** Removes the devices standing in the racks of `rackIds` (a Set). */
+  function removeDevicesIn(project, rackIds) {
+    project.devices = project.devices.filter((d) => !rackIds.has(d.loc.rack));
+  }
+
   /** Removes a rack and its devices. A row keeps at least one rack. */
   function removeRack(project, rackId) {
     const pos = locateRack(project, rackId);
     if (!pos || pos.row.racks.length <= 1) return false;
     pos.row.racks.splice(pos.index, 1);
-    project.devices = project.devices.filter((d) => d.loc.rack !== rackId);
+    removeDevicesIn(project, new Set([rackId]));
     return true;
   }
 
@@ -593,13 +625,7 @@
   function moveRack(project, rackId, toRowId, toIndex) {
     const pos = locateRack(project, rackId);
     const target = rowById(project, toRowId);
-    if (!pos || !target) return false;
-    const same = target === pos.row;
-    if (!same && (target.racks.length >= LIMITS.racks || pos.row.racks.length <= 1)) return false;
-    pos.row.racks.splice(pos.index, 1);
-    const i = Math.max(0, Math.min(target.racks.length, toIndex == null ? target.racks.length : toIndex));
-    target.racks.splice(i, 0, pos.rack);
-    return true;
+    return !!pos && !!target && moveItem(pos.row.racks, pos.index, target.racks, toIndex, LIMITS.racks);
   }
 
   /** Renames the racks of a row by position: Rack A01, Rack A02, … */
@@ -629,42 +655,31 @@
   function removeRow(project, rowId) {
     const pos = locateRow(project, rowId);
     if (!pos || pos.floor.rows.length <= 1) return false;
-    const gone = new Set(pos.row.racks.map((r) => r.id));
+    const gone = rackIdsWithin(project, rowId);
     pos.floor.rows.splice(pos.rowIndex, 1);
-    project.devices = project.devices.filter((d) => !gone.has(d.loc.rack));
+    removeDevicesIn(project, gone);
     return true;
   }
 
-  /** Moves a row to position `toIndex` on floor `toFloorId`. */
+  /** Moves a row to position `toIndex` on floor `toFloorId`. A floor keeps between 1 and 8 rows. */
   function moveRow(project, rowId, toFloorId, toIndex) {
     const pos = locateRow(project, rowId);
     const target = floorById(project, toFloorId);
-    if (!pos || !target) return false;
-    const same = target === pos.floor;
-    if (!same && (target.rows.length >= LIMITS.rows || pos.floor.rows.length <= 1)) return false;
-    pos.floor.rows.splice(pos.rowIndex, 1);
-    const i = Math.max(0, Math.min(target.rows.length, toIndex == null ? target.rows.length : toIndex));
-    target.rows.splice(i, 0, pos.row);
-    return true;
+    return !!pos && !!target && moveItem(pos.floor.rows, pos.rowIndex, target.rows, toIndex, LIMITS.rows);
   }
 
   /** Removes a floor with everything on it. A plan keeps at least one floor. */
   function removeFloor(project, floorId) {
     const i = project.floors.findIndex((f) => f.id === floorId);
     if (i < 0 || project.floors.length <= 1) return false;
-    const gone = new Set();
-    project.floors[i].rows.forEach((row) => row.racks.forEach((r) => gone.add(r.id)));
+    const gone = rackIdsWithin(project, floorId);
     project.floors.splice(i, 1);
-    project.devices = project.devices.filter((d) => !gone.has(d.loc.rack));
+    removeDevicesIn(project, gone);
     return true;
   }
 
   function moveFloor(project, floorId, toIndex) {
-    const i = project.floors.findIndex((f) => f.id === floorId);
-    if (i < 0) return false;
-    const [f] = project.floors.splice(i, 1);
-    project.floors.splice(Math.max(0, Math.min(project.floors.length, toIndex)), 0, f);
-    return true;
+    return moveItem(project.floors, project.floors.findIndex((f) => f.id === floorId), project.floors, toIndex);
   }
 
   /** Rack ids in a rack, row or floor (whichever id matches). */
@@ -792,6 +807,13 @@
     return grid;
   }
 
+  /** True when units `at` … `at + h - 1` are inside the rack of `grid` (from rackGrid) and free. */
+  function spanFree(grid, at, h) {
+    if (at < 1 || at + h - 1 > grid.length - 2) return false;
+    for (let u = at; u < at + h; u++) if (grid[u]) return false;
+    return true;
+  }
+
   /**
    * Checks whether a device of `typeId` fits at `loc`. Devices listed in
    * `ignore` (an id or array of ids) are treated as absent, which is how a
@@ -843,14 +865,10 @@
     const grid = rackGrid(project, rackId, ignore);
     const units = grid.length - 2;
     const step = dir < 0 ? -1 : 1;
-    const free = (u) => {
-      for (let k = u; k < u + h; k++) if (grid[k]) return false;
-      return true;
-    };
     const out = [];
     let u = startU;
     while (out.length < count && u >= 1 && u + h - 1 <= units) {
-      if (free(u)) {
+      if (spanFree(grid, u, h)) {
         out.push(u);
         for (let k = u; k < u + h; k++) grid[k] = 1;
         u += step * h;
@@ -908,27 +926,16 @@
       }
     }
     const grid = rackGrid(project, rackId, ignore);
-    const units = grid.length - 2;
-    for (let u = 1; u + h - 1 <= units; u++) {
-      let free = true;
-      for (let k = u; k < u + h; k++) if (grid[k]) free = false;
-      if (free) out.push({ rack: rackId, kind: 'u', at: u });
+    for (let u = 1; u + h - 1 <= grid.length - 2; u++) {
+      if (spanFree(grid, u, h)) out.push({ rack: rackId, kind: 'u', at: u });
     }
     return out;
   }
 
   /** Nearest free U position with a higher (dir > 0, further down) or lower (dir < 0, further up) number. */
   function nudgeTarget(project, device, dir) {
-    if (device.loc.kind !== 'u') return null;
-    const h = deviceHeight(project, device);
-    const grid = rackGrid(project, device.loc.rack, device.id);
-    const units = grid.length - 2;
-    for (let u = device.loc.at + dir; u >= 1 && u + h - 1 <= units; u += dir) {
-      let free = true;
-      for (let k = u; k < u + h; k++) if (grid[k]) free = false;
-      if (free) return { rack: device.loc.rack, kind: 'u', at: u };
-    }
-    return null;
+    const moves = groupNudge(project, [device.id], dir);
+    return moves ? moves[0].loc : null;
   }
 
   /** Free position closest to `near` (a U number) in a rack, or null. */
@@ -1011,9 +1018,12 @@
         const h = deviceHeight(project, d);
         const g = grids.get(d.loc.rack);
         const at = d.loc.at + k * dir;
+        // Further shifts only take it further out of its rack.
         if (at < 1 || at + h - 1 > g.length - 2) return null;
-        for (let u = at; u < at + h && fits; u++) if (g[u]) fits = false;
-        if (!fits) break;
+        if (!spanFree(g, at, h)) {
+          fits = false;
+          break;
+        }
       }
       if (fits) return moving.map((d) => ({ id: d.id, loc: { rack: d.loc.rack, kind: 'u', at: d.loc.at + k * dir } }));
     }
@@ -1056,11 +1066,10 @@
           out.push({ id: d.id, loc: { rack: target.id, kind: 'side', at } });
           continue;
         }
-        const g = grid(target.id);
         const h = deviceHeight(project, d);
         const at = d.loc.at + dU;
-        if (at < 1 || at + h - 1 > g.length - 2) return null;
-        for (let u = at; u < at + h; u++) if (g[u] || mine.units.has(u)) return null;
+        if (!spanFree(grid(target.id), at, h)) return null;
+        for (let u = at; u < at + h; u++) if (mine.units.has(u)) return null;
         for (let u = at; u < at + h; u++) mine.units.add(u);
         out.push({ id: d.id, loc: { rack: target.id, kind: 'u', at } });
       }
@@ -1093,49 +1102,59 @@
   }
 
   /**
+   * Copies of devices for new places (`moves`: [{ id, loc }]), with new ids
+   * and names that continue each series. The plan itself is not changed.
+   */
+  function copiesAt(project, moves) {
+    const named = { devices: project.devices.slice() };
+    return moves.map((m) => {
+      const d = deviceById(project, m.id);
+      const c = Object.assign(clone(d), { id: uid('d'), name: nextFreeName(named, d.name), loc: { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at } });
+      named.devices.push(c);
+      return c;
+    });
+  }
+
+  /**
    * Adds copies of the devices in racks that `rackMap` maps (old rack id →
-   * new rack id), at the same positions, with new ids and names that continue
-   * each series. Returns the copies.
+   * new rack id), at the same positions.
    */
   function copyDevicesInto(project, rackMap) {
-    const named = { devices: project.devices.slice() };
-    const copies = [];
-    for (const d of sortedDevices(project)) {
-      if (!rackMap.has(d.loc.rack)) continue;
-      const c = Object.assign(clone(d), { id: uid('d'), name: nextFreeName(named, d.name), loc: Object.assign({}, d.loc, { rack: rackMap.get(d.loc.rack) }) });
-      named.devices.push(c);
-      copies.push(c);
-    }
-    project.devices.push(...copies);
-    return copies;
+    const moves = sortedDevices(project)
+      .filter((d) => rackMap.has(d.loc.rack))
+      .map((d) => ({ id: d.id, loc: Object.assign({}, d.loc, { rack: rackMap.get(d.loc.rack) }) }));
+    project.devices.push(...copiesAt(project, moves));
   }
 
   /** Inserts a copy of a rack, with copies of its devices, right after it. Null when the row is full. */
   function duplicateRack(project, rackId) {
     const pos = locateRack(project, rackId);
-    if (!pos || pos.row.racks.length >= LIMITS.racks) return null;
-    const rack = addRack(project, pos.row.id, { index: pos.index + 1, type: pos.rack.type });
-    copyDevicesInto(project, new Map([[rackId, rack.id]]));
-    return rack;
+    const rack = pos && addRack(project, pos.row.id, { index: pos.index + 1, type: pos.rack.type });
+    if (rack) copyDevicesInto(project, new Map([[rackId, rack.id]]));
+    return rack || null;
   }
 
-  function copyRowInto(project, source, floor, index) {
-    const row = { id: nextId('row', structureIds(project)), name: nextRowName(floor), racks: [] };
-    floor.rows.splice(index, 0, row);
-    const map = new Map();
+  /**
+   * Inserts a copy of row `source` (its racks, not their devices) into
+   * `floor` at `index`, named `name` or the next free row name. Adds the
+   * old → new rack ids to `rackMap`.
+   */
+  function copyRowInto(project, source, floor, index, name, rackMap) {
+    const row = insertRow(project, floor, name, index);
     source.racks.forEach((r, i) => {
       const rack = { id: nextId('r', structureIds(project)), name: defaultRackName(project, row.id, i), type: r.type };
       row.racks.push(rack);
-      map.set(r.id, rack.id);
+      rackMap.set(r.id, rack.id);
     });
-    return { row, map };
+    return row;
   }
 
   /** Inserts a copy of a row, with its racks and devices, right after it. Null when the floor is full. */
   function duplicateRow(project, rowId) {
     const pos = locateRow(project, rowId);
     if (!pos || pos.floor.rows.length >= LIMITS.rows) return null;
-    const { row, map } = copyRowInto(project, pos.row, pos.floor, pos.rowIndex + 1);
+    const map = new Map();
+    const row = copyRowInto(project, pos.row, pos.floor, pos.rowIndex + 1, '', map);
     copyDevicesInto(project, map);
     return row;
   }
@@ -1143,17 +1162,13 @@
   /** Inserts a copy of a floor, with everything on it, right after it. Null when the plan has six floors. */
   function duplicateFloor(project, floorId) {
     const i = project.floors.findIndex((f) => f.id === floorId);
-    if (i < 0 || project.floors.length >= LIMITS.floors) return null;
+    if (i < 0) return null;
     const source = project.floors[i];
-    const floor = { id: nextId('f', structureIds(project)), name: `${source.name} (copy)`.slice(0, 60), rows: [] };
-    project.floors.splice(i + 1, 0, floor);
-    const map = new Map();
-    source.rows.forEach((r, k) => copyRowInto(project, r, floor, k).map.forEach((v, key) => map.set(key, v)));
+    const floor = insertFloor(project, `${source.name} (copy)`, i + 1);
+    if (!floor) return null;
     // Rows keep their names on the copied floor, and racks are named after them.
-    floor.rows.forEach((row, k) => {
-      row.name = source.rows[k].name;
-      row.racks.forEach((rack, j) => (rack.name = defaultRackName(project, row.id, j)));
-    });
+    const map = new Map();
+    source.rows.forEach((r) => copyRowInto(project, r, floor, null, r.name, map));
     copyDevicesInto(project, map);
     return floor;
   }
@@ -1225,11 +1240,16 @@
     return s.head + String(n).padStart(s.width, '0') + s.tail;
   }
 
+  /** Like parseSerial; a name without a number starts a series: db → db-01, db-02, … */
+  function seriesOf(name) {
+    return parseSerial(name) || { head: name + '-', num: 1, width: 2, tail: '' };
+  }
+
   /** `count` names counting up from `first` (cn-007 → cn-007, cn-008, …). */
   function nameSequence(first, count) {
     const name = String(first == null ? '' : first).trim();
     if (count <= 1) return [name];
-    const s = parseSerial(name) || { head: name + '-', num: 1, width: 2, tail: '' };
+    const s = seriesOf(name);
     return Array.from({ length: count }, (_, i) => formatSerial(s, s.num + i));
   }
 
@@ -1239,8 +1259,8 @@
    * consecutive names. With `inclusive`, `seed` itself may be returned.
    */
   function nextInSeries(project, seed, count, inclusive) {
-    const used = new Set(project.devices.map((d) => d.name));
-    const s = parseSerial(seed) || { head: seed + '-', num: 1, width: 2, tail: '' };
+    const used = namesOf(project.devices);
+    const s = seriesOf(seed);
     let max = inclusive ? s.num - 1 : s.num;
     for (const name of used) {
       const o = parseSerial(name);
@@ -1289,16 +1309,9 @@
 
   /** Next unused name derived from `name` (for duplicates): cn-004 → cn-005, db → db-2. */
   function nextFreeName(project, name) {
-    const used = new Set(project.devices.map((d) => d.name));
+    const used = namesOf(project.devices);
     const s = parseSerial(name);
-    if (s) {
-      let n = s.num + 1;
-      while (used.has(formatSerial(s, n))) n++;
-      return formatSerial(s, n);
-    }
-    let i = 2;
-    while (used.has(`${name}-${i}`)) i++;
-    return `${name}-${i}`;
+    return s ? firstFree(used, s.num + 1, (n) => formatSerial(s, n)) : firstFree(used, 2, (i) => `${name}-${i}`);
   }
 
   function nextClusterColor(project) {
@@ -1307,10 +1320,7 @@
   }
 
   function nextClusterName(project) {
-    const used = new Set(project.clusters.map((c) => c.name));
-    let i = project.clusters.length + 1;
-    while (used.has(`Cluster ${i}`)) i++;
-    return `Cluster ${i}`;
+    return firstFree(namesOf(project.clusters), project.clusters.length + 1, (i) => `Cluster ${i}`);
   }
 
   /** A new device with every field set; `props` overrides the defaults. */
@@ -1496,9 +1506,9 @@
       if (out[group].length < (group === 'devices' ? max * 4 : max)) out[group].push(item);
     };
     project.floors.forEach((floor) => {
-      if (hit(floor.name.toLowerCase())) push('floors', { kind: 'floor', id: floor.id, name: floor.name, detail: `${floor.rows.length} row${floor.rows.length === 1 ? '' : 's'}` });
+      if (hit(floor.name.toLowerCase())) push('floors', { kind: 'floor', id: floor.id, name: floor.name, detail: plural(floor.rows.length, 'row') });
       floor.rows.forEach((row) => {
-        if (hit(`${row.name} ${floor.name}`.toLowerCase())) push('rows', { kind: 'row', id: row.id, name: row.name, detail: `${floor.name} · ${row.racks.length} rack${row.racks.length === 1 ? '' : 's'}` });
+        if (hit(`${row.name} ${floor.name}`.toLowerCase())) push('rows', { kind: 'row', id: row.id, name: row.name, detail: `${floor.name} · ${plural(row.racks.length, 'rack')}` });
         row.racks.forEach((rack) => {
           if (hit(rack.name.toLowerCase())) push('racks', { kind: 'rack', id: rack.id, name: rack.name, detail: `${floor.name} · ${row.name}` });
         });
@@ -1527,6 +1537,9 @@
     FIELDS,
     CLUSTER_COLORS,
     clone,
+    str,
+    plural,
+    slug,
     clampInt,
     clampNum,
     letters,
@@ -1572,13 +1585,17 @@
     nextRackName,
     nextFloorName,
     nextRowName,
+    newProjectShell,
     createEmptyProject,
     createExampleProject,
     copyLayout,
     isPristineExample,
+    insertFloor,
+    insertRow,
     addFloor,
     addRow,
     addRack,
+    removeDevicesIn,
     removeRack,
     moveRack,
     renumberRacks,
@@ -1603,6 +1620,7 @@
     shiftMoves,
     groupNudge,
     copyTargets,
+    copiesAt,
     duplicateRack,
     duplicateRow,
     duplicateFloor,

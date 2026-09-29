@@ -182,20 +182,6 @@ p { margin: 0; }
 .plan-name:focus { border-color: var(--ink-3); background: var(--surface); outline: none; }
 .tb-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .tb-group { display: flex; gap: 4px; margin-right: 6px; }
-.rack-count { display: flex; align-items: center; gap: 8px; margin-right: 6px; }
-.rc-label {
-  font: 600 12px/1 var(--font-display);
-  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
-}
-.rack-count .seg { height: 32px; background: var(--surface); }
-.rack-count .seg button {
-  padding: 0 10px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer;
-  font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums;
-}
-.rack-count .seg button + button { border-left: 1px solid var(--line-strong); }
-.rack-count .seg button:hover { background: var(--surface-2); color: var(--ink); }
-.rack-count .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
-.rack-count .seg button:focus-visible { outline: 2px solid var(--tape); outline-offset: -3px; }
 
 /* Search */
 .search { position: relative; flex: 0 1 340px; min-width: 180px; display: flex; align-items: center; }
@@ -361,24 +347,14 @@ p { margin: 0; }
 .row-btn { min-width: 110px; justify-content: space-between; font-weight: 600; }
 .row-btn span { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .nav-spacer { flex: 1; }
-.view-toggle { height: 28px; background: var(--surface); }
-.view-toggle button {
-  display: flex; align-items: center; gap: 5px; padding: 0 10px; border: 0;
-  background: transparent; color: var(--ink-2); cursor: pointer; font-size: 13px;
-}
-.view-toggle button + button { border-left: 1px solid var(--line-strong); }
-.view-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
-.view-toggle button:focus-visible { outline: 2px solid var(--tape); outline-offset: -3px; }
+.view-toggle { background: var(--surface); --seg-pad: 10px; }
 
 .floormap { padding: 18px 20px 72px; display: flex; flex-direction: column; gap: 16px; min-width: max-content; }
 .fm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .fm-title { min-width: 0; max-width: min(720px, 100%); }
 .fm-title h2 { font: 600 22px/1.1 var(--font-display); letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-title p { color: var(--ink-2); font-size: 13px; margin-top: 3px; }
-.fm-metric { height: 30px; background: var(--surface); }
-.fm-metric button { padding: 0 11px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 13px; }
-.fm-metric button + button { border-left: 1px solid var(--line-strong); }
-.fm-metric button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.fm-metric { background: var(--surface); }
 .fm-rows { display: flex; flex-direction: column; gap: 12px; }
 .fm-row {
   padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: var(--r-md);
@@ -611,6 +587,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--ink); outli
 #place-name { font-size: 15px; font-weight: 500; }
 
 .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; height: 34px; }
+/* Segments made of buttons: the view toggle, the floor map's meter switch, the catalog tabs. */
+.seg > button {
+  display: flex; align-items: center; gap: 5px; padding: 0 var(--seg-pad, 11px); border: 0;
+  background: transparent; color: var(--ink-2); cursor: pointer; font-size: 13px;
+}
+.seg > button + button { border-left: 1px solid var(--line-strong); }
+.seg > button[aria-pressed="true"], .seg > button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
+.seg > button:focus-visible { outline: 2px solid var(--tape); outline-offset: -3px; }
 .seg label { position: relative; display: flex; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg span { display: flex; align-items: center; gap: 5px; padding: 0 11px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
@@ -675,10 +659,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--ink); outli
 .dlg-sm { width: min(400px, calc(100vw - 32px)); }
 .dlg-wide { width: min(760px, calc(100vw - 32px)); }
 .dlg-shell { display: flex; flex-direction: column; max-height: inherit; }
-.dlg .tabs { margin-top: 6px; height: 32px; }
-.dlg .tabs button { padding: 0 12px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 13px; }
-.dlg .tabs button + button { border-left: 1px solid var(--line-strong); }
-.dlg .tabs button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
+.dlg .tabs { margin-top: 6px; height: 32px; --seg-pad: 12px; }
 .dlg-body.catalog { display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-auto-rows: max-content; gap: 16px; align-items: start; min-height: 360px; }
 .cat-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; padding: 2px; }
 .cat-item {
@@ -813,13 +794,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--ink); outli
 
 @media (max-width: 560px) {
   .tb-actions { flex-basis: 100%; justify-content: flex-start; }
-  .rack-count { flex-basis: 100%; }
   .tb-actions .btn span { display: none; }
   .tb-actions .btn:not(.icon) { padding: 0 9px; }
   .tb-group { margin-right: 0; }
   .brand-name { font-size: 18px; }
   .zoom .btn.sm span { display: none; }
-  .view-toggle button { padding: 0 8px; }
+  .view-toggle { --seg-pad: 8px; }
   .nav-spacer { display: none; }
   .row-btn { min-width: 0; }
   .field-grid { grid-template-columns: minmax(0, 1fr); }

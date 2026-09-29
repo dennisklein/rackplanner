@@ -258,6 +258,18 @@ test('a CSV adds devices to a plan and creates what is missing', () => {
   assert.throws(() => IO.importCSV('just one line'), /no devices/);
 });
 
+test('CSV lines with long floor and row names end up on one floor and row', () => {
+  const hall = `Hall ${'x'.repeat(70)}`;
+  const row = `Row ${'y'.repeat(70)}`;
+  const csv = ['Floor,Row,Rack,Position,Type,Name', `${hall},${row},R1,U1,48-port switch,a`, `${hall},${row},R2,U1,48-port switch,b`].join('\n');
+  const { project: p, warnings, added } = IO.importCSV(csv);
+  assert.equal(added, 2);
+  assert.deepEqual(warnings, []);
+  assert.equal(p.floors.length, 1);
+  assert.equal(p.floors[0].name, hall.slice(0, 60));
+  assert.deepEqual(p.floors[0].rows.map((r) => [r.name, r.racks.map((k) => k.name)]), [[row.slice(0, 60), ['R1', 'R2']]]);
+});
+
 test('share links pack and unpack a plan', async () => {
   const ex = M.createExampleProject();
   const code = await IO.encodeShare(ex);
