@@ -282,6 +282,47 @@ test('the closed place dialog ignores the browser’s own undo', async ({ page }
   expect(errors).toEqual([]);
 });
 
+test('device and rack types can be reordered in the catalog', async ({ page }) => {
+  const parts = page.locator('.part');
+  const items = page.locator('#cat-list .cat-item');
+  await page.click('#btn-catalog');
+
+  // Drag the storage enclosure to the top; the devices panel follows.
+  const src = await items.filter({ hasText: 'Storage enclosure' }).boundingBox();
+  const top = await items.first().boundingBox();
+  await page.mouse.move(src.x + 20, src.y + src.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(top.x + 20, top.y + 10, { steps: 8 });
+  await expect(items.first()).toHaveClass(/drop-before/);
+  await page.mouse.up();
+  await expect(items.first()).toContainText('Storage enclosure');
+  await expect(items.first()).toHaveAttribute('aria-selected', 'true');
+  await expect(parts.first()).toHaveAttribute('data-type', 'storage-enclosure');
+
+  // Keyboard: arrows walk the list, Alt+arrows move the focused type.
+  await items.first().focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect(items.nth(2)).toContainText('Storage enclosure');
+  await expect(items.nth(2)).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#cat-label')).toHaveValue('24-port switch');
+
+  // Rack types: the first one is used for new rows.
+  await page.click('#cat-tab-racks');
+  await page.click('[data-cat-move="1"]');
+  await expect(items.nth(0)).toContainText('42U rack');
+  await expect(items.nth(1)).toContainText('47U rack');
+  await expect(page.locator('[data-cat-move="-1"]')).toBeEnabled();
+  await page.click('#dlg-catalog [data-close]');
+  await page.click('[data-add-floor]');
+  await expect(page.locator('.rack-head').first()).toContainText('/42 U');
+
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Control+z');
+  await expect(parts.first()).toHaveAttribute('data-type', 'switch-rj45');
+  expect(await page.evaluate(() => window.RP.app.project().rackTypes.map((t) => t.id))).toEqual(['rack-47', 'rack-42', 'rack-48']);
+});
+
 test('tall device types fit their card in the parts panel', async ({ page }) => {
   await page.click('#btn-catalog');
   await page.click('#cat-new');

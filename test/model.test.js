@@ -379,6 +379,25 @@ test('device types can be added, changed and deleted', () => {
   assert.equal(M.formatTypeSpec(M.RESERVED), 'any height · placeholder');
 });
 
+test('catalogs can be reordered; new rows use the first rack type', () => {
+  const p = M.createEmptyProject();
+  assert.ok(M.moveDeviceType(p, 'storage-enclosure', 0));
+  assert.deepEqual(p.deviceTypes.map((t) => t.id), ['storage-enclosure', 'switch-rj45', 'switch-qsfp', 'compute-node', 'storage-node']);
+  assert.ok(M.moveDeviceType(p, 'switch-rj45', 99), 'clamped to the end');
+  assert.equal(p.deviceTypes[4].id, 'switch-rj45');
+  assert.ok(!M.moveDeviceType(p, 'switch-rj45', 4), 'no change');
+  assert.ok(!M.moveDeviceType(p, 'nope', 0));
+  assert.deepEqual(M.placeableTypes(p).map((t) => t.id).slice(-2), ['switch-rj45', 'reserved'], 'reserved space stays last');
+
+  assert.ok(M.moveRackType(p, 'rack-42', 0));
+  assert.deepEqual(p.rackTypes.map((t) => t.id), ['rack-42', 'rack-47', 'rack-48']);
+  const row = M.addRow(p, 'f1', { racks: 2 });
+  assert.deepEqual(row.racks.map((r) => r.type), ['rack-42', 'rack-42']);
+  M.setRackType(p, row.racks[1].id, 'rack-48');
+  assert.equal(M.addRack(p, row.id).type, 'rack-48', 'a new rack still takes its neighbour’s type');
+  assert.equal(M.addRack(p, 'row1').type, 'rack-47');
+});
+
 test('rack types refuse changes that would push devices out', () => {
   const p = project([['compute-node', 'r1', 'u', 44, 'low'], ['switch-rj45', 'r2', 'side', 1, 'side']]);
   assert.match(M.updateRackType(p, 'rack-47', { units: 42 }), /low would stick out/);

@@ -2665,6 +2665,7 @@
           : `<span class="cat-rack" style="--u:${t.units}" aria-hidden="true"></span>`;
         return (
           `<button type="button" role="option" class="cat-item" data-id="${esc(t.id)}" aria-selected="${t.id === cat.id}">` +
+          `<span class="cat-grip" title="Drag to reorder" aria-hidden="true">${icon('grip', 'ic-sm')}</span>` +
           `${art}<span class="cat-meta"><span class="cat-name">${esc(devices ? t.label : t.name)}</span><span class="cat-sub">${esc(sub)}</span></span>` +
           `<span class="cat-count" title="${n} in use">${n}</span></button>`
         );
@@ -2701,6 +2702,15 @@
     });
   });
 
+  /** Buttons moving the selected type up or down its list. */
+  function orderButtons(list, id) {
+    const i = list.findIndex((t) => t.id === id);
+    return (
+      `<button type="button" class="btn icon sm" data-cat-move="-1" title="Move up (Alt+↑)" aria-label="Move up in the list"${i <= 0 ? ' disabled' : ''}>${icon('up')}</button>` +
+      `<button type="button" class="btn icon sm" data-cat-move="1" title="Move down (Alt+↓)" aria-label="Move down in the list"${i >= list.length - 1 ? ' disabled' : ''}>${icon('down')}</button>`
+    );
+  }
+
   function deviceTypeForm(t) {
     const n = catalogUse('devices', t.id);
     const pv = R.renderPreview(t, ui.theme, '#2f6fdb', t.defaultName, measure);
@@ -2718,7 +2728,7 @@
       `<div class="field"><label for="cat-weight">Weight (kg)</label><input id="cat-weight" data-prop="weightKg" data-num type="number" min="0" step="0.5" value="${t.weightKg}"></div>` +
       `</div>` +
       `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
-      `<div class="cat-actions"><span class="sec-hint">${n ? `${plural(n, 'device')} of this type` : 'Not used yet'}</span><span class="spacer"></span>` +
+      `<div class="cat-actions">${orderButtons(project.deviceTypes, t.id)}<span class="sec-hint">${n ? `${plural(n, 'device')} of this type` : 'Not used yet'}</span><span class="spacer"></span>` +
       `<button type="button" class="btn sm danger-text" id="cat-delete">${icon('trash')}Delete type</button></div>`
     );
   }
@@ -2736,7 +2746,7 @@
       `</div>` +
       `<p class="sec-hint">Up to ${maxSlots} side slot${maxSlots === 1 ? '' : 's'} fit a ${t.units}U rack. A budget of 0 means none; racks over their budget are flagged in red.</p>` +
       `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
-      `<div class="cat-actions"><span class="sec-hint">${n ? `Used by ${plural(n, 'rack')}` : 'Not used yet'}</span><span class="spacer"></span>` +
+      `<div class="cat-actions">${orderButtons(project.rackTypes, t.id)}<span class="sec-hint">${n ? `Used by ${plural(n, 'rack')}` : 'Not used yet'}</span><span class="spacer"></span>` +
       `<button type="button" class="btn sm danger-text" id="cat-delete"${n || project.rackTypes.length <= 1 ? ' disabled' : ''} title="${n ? 'Give its racks another type first' : ''}">${icon('trash')}Delete type</button></div>`
     );
   }
@@ -2788,9 +2798,108 @@
     cat.error = '';
     renderCatalog();
   });
+  /** Moves a type to `toIndex` of its list and keeps it selected. */
+  function moveCatalogItem(id, toIndex, refocus) {
+    const move = cat.tab === 'devices' ? M.moveDeviceType : M.moveRackType;
+    commit((p) => (move(p, id, toIndex) ? undefined : false));
+    cat.id = id;
+    cat.error = '';
+    renderCatalog();
+    const item = $(`#cat-list .cat-item[data-id="${CSS.escape(id)}"]`);
+    if (item && refocus) item.focus();
+    if (item) item.scrollIntoView({ block: 'nearest' });
+  }
+
+  $('#cat-form').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat-move]');
+    if (!b) return;
+    const list = cat.tab === 'devices' ? project.deviceTypes : project.rackTypes;
+    moveCatalogItem(cat.id, list.findIndex((t) => t.id === cat.id) + Number(b.dataset.catMove));
+    const again = $(`#cat-form [data-cat-move="${b.dataset.catMove}"]`);
+    if (again && !again.disabled) again.focus();
+  });
+
+  // Arrow keys walk the list; with Alt they move the focused type.
+  $('#cat-list').addEventListener('keydown', (e) => {
+    const item = e.target.closest('.cat-item');
+    if (!item || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    const items = $$('.cat-item', $('#cat-list'));
+    const i = items.indexOf(item);
+    const dir = e.key === 'ArrowUp' ? -1 : 1;
+    if (e.altKey) return moveCatalogItem(item.dataset.id, i + dir, true);
+    const next = items[i + dir];
+    if (!next) return;
+    cat.id = next.dataset.id;
+    cat.error = '';
+    renderCatalog();
+    $(`#cat-list .cat-item[data-id="${CSS.escape(cat.id)}"]`).focus();
+  });
+
+  // Drag to reorder: anywhere on a type with a mouse, by its grip on touch screens.
+  let catDrag = null;
+  function endCatDrag() {
+    $('#cat-list').classList.remove('is-sorting');
+    $$('#cat-list .cat-item').forEach((it) => it.classList.remove('is-dragging', 'drop-before', 'drop-after'));
+  }
+  $('#cat-list').addEventListener('pointerdown', (e) => {
+    const item = e.target.closest('.cat-item');
+    if (!item || e.button !== 0) return;
+    const grip = e.target.closest('.cat-grip');
+    if (e.pointerType !== 'mouse' && !grip) return;
+    if (grip) e.preventDefault();
+    catDrag = { id: item.dataset.id, pointerId: e.pointerId, y: e.clientY, active: false, to: null };
+  });
+  window.addEventListener('pointermove', (e) => {
+    const d = catDrag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const list = $('#cat-list');
+    if (!d.active) {
+      if (Math.abs(e.clientY - d.y) < 5) return;
+      d.active = true;
+      list.classList.add('is-sorting');
+      const src = list.querySelector(`.cat-item[data-id="${CSS.escape(d.id)}"]`);
+      if (src) src.classList.add('is-dragging');
+    }
+    const lr = list.getBoundingClientRect();
+    if (e.clientY < lr.top + 24) list.scrollTop -= 10;
+    else if (e.clientY > lr.bottom - 24) list.scrollTop += 10;
+    const items = $$('.cat-item', list);
+    let to = items.length;
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i].getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) {
+        to = i;
+        break;
+      }
+    }
+    d.to = to;
+    items.forEach((it, i) => {
+      it.classList.toggle('drop-before', i === to);
+      it.classList.toggle('drop-after', to === items.length && i === items.length - 1);
+    });
+  });
+  window.addEventListener('pointerup', (e) => {
+    const d = catDrag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    catDrag = null;
+    if (!d.active) return;
+    endCatDrag();
+    // The click that ends a drag is not a selection.
+    cat.skipClick = true;
+    setTimeout(() => (cat.skipClick = false));
+    const from = $$('#cat-list .cat-item').findIndex((it) => it.dataset.id === d.id);
+    moveCatalogItem(d.id, d.to > from ? d.to - 1 : d.to);
+  });
+  window.addEventListener('pointercancel', (e) => {
+    if (!catDrag || e.pointerId !== catDrag.pointerId) return;
+    catDrag = null;
+    endCatDrag();
+  });
+
   $('#cat-list').addEventListener('click', (e) => {
     const item = e.target.closest('.cat-item');
-    if (!item) return;
+    if (!item || cat.skipClick) return;
     cat.id = item.dataset.id;
     cat.error = '';
     renderCatalog();

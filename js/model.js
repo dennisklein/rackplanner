@@ -396,6 +396,22 @@
     project.devices = project.devices.filter((d) => d.type !== id);
   }
 
+  function moveInList(list, id, toIndex) {
+    const i = list.findIndex((t) => t.id === id);
+    const j = Math.max(0, Math.min(list.length - 1, toIndex));
+    if (i < 0 || i === j) return false;
+    list.splice(j, 0, list.splice(i, 1)[0]);
+    return true;
+  }
+  /** Moves a device type to position `toIndex` of the catalog; the parts panel follows this order. */
+  function moveDeviceType(project, id, toIndex) {
+    return moveInList(project.deviceTypes, id, toIndex);
+  }
+  /** Moves a rack type to position `toIndex`; the first one is used for racks in new rows. */
+  function moveRackType(project, id, toIndex) {
+    return moveInList(project.rackTypes, id, toIndex);
+  }
+
   function addRackType(project, template) {
     if (project.rackTypes.length >= LIMITS.rackTypes) return null;
     const t = cleanRackType(template);
@@ -543,8 +559,8 @@
 
   /**
    * Adds an empty rack to a row at `opts.index` (default: the end). It gets
-   * the type of its neighbour unless `opts.type` says otherwise. Null when
-   * the row already has sixteen racks.
+   * `opts.type`, else the type of its neighbour, else the first rack type of
+   * the catalog. Null when the row already has sixteen racks.
    */
   function addRack(project, rowId, opts) {
     const o = opts || {};
@@ -555,7 +571,7 @@
     const type =
       (o.type && rackTypeById(project, o.type) && o.type) ||
       (neighbour && rackTypeById(project, neighbour.type) && neighbour.type) ||
-      (rackTypeById(project, FALLBACK_RACK_TYPE.id) ? FALLBACK_RACK_TYPE.id : project.rackTypes[0].id);
+      project.rackTypes[0].id;
     const rack = { id: nextId('r', structureIds(project)), name: str(o.name, 60) || nextRackName(project, rowId), type };
     row.racks.splice(index, 0, rack);
     return rack;
@@ -1545,6 +1561,8 @@
     addDeviceType,
     updateDeviceType,
     deleteDeviceType,
+    moveDeviceType,
+    moveRackType,
     addRackType,
     updateRackType,
     rackTypeUse,

@@ -108,7 +108,10 @@ makes a 1U PDU look like a vertical power strip.
   delete them, and show their totals.
 - **Catalog**: the **Catalog** button above the devices edits device and
   rack types. Changes apply at once and are checked: a type can't grow if its
-  devices would then overlap or stick out of their racks.
+  devices would then overlap or stick out of their racks. Drag types by their
+  grip to reorder them (or use the arrow buttons, or <kbd>Alt</kbd>+<kbd>↑</kbd>
+  <kbd>↓</kbd>): the devices panel shows device types in this order, and
+  racks in new rows get the first rack type.
 - **Power and weight**: rack labels show units and kW used; a second bar fills
   toward the power budget and turns red, with a “!”, when a rack is over its
   power or weight budget. The inspector shows the numbers for a rack, row,

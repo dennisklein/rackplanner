@@ -66,7 +66,7 @@
    */
   function readLayout(raw, p, warnings) {
     const rackIds = new Map();
-    const defaultType = p.rackTypes.some((t) => t.id === 'rack-47') ? 'rack-47' : p.rackTypes[0].id;
+    const defaultType = p.rackTypes[0].id;
     const rackType = (v, name) => {
       const id = idOf(v);
       if (id && p.rackTypes.some((t) => t.id === id)) return id;
