@@ -249,13 +249,37 @@ test('a custom device type appears in the parts bin and can be placed', async ({
   await page.click('#place-submit');
   await expect(devices(page)).toHaveCount(38);
 
-  // A type in use refuses a height its devices can't take.
+  // Clicking another type right after editing a field selects it.
   await page.click('#btn-catalog');
+  await page.click(`.cat-item[data-id="${typeId}"]`);
+  await page.fill('#cat-power', '123');
+  await page.click('.cat-item[data-id="storage-node"]');
+  await expect(page.locator('#cat-label')).toHaveValue('Storage node');
+  await page.click(`.cat-item[data-id="${typeId}"]`);
+  await expect(page.locator('#cat-power')).toHaveValue('123');
+
+  // A type in use refuses a height its devices can't take.
   await page.click(`.cat-item[data-id="compute-node"]`);
   await page.fill('#cat-height', '3');
   await page.press('#cat-height', 'Tab');
   await expect(page.locator('#cat-error')).toContainText('does not fit');
   await expect(page.locator('#cat-height')).toHaveValue('2');
+});
+
+test('the closed place dialog ignores the browser’s own undo', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await dragPart(page, 'pdu', await spot(page, 'pdu', { rack: 'r1', kind: 'u', at: 30 }));
+  await page.mouse.up();
+  await page.fill('#place-name', 'xyz');
+  await page.keyboard.press('Escape');
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  await page.click('#plan-name');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(100);
+  expect(errors).toEqual([]);
 });
 
 test('rack types set height and budgets; racks over budget are flagged', async ({ page }) => {
@@ -400,6 +424,38 @@ test('plans are kept in the browser and can be switched', async ({ page }) => {
   await page.click('.plan-item:has-text("Hall 3") [data-plan-act="del"]');
   await page.click('#confirm-ok');
   await expect(page.locator('.plan-item')).toHaveCount(1);
+});
+
+test('deleting the open plan removes it for good; viewing plans does not touch them', async ({ page }) => {
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  // Pretend the example was last edited long ago; opening the list must not change that.
+  await page.evaluate(() => {
+    const key = 'rackplanner.library.v1';
+    const index = JSON.parse(localStorage.getItem(key));
+    index.plans.forEach((p) => {
+      if (p.name === 'Hall 2 expansion') p.updated = Date.UTC(2020, 0, 2);
+    });
+    localStorage.setItem(key, JSON.stringify(index));
+  });
+  await page.click('#btn-plans');
+  await expect(page.locator('.plan-item:has-text("Hall 2 expansion") .plan-sub')).toContainText('edited 2020-01-02');
+
+  await page.click('.plan-item.is-current [data-plan-act="del"]');
+  await page.click('#confirm-ok');
+  await expect(page.locator('.plan-item')).toHaveCount(1);
+  await expect(page.locator('.plan-item.is-current')).toContainText('Hall 2 expansion');
+  await page.click('#dlg-plans button[value="ok"]');
+  await expect(devices(page)).toHaveCount(37);
+  await page.reload();
+  await page.click('#btn-plans');
+  await expect(page.locator('.plan-item')).toHaveCount(1);
+
+  // Deleting the only plan leaves one fresh empty plan.
+  await page.click('.plan-item.is-current [data-plan-act="del"]');
+  await page.click('#confirm-ok');
+  await expect(page.locator('.plan-item')).toHaveCount(1);
+  await expect(page.locator('.plan-item.is-current')).toContainText('Untitled rack plan');
 });
 
 test('a share link opens the plan in another browser', async ({ page, browser }) => {

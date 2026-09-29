@@ -250,8 +250,17 @@
     const pos = locateRack(project, id);
     return pos ? pos.rack : null;
   }
-  function rackIds(project) {
-    return new Set(allRacks(project).map((r) => r.rack.id));
+  /** Ids of all floors, rows and racks; they share one id space. */
+  function structureIds(project) {
+    const ids = new Set();
+    for (const f of project.floors) {
+      ids.add(f.id);
+      for (const r of f.rows) {
+        ids.add(r.id);
+        for (const k of r.racks) ids.add(k.id);
+      }
+    }
+    return ids;
   }
 
   const asRack = (project, rack) => (typeof rack === 'string' ? rackById(project, rack) : rack);
@@ -514,7 +523,7 @@
   function addFloor(project, opts) {
     const o = opts || {};
     if (project.floors.length >= LIMITS.floors) return null;
-    const floor = { id: nextId('f', new Set(project.floors.map((f) => f.id))), name: str(o.name, 60) || nextFloorName(project), rows: [] };
+    const floor = { id: nextId('f', structureIds(project)), name: str(o.name, 60) || nextFloorName(project), rows: [] };
     project.floors.splice(o.index == null ? project.floors.length : o.index, 0, floor);
     addRow(project, floor.id, { racks: o.racks == null ? DEFAULT_RACKS : o.racks, type: o.type });
     return floor;
@@ -525,8 +534,7 @@
     const o = opts || {};
     const floor = floorById(project, floorId);
     if (!floor || floor.rows.length >= LIMITS.rows) return null;
-    const used = new Set(allRows(project).map((r) => r.row.id));
-    const row = { id: nextId('row', used), name: str(o.name, 60) || nextRowName(floor), racks: [] };
+    const row = { id: nextId('row', structureIds(project)), name: str(o.name, 60) || nextRowName(floor), racks: [] };
     floor.rows.splice(o.index == null ? floor.rows.length : o.index, 0, row);
     const n = clampInt(o.racks, 1, LIMITS.racks, DEFAULT_RACKS);
     for (let i = 0; i < n; i++) addRack(project, row.id, { type: o.type });
@@ -548,7 +556,7 @@
       (o.type && rackTypeById(project, o.type) && o.type) ||
       (neighbour && rackTypeById(project, neighbour.type) && neighbour.type) ||
       (rackTypeById(project, FALLBACK_RACK_TYPE.id) ? FALLBACK_RACK_TYPE.id : project.rackTypes[0].id);
-    const rack = { id: nextId('r', rackIds(project)), name: str(o.name, 60) || nextRackName(project, rowId), type };
+    const rack = { id: nextId('r', structureIds(project)), name: str(o.name, 60) || nextRackName(project, rowId), type };
     row.racks.splice(index, 0, rack);
     return rack;
   }
@@ -1370,6 +1378,7 @@
     letters,
     uid,
     nextId,
+    structureIds,
     normalizeHex,
     typeOf,
     placeableTypes,

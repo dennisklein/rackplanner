@@ -75,9 +75,8 @@
     };
 
     if (Array.isArray(raw.floors)) {
-      const floorIds = new Set();
-      const rowIds = new Set();
-      const usedRacks = new Set();
+      // Floors, rows and racks share one id space, so an id names one thing.
+      const used = new Set();
       const unnamed = new Set();
       let droppedFloors = 0;
       for (const f of raw.floors.filter(isObj)) {
@@ -87,9 +86,9 @@
         }
         const floor = { id: '', name: str(f.name, 60) || M.nextFloorName(p), rows: [] };
         let fid = idOf(f.id);
-        if (!fid || floorIds.has(fid)) fid = M.nextId('f', floorIds);
+        if (!fid || used.has(fid)) fid = M.nextId('f', used);
         floor.id = fid;
-        floorIds.add(fid);
+        used.add(fid);
         let droppedRows = 0;
         for (const r of (Array.isArray(f.rows) ? f.rows : []).filter(isObj)) {
           if (floor.rows.length >= L.rows) {
@@ -98,17 +97,17 @@
           }
           const row = { id: '', name: str(r.name, 60) || M.nextRowName(floor), racks: [] };
           let rid = idOf(r.id);
-          if (!rid || rowIds.has(rid)) rid = M.nextId('row', rowIds);
+          if (!rid || used.has(rid)) rid = M.nextId('row', used);
           row.id = rid;
-          rowIds.add(rid);
+          used.add(rid);
           const racks = (Array.isArray(r.racks) ? r.racks : []).filter(isObj);
           if (racks.length > L.racks) warnings.push(`${floor.name} · ${row.name}: only the first ${L.racks} racks were kept.`);
           for (const k of racks.slice(0, L.racks)) {
             const name = str(k.name, 60);
             const fileId = idOf(k.id);
             let id = fileId;
-            if (!id || usedRacks.has(id)) id = M.nextId('r', usedRacks);
-            usedRacks.add(id);
+            if (!id || used.has(id)) id = M.nextId('r', used);
+            used.add(id);
             if (fileId && !rackIds.has(fileId)) rackIds.set(fileId, id);
             else if (fileId) warnings.push(`Rack id “${fileId}” is used twice; devices go to the first rack with it.`);
             if (!name) unnamed.add(id);
@@ -172,14 +171,17 @@
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
     const rackIds = readLayout(raw, p, warnings);
 
-    const clusterIds = new Set();
+    // Cluster ids as written in the file → ids in the plan. Ids starting
+    // with "__" are reserved for the app ("__none", "__new") and replaced.
+    const clusterIds = new Map();
     (Array.isArray(raw.clusters) ? raw.clusters : []).forEach((c, i) => {
       if (!isObj(c)) return;
-      const id = idOf(c.id);
+      const fileId = idOf(c.id);
       const label = str(c.name, 60) || `#${i + 1}`;
-      if (!id) return void warnings.push(`Skipped cluster ${label}: it has no id.`);
-      if (clusterIds.has(id)) return void warnings.push(`Skipped cluster ${label}: its id “${id}” is used twice.`);
-      clusterIds.add(id);
+      if (!fileId) return void warnings.push(`Skipped cluster ${label}: it has no id.`);
+      if (clusterIds.has(fileId)) return void warnings.push(`Skipped cluster ${label}: its id “${fileId}” is used twice.`);
+      const id = fileId.startsWith('__') ? M.uid('c') : fileId;
+      clusterIds.set(fileId, id);
       p.clusters.push({ id, name: str(c.name, 60) || M.nextClusterName(p), color: M.normalizeHex(c.color) || M.nextClusterColor(p) });
     });
 
@@ -220,7 +222,7 @@
         id,
         type: type.id,
         name,
-        cluster: clusterIds.has(cluster) ? cluster : null,
+        cluster: clusterIds.has(cluster) ? clusterIds.get(cluster) : null,
         notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : '',
         powerW: M.clampNum(d.powerW, 0, 100000, null),
         weightKg: M.clampNum(d.weightKg, 0, 5000, null),
@@ -405,7 +407,7 @@
     }
     function createFloor(name) {
       if (work.floors.length >= L.floors) return null;
-      const f = { id: M.nextId('f', new Set(work.floors.map((x) => x.id))), name: name || M.nextFloorName(work), rows: [] };
+      const f = { id: M.nextId('f', M.structureIds(work)), name: name || M.nextFloorName(work), rows: [] };
       work.floors.push(f);
       return f;
     }
@@ -415,7 +417,7 @@
     }
     function createRow(floor, name) {
       if (floor.rows.length >= L.rows) return null;
-      const r = { id: M.nextId('row', new Set(M.allRows(work).map((x) => x.row.id))), name: name || M.nextRowName(floor), racks: [] };
+      const r = { id: M.nextId('row', M.structureIds(work)), name: name || M.nextRowName(floor), racks: [] };
       floor.rows.push(r);
       return r;
     }

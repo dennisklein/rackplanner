@@ -158,6 +158,30 @@ test('version 3 plans are checked against their limits and catalogs', () => {
   ]) assert.ok(warnings.includes(w), w);
 });
 
+test('floors, rows and racks never share an id, and reserved cluster ids are replaced', () => {
+  const { project: p, warnings } = IO.normalizeProject({
+    version: 3,
+    floors: [{ id: 1, rows: [{ id: 1, name: 'Row A', racks: [{ id: 1 }, { id: 2 }] }, { id: 2, name: 'Row B', racks: [{ id: 3 }, { id: 'row9' }] }] }],
+    clusters: [{ id: '__new', name: 'Sneaky', color: '#d64545' }, { id: '__none', name: 'Other' }],
+    devices: [
+      { id: 'a', type: 'compute-node', cluster: '__new', loc: { rack: 1, kind: 'u', at: 1 } },
+      { id: 'b', type: 'compute-node', cluster: '__none', loc: { rack: 2, kind: 'u', at: 1 } },
+      { id: 'c', type: 'compute-node', loc: { rack: 3, kind: 'u', at: 1 } },
+    ],
+  });
+  assert.deepEqual(warnings, []);
+  const ids = [...M.structureIds(p)];
+  assert.equal(new Set(ids).size, 7, 'one floor, two rows, four racks, all distinct');
+  assert.deepEqual(M.devicesWithin(p, p.floors[0].rows[1].id).map((d) => d.id), ['c'], 'a row holds only its own devices');
+  assert.deepEqual(M.devicesWithin(p, M.locateRack(p, M.deviceById(p, 'a').loc.rack).rack.id).map((d) => d.id), ['a']);
+  assert.ok(p.clusters.every((c) => !c.id.startsWith('__')));
+  assert.equal(M.clusterById(p, M.deviceById(p, 'a').cluster).name, 'Sneaky', 'devices follow their cluster to its new id');
+  assert.equal(M.clusterById(p, M.deviceById(p, 'b').cluster).name, 'Other');
+  const row = M.addRow(p, p.floors[0].id);
+  assert.equal(new Set(M.structureIds(p)).size, 7 + 1 + 3, 'new rows and racks get ids nobody uses, not even a rack called row9');
+  assert.ok(row);
+});
+
 test('toCSV lists devices by floor, row and rack, top to bottom, and neutralises formulas', () => {
   const p = M.createEmptyProject();
   p.clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });

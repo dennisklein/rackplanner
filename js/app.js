@@ -125,6 +125,7 @@
   let planId = null;
   let project = null;
   let projectJSON = '';
+  let savedJSON = null; // projectJSON as last loaded or saved
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
   const ui = {
     selection: null, // { kind: 'devices', ids } | { kind: 'rack' | 'row' | 'floor', id }
@@ -160,6 +161,7 @@
     planId = id;
     project = p;
     projectJSON = JSON.stringify(project);
+    savedJSON = projectJSON;
     history.past = [];
     history.future = [];
     history.chars = 0;
@@ -168,6 +170,8 @@
     ui.focusCluster = null;
     ui.hoverCluster = null;
     ui.armed = null;
+    // Undo buttons in toasts refer to the previous plan.
+    el.toasts.textContent = '';
     const remembered = prefs.rows[id];
     ui.rowId = remembered && M.rowById(project, remembered) ? remembered : M.allRows(project)[0].row.id;
     if (id) lib.setCurrent(id);
@@ -194,13 +198,14 @@
   function flushPersist() {
     clearTimeout(persistTimer);
     persistTimer = null;
-    if (!project) return;
+    if (!project || (planId && projectJSON === savedJSON)) return;
     let ok = false;
     if (planId) ok = lib.save(planId, project);
     else if ((planId = lib.add(project))) {
       lib.setCurrent(planId);
       ok = true;
     }
+    if (ok) savedJSON = projectJSON;
     if (!ok && !storageWarned) {
       storageWarned = true;
       toast('This browser did not save the plan: its storage is full or blocked. Export the plan file to keep your work.', { warn: true });
@@ -1339,10 +1344,7 @@
     });
     $$('[data-open-row]', el.inspector).forEach((b) => b.addEventListener('click', () => setRow(b.dataset.openRow, { view: 'sheet' })));
     $$('[data-floor-act]', el.inspector).forEach((b) => b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)))));
-    $('#floor-map').addEventListener('click', () => {
-      if (currentRow().floor.id !== id) setRow(floor.rows[0].id, { render: false });
-      setView('map');
-    });
+    $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
     $('#floor-add-row').addEventListener('click', () => addRowTo(id));
     $('#floor-del').addEventListener('click', () => deleteFloor(id));
   }
@@ -2307,8 +2309,8 @@
     renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => (place.newColor = c));
     $('#place-new').hidden = initial !== '__new';
     showError('#place-error', '');
-    updatePlacePreview();
     openDialog($('#dlg-place'));
+    updatePlacePreview();
     const name = $('#place-name');
     name.focus();
     name.select();
@@ -2320,6 +2322,8 @@
   }
 
   function updatePlacePreview() {
+    // Its inputs can still change while closed (the browser's own undo).
+    if (!$('#dlg-place').open) return;
     const type = M.typeOf(project, place.typeId);
     const height = placeHeight();
     const qtyInput = $('#place-qty');
@@ -2587,11 +2591,12 @@
 
   // Catalog dialog -----------------------------------------------------
 
-  const cat = { tab: 'devices', id: null };
+  const cat = { tab: 'devices', id: null, error: '', pressed: false, pending: false };
 
   function openCatalog(tab, id) {
     cat.tab = tab || cat.tab;
     cat.id = id || null;
+    cat.error = '';
     renderCatalog();
     openDialog($('#dlg-catalog'));
   }
@@ -2630,8 +2635,29 @@
       : `<button type="button" role="menuitem" data-template="rack"><span>New rack type</span><small>42U, 2 side slots</small></button>` +
         (cat.id ? `<button type="button" role="menuitem" data-template="copy"><span>Copy of the selected type</span><small>${esc(M.rackTypeById(project, cat.id).name)}</small></button>` : '');
     $('#cat-form').innerHTML = cat.id ? (devices ? deviceTypeForm(M.typeOf(project, cat.id)) : rackTypeForm(M.rackTypeById(project, cat.id))) : `<p class="empty-note">No types yet. Add one with “New type”.</p>`;
+    if (cat.error) showError('#cat-error', cat.error);
     if (focusId && $(`#${focusId}`)) $(`#${focusId}`).focus();
   }
+
+  /**
+   * Redraws the catalog, but not while a pointer is down in it: a field
+   * commits on blur, which happens on pointerdown, and rebuilding the
+   * buttons then would swallow the click that follows.
+   */
+  function refreshCatalog() {
+    if (cat.pressed) cat.pending = true;
+    else renderCatalog();
+  }
+  $('#dlg-catalog').addEventListener('pointerdown', () => (cat.pressed = true));
+  window.addEventListener('pointerup', () => {
+    if (!cat.pressed) return;
+    cat.pressed = false;
+    // After the click that belongs to this pointerup.
+    if (cat.pending) setTimeout(() => {
+      cat.pending = false;
+      if ($('#dlg-catalog').open) renderCatalog();
+    });
+  });
 
   function deviceTypeForm(t) {
     const n = catalogUse('devices', t.id);
@@ -2684,8 +2710,8 @@
       err = cat.tab === 'devices' ? M.updateDeviceType(p, id, { [prop]: value }) : M.updateRackType(p, id, { [prop]: value });
       return err ? false : undefined;
     });
-    renderCatalog();
-    if (err) showError('#cat-error', err);
+    cat.error = err || '';
+    refreshCatalog();
   }
 
   $('#cat-form').addEventListener('change', (e) => {
@@ -2717,18 +2743,21 @@
       if (err) return showError('#cat-error', err);
     }
     cat.id = null;
+    cat.error = '';
     renderCatalog();
   });
   $('#cat-list').addEventListener('click', (e) => {
     const item = e.target.closest('.cat-item');
     if (!item) return;
     cat.id = item.dataset.id;
+    cat.error = '';
     renderCatalog();
   });
   $$('#dlg-catalog [role="tab"]').forEach((b) =>
     b.addEventListener('click', () => {
       cat.tab = b.dataset.tab;
       cat.id = null;
+      cat.error = '';
       renderCatalog();
     })
   );
@@ -2751,6 +2780,7 @@
     });
     if (!made) return toast(`The catalog is full`, { warn: true });
     cat.id = made.id;
+    cat.error = '';
     renderCatalog();
     const first = $('#cat-form input');
     if (first) first.select();
@@ -2842,9 +2872,17 @@
       openDialog($('#dlg-plans'));
       if (!ok) return;
       const text = lib.load(id);
+      const wasOpen = id === planId;
+      if (wasOpen) {
+        // Nothing may save the deleted plan back while switching away from it.
+        clearTimeout(persistTimer);
+        persistTimer = null;
+        planId = null;
+        project = null;
+      }
       lib.remove(id);
-      if (id === planId) {
-        const next = lib.list()[0];
+      if (wasOpen) {
+        const next = lib.list().find((p) => lib.load(p.id));
         if (next) switchPlan(next.id);
         else createPlan(M.createEmptyProject(), 'Started an empty plan');
       }
