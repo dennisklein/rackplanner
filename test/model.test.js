@@ -16,7 +16,7 @@ function project(devices) {
 
 test('racks have 47 units and two 1U side slots', () => {
   const p = M.createEmptyProject();
-  assert.equal(p.racks.length, 3);
+  assert.equal(p.racks.length, 3, 'three racks by default');
   assert.equal(M.RACK_UNITS, 47);
   assert.equal(M.SIDE_SLOTS, 2);
   assert.deepEqual(
@@ -29,6 +29,28 @@ test('racks have 47 units and two 1U side slots', () => {
       ['storage-enclosure', 4],
     ]
   );
+});
+
+test('rack count can be set between 1 and 5', () => {
+  assert.deepEqual(M.createEmptyProject(1).racks, [{ id: 'r1', name: 'Rack A01' }]);
+  assert.equal(M.createEmptyProject(9).racks.length, 5, 'clamped to 5');
+  assert.equal(M.createEmptyProject(0).racks.length, 3, 'falls back to the default');
+
+  const p = M.createExampleProject();
+  M.setRackCount(p, 5);
+  assert.deepEqual(p.racks.map((r) => r.id), ['r1', 'r2', 'r3', 'r4', 'r5']);
+  assert.deepEqual(p.racks.slice(3).map((r) => r.name), ['Rack A04', 'Rack A05']);
+  assert.equal(p.devices.length, 37, 'adding racks keeps every device');
+
+  const inR2andR3 = p.devices.filter((d) => d.loc.rack !== 'r1').length;
+  assert.equal(M.devicesBeyond(p, 1).length, inR2andR3);
+  assert.equal(M.devicesBeyond(p, 3).length, 0, 'r4 and r5 are empty');
+  M.setRackCount(p, 1);
+  assert.deepEqual(p.racks.map((r) => r.id), ['r1']);
+  assert.ok(p.devices.every((d) => d.loc.rack === 'r1'), 'devices in removed racks are gone');
+  assert.equal(p.devices.length, 37 - inR2andR3);
+  M.setRackCount(p, 0);
+  assert.equal(p.racks.length, 1, 'never fewer than one rack');
 });
 
 test('canPlace keeps devices inside U1–U47', () => {
@@ -140,7 +162,7 @@ test('rackStats reports usage and the largest free block', () => {
 test('normalizeProject drops what does not fit and keeps the rest', () => {
   const raw = {
     name: '  Hall 3  ',
-    racks: [{ id: 'x', name: 'West' }, { id: 'y' }, { id: 'z', name: 'East' }, { id: 'extra' }],
+    racks: [{ id: 'x', name: 'West' }, { id: 'y' }, { id: 'z', name: 'East' }],
     clusters: [
       { id: 'c1', name: 'HPC', color: '#ABC' },
       { id: 'c1', name: 'dupe', color: '#fff' },
@@ -166,9 +188,22 @@ test('normalizeProject drops what does not fit and keeps the rest', () => {
   assert.equal(p.devices[1].cluster, null);
   assert.notEqual(p.devices[1].id, 'a', 'duplicate ids are replaced');
   assert.deepEqual(p.devices[1].loc, { rack: 'r3', kind: 'side', at: 1 });
-  assert.equal(warnings.length, 4);
+  assert.equal(warnings.length, 3);
   assert.throws(() => M.normalizeProject([]), /not a rack plan/);
   assert.throws(() => M.normalizeProject({ foo: 1 }), /not a rack plan/);
+});
+
+test('normalizeProject keeps between 1 and 5 racks', () => {
+  const racks = (n) => Array.from({ length: n }, (_, i) => ({ id: `rack-${i}`, name: `R${i}` }));
+  const dev = (rack) => ({ type: 'compute-node', name: `n-${rack}`, loc: { rack, kind: 'u', at: 1 } });
+  const one = M.normalizeProject({ racks: racks(1), devices: [dev('rack-0')] });
+  assert.deepEqual(one.project.racks, [{ id: 'r1', name: 'R0' }]);
+  assert.equal(one.project.devices.length, 1);
+  const seven = M.normalizeProject({ racks: racks(7), devices: [dev('rack-4'), dev('rack-6')] });
+  assert.equal(seven.project.racks.length, 5);
+  assert.deepEqual(seven.project.devices.map((d) => d.loc.rack), ['r5'], 'device in the 7th rack is dropped');
+  assert.equal(seven.warnings.length, 2);
+  assert.equal(M.normalizeProject({ devices: [] }).project.racks.length, 3, 'default when racks are missing');
 });
 
 test('version 1 plans, counted from the bottom, keep their layout', () => {

@@ -7,7 +7,7 @@
  *   {
  *     version: 2,
  *     name: 'Untitled rack plan',
- *     racks:    [{ id: 'r1', name: 'Rack A01' }, ...],          // always 3
+ *     racks:    [{ id: 'r1', name: 'Rack A01' }, ...],          // 1 to 5
  *     clusters: [{ id, name, color: '#rrggbb' }],
  *     devices:  [{ id, type, name, cluster: id|null, notes,
  *                  loc: { rack: 'r1', kind: 'u', at: 21 } }],   // at = lowest U
@@ -34,7 +34,9 @@
   const SCHEMA_VERSION = 2;
   const RACK_UNITS = 47;
   const SIDE_SLOTS = 2;
-  const RACK_COUNT = 3;
+  const MIN_RACKS = 1;
+  const MAX_RACKS = 5;
+  const DEFAULT_RACKS = 3;
 
   const DEVICE_TYPES = [
     { id: 'switch-rj45', label: '48-port switch', tag: 'SWITCH', spec: '1U · 48 × RJ45', height: 1, defaultName: 'sw-rj45-01' },
@@ -96,16 +98,47 @@
 
   // --------------------------------------------------------------- projects
 
-  function defaultRacks() {
-    return [
-      { id: 'r1', name: 'Rack A01' },
-      { id: 'r2', name: 'Rack A02' },
-      { id: 'r3', name: 'Rack A03' },
-    ];
+  function defaultRackName(index) {
+    return `Rack A${String(index + 1).padStart(2, '0')}`;
   }
 
-  function createEmptyProject() {
-    return { version: SCHEMA_VERSION, name: 'Untitled rack plan', racks: defaultRacks(), clusters: [], devices: [], meta: {} };
+  function clampRackCount(n) {
+    const v = Math.round(Number(n));
+    return Number.isFinite(v) ? Math.max(MIN_RACKS, Math.min(MAX_RACKS, v)) : DEFAULT_RACKS;
+  }
+
+  function createEmptyProject(rackCount) {
+    const racks = Array.from({ length: clampRackCount(rackCount || DEFAULT_RACKS) }, (_, i) => ({
+      id: `r${i + 1}`,
+      name: defaultRackName(i),
+    }));
+    return { version: SCHEMA_VERSION, name: 'Untitled rack plan', racks, clusters: [], devices: [], meta: {} };
+  }
+
+  /**
+   * Adds racks on the right or removes them from the right until the project
+   * has `n` racks (clamped to 1–5). Devices in removed racks are removed too.
+   */
+  function setRackCount(project, n) {
+    const count = clampRackCount(n);
+    while (project.racks.length < count) {
+      const used = new Set(project.racks.map((r) => r.id));
+      let k = project.racks.length + 1;
+      while (used.has(`r${k}`)) k++;
+      project.racks.push({ id: `r${k}`, name: defaultRackName(project.racks.length) });
+    }
+    if (project.racks.length > count) {
+      const removed = new Set(project.racks.slice(count).map((r) => r.id));
+      project.racks = project.racks.slice(0, count);
+      project.devices = project.devices.filter((d) => !removed.has(d.loc.rack));
+    }
+    return project;
+  }
+
+  /** Devices that setRackCount(project, n) would remove. */
+  function devicesBeyond(project, n) {
+    const keep = new Set(project.racks.slice(0, clampRackCount(n)).map((r) => r.id));
+    return project.devices.filter((d) => !keep.has(d.loc.rack));
   }
 
   function createExampleProject() {
@@ -428,21 +461,19 @@
       throw new Error('This file is not a rack plan: it has no racks or devices.');
     }
     const warnings = [];
-    const p = createEmptyProject();
+    const rawRacks = Array.isArray(raw.racks) ? raw.racks.filter((r) => r && typeof r === 'object') : [];
+    const p = createEmptyProject(rawRacks.length ? Math.min(rawRacks.length, MAX_RACKS) : DEFAULT_RACKS);
     // Version 1 counted units from the bottom of the rack.
     const bottomUp = Number(raw.version) === 1;
     const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
     if (str(raw.name, 120)) p.name = str(raw.name, 120);
 
     const rackIds = new Map(p.racks.map((r) => [r.id, r.id]));
-    (Array.isArray(raw.racks) ? raw.racks : []).slice(0, RACK_COUNT).forEach((r, i) => {
-      if (!r || typeof r !== 'object') return;
+    rawRacks.slice(0, MAX_RACKS).forEach((r, i) => {
       if (str(r.name, 60)) p.racks[i].name = str(r.name, 60);
       if (r.id != null) rackIds.set(String(r.id), p.racks[i].id);
     });
-    if (Array.isArray(raw.racks) && raw.racks.length > RACK_COUNT) {
-      warnings.push(`Only the first ${RACK_COUNT} racks were kept.`);
-    }
+    if (rawRacks.length > MAX_RACKS) warnings.push(`Only the first ${MAX_RACKS} racks were kept.`);
 
     const clusterIds = new Set();
     (Array.isArray(raw.clusters) ? raw.clusters : []).forEach((c) => {
@@ -523,7 +554,9 @@
     SCHEMA_VERSION,
     RACK_UNITS,
     SIDE_SLOTS,
-    RACK_COUNT,
+    MIN_RACKS,
+    MAX_RACKS,
+    DEFAULT_RACKS,
     DEVICE_TYPES,
     CLUSTER_COLORS,
     typeById,
@@ -535,6 +568,9 @@
     normalizeHex,
     createEmptyProject,
     createExampleProject,
+    defaultRackName,
+    setRackCount,
+    devicesBeyond,
     formatSpan,
     deviceSpan,
     canPlace,

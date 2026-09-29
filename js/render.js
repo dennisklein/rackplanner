@@ -33,7 +33,7 @@
   const U_TOP = RACK_TOP + FRAME;
   const U_BOTTOM = U_TOP + UH;
   const RACK_BOTTOM = U_BOTTOM + FRAME;
-  const SHEET_W = MX * 2 + M.RACK_COUNT * RACK_W + (M.RACK_COUNT - 1) * GAP;
+  const sheetWidth = (rackCount) => MX * 2 + rackCount * RACK_W + (rackCount - 1) * GAP;
   const FOOT_TOP = RACK_BOTTOM + PLINTH + 30;
   const SLOT_W = U;
   const SLOT_H = BAY_W;
@@ -457,7 +457,11 @@
     return s + '</g>';
   }
 
-  function legendLayout(project, measure) {
+  /**
+   * Lays out the cluster legend beside the title block, or above it when the
+   * sheet is too narrow for both side by side (one rack).
+   */
+  function legendLayout(project, width, measure) {
     const m = measure || approxMeasure;
     const items = project.clusters.map((c) => ({
       name: c.name,
@@ -466,7 +470,9 @@
     }));
     const unassigned = project.devices.filter((d) => !d.cluster).length;
     if (unassigned) items.push({ name: 'Unassigned', color: null, count: unassigned });
-    const maxW = SHEET_W - MX * 2 - TITLE_W - 40;
+    const inner = width - MX * 2;
+    const stacked = inner - TITLE_W - 40 < 240;
+    const maxW = stacked ? inner : inner - TITLE_W - 40;
     let x = 0;
     let row = 0;
     for (const it of items) {
@@ -481,7 +487,13 @@
       x += it.w;
     }
     const rows = items.length ? row + 1 : 1;
-    return { items, height: Math.max(TITLE_H, 20 + rows * 22) };
+    const legendH = 20 + rows * 22;
+    return {
+      items,
+      width,
+      titleY: stacked ? FOOT_TOP + legendH + 14 : FOOT_TOP,
+      height: stacked ? legendH + 14 + TITLE_H : Math.max(TITLE_H, legendH),
+    };
   }
 
   function footer(project, lay, T, theme, o, measure) {
@@ -498,8 +510,8 @@
     }
 
     // Title block in the lower right corner, like a drawing sheet.
-    const x = SHEET_W - MX - TITLE_W;
-    const y = y0;
+    const x = lay.width - MX - TITLE_W;
+    const y = lay.titleY;
     const c1 = 220;
     s += `<rect x="${x + 0.5}" y="${y + 0.5}" width="${TITLE_W - 1}" height="${TITLE_H - 1}" fill="${T.paper}" stroke="${T.ink2}"/>`;
     s += `<path d="M${x + c1 + 0.5} ${y}v${TITLE_H}M${x} ${y + 34.5}h${TITLE_W}" stroke="${T.ink2}" stroke-width="0.7"/>`;
@@ -508,7 +520,8 @@
     s += text(x + 7, y + 27, fitText(project.name, FONTS.title, c1 - 14, measure), FONTS.title, T.ink);
     s += cap(x + c1 + 7, y + 10, 'DATE');
     s += text(x + c1 + 7, y + 26, o.date || '', FONTS.stat, T.ink);
-    s += text(x + 7, y + 49.5, `${M.RACK_COUNT} racks · 19″ · ${M.RACK_UNITS}U + ${M.SIDE_SLOTS} side slots`, FONTS.small, T.ink2);
+    const n = project.racks.length;
+    s += text(x + 7, y + 49.5, `${n} rack${n === 1 ? '' : 's'} · 19″ · ${M.RACK_UNITS}U + ${M.SIDE_SLOTS} side slots`, FONTS.small, T.ink2);
     s += text(x + c1 + 7, y + 49.5, '1U = 44.45 mm', FONTS.small, T.ink2);
     return s;
   }
@@ -524,13 +537,14 @@
     const theme = o.theme === 'dark' ? 'dark' : 'light';
     const T = THEMES[theme];
     const measure = o.measure || approxMeasure;
-    const lay = legendLayout(project, measure);
+    const width = sheetWidth(project.racks.length);
+    const lay = legendLayout(project, width, measure);
     const height = Math.round(FOOT_TOP + lay.height + 30);
     let s = defs(theme, T);
-    s += `<rect class="sheet" width="${SHEET_W}" height="${height}" fill="${T.paper}"/>`;
-    s += `<rect width="${SHEET_W}" height="${height}" fill="url(#rp-grid-${theme})" pointer-events="none"/>`;
-    s += `<rect width="${SHEET_W}" height="${height}" fill="url(#rp-grid5-${theme})" pointer-events="none"/>`;
-    s += `<rect x="10.5" y="10.5" width="${SHEET_W - 21}" height="${height - 21}" fill="none" stroke="${T.border}" pointer-events="none"/>`;
+    s += `<rect class="sheet" width="${width}" height="${height}" fill="${T.paper}"/>`;
+    s += `<rect width="${width}" height="${height}" fill="url(#rp-grid-${theme})" pointer-events="none"/>`;
+    s += `<rect width="${width}" height="${height}" fill="url(#rp-grid5-${theme})" pointer-events="none"/>`;
+    s += `<rect x="10.5" y="10.5" width="${width - 21}" height="${height - 21}" fill="none" stroke="${T.border}" pointer-events="none"/>`;
 
     project.racks.forEach((rack, i) => {
       s += `<g class="rack" data-rack="${esc(rack.id)}">`;
@@ -553,7 +567,7 @@
         s += selectionMarks(r.x, r.y, r.w, r.h, T);
       }
     }
-    return { width: SHEET_W, height, body: s };
+    return { width, height, body: s };
   }
 
   /** Translucent preview of a device at `loc`, outlined green (fits) or red. */
@@ -618,7 +632,8 @@
   }
 
   return {
-    geometry: { U, BAY_W, RACK_W, SHEET_W, U_TOP, RACK_TOP, SLOT_H },
+    geometry: { U, BAY_W, RACK_W, U_TOP, RACK_TOP, SLOT_H },
+    sheetWidth,
     THEMES,
     FONTS,
     mix,

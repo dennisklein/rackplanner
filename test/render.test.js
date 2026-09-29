@@ -10,11 +10,24 @@ const G = R.geometry;
 test('scene renders every device once', () => {
   const p = M.createExampleProject();
   const out = R.renderScene(p, { theme: 'light', interactive: true, date: '2026-01-01' });
-  assert.equal(out.width, G.SHEET_W);
+  assert.equal(out.width, R.sheetWidth(3));
   for (const d of p.devices) {
     assert.equal(out.body.split(`data-id="${d.id}"`).length - 1, 1, d.name);
   }
   assert.ok(out.body.includes('tabindex="0"'));
+});
+
+test('the sheet grows with the rack count and fits one rack', () => {
+  const widths = [1, 2, 3, 4, 5].map((n) => R.renderScene(M.createEmptyProject(n), {}).width);
+  assert.deepEqual(widths, widths.slice().sort((a, b) => a - b));
+  const one = M.createExampleProject();
+  M.setRackCount(one, 1);
+  const out = R.renderScene(one, { date: '2026-01-01' });
+  assert.equal(out.width, R.sheetWidth(1));
+  assert.ok(!/(x|width)="-/.test(out.body), 'nothing is pushed off the sheet');
+  assert.ok(out.body.includes('1 rack ·'), 'title block counts racks');
+  const three = R.renderScene(M.createExampleProject(), {});
+  assert.ok(out.height > three.height, 'legend moves above the title block on a narrow sheet');
 });
 
 test('export SVG is standalone and escapes user text', () => {

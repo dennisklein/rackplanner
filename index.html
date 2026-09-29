@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rackplanner</title>
-<meta name="description" content="Plan datacenter rack layouts: place switches, compute and storage nodes in three 47U racks and color them by cluster.">
+<meta name="description" content="Plan datacenter rack layouts: place switches, compute and storage nodes in one to five 47U racks and color them by cluster.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='2' fill='%232a3038'/%3E%3Crect x='9' y='6' width='14' height='3' fill='%23f2c230'/%3E%3Crect x='9' y='11' width='14' height='6' fill='%232f6fdb'/%3E%3Crect x='9' y='19' width='14' height='6' fill='%230f9d8a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,6 +46,10 @@
       <input id="plan-name" class="plan-name" type="text" spellcheck="false" autocomplete="off" maxlength="120">
     </div>
     <div class="tb-actions">
+      <div class="rack-count">
+        <span class="rc-label" id="rack-count-label">Racks</span>
+        <div class="seg" id="rack-count" role="radiogroup" aria-labelledby="rack-count-label"></div>
+      </div>
       <div class="tb-group" role="group" aria-label="History">
         <button class="btn icon" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic"><use href="#i-undo"/></svg></button>
         <button class="btn icon" id="btn-redo" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic"><use href="#i-redo"/></svg></button>
@@ -65,7 +69,7 @@
       <div class="menu-wrap">
         <button class="btn" id="btn-new" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-new"><svg class="ic"><use href="#i-file"/></svg><span>New</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
         <div class="menu menu-right" id="menu-new" role="menu" hidden>
-          <button type="button" role="menuitem" data-new="empty"><span>Empty racks</span><small>Three empty 47U racks</small></button>
+          <button type="button" role="menuitem" data-new="empty"><span>Empty racks</span><small>Same number of racks, all empty</small></button>
           <button type="button" role="menuitem" data-new="example"><span>Example plan</span><small>Three racks with five clusters</small></button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 # Rackplanner
 
 A client-side single-page app for planning datacenter rack layouts. It draws
-three 19″ racks in elevation view as a schematic drawing sheet, and you place
+one to five 19″ racks in elevation view as a schematic drawing sheet, and you place
 switches, compute nodes and storage onto them. Devices get their own names and
 belong to color-coded clusters, so the equipment that works together stands out.
 
@@ -30,7 +30,7 @@ It runs as is on any static host.
 
 | Rack | Units |
 | --- | --- |
-| 3 racks, 19″ | 47 height units each, numbered from the top (U1) to the bottom (U47) |
+| 1 to 5 racks, 19″ (3 by default) | 47 height units each, numbered from the top (U1) to the bottom (U47) |
 | Side slots | 2 vertical 1U slots per rack, on the right, one above the other |
 
 | Device | Height | Front |
@@ -46,6 +46,9 @@ there are drawn rotated.
 
 ## Using it
 
+- **Racks**: pick 1 to 5 in the toolbar. New racks are added on the right;
+  lowering the number removes racks from the right, together with their
+  devices (you're asked first, and Undo brings them back).
 - **Place**: drag a device from the left panel onto a rack, or click it and then
   click a free slot. A green outline means it fits; red explains the conflict.
 - **Name and cluster**: the placement dialog asks for a name and a cluster

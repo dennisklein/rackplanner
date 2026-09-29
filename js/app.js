@@ -93,7 +93,7 @@
     pan: null,
     zoom: 1,
     theme: detectTheme(),
-    sceneW: G.SHEET_W,
+    sceneW: 1200,
     sceneH: 1200,
   };
   let lastDragEnd = 0;
@@ -182,6 +182,7 @@
     undo: $('#btn-undo'),
     redo: $('#btn-redo'),
     zoomLevel: $('#btn-zoom-reset'),
+    rackCount: $('#rack-count'),
     notice: $('#example-notice'),
     armedHint: $('#armed-hint'),
     chip: $('#drag-chip'),
@@ -309,6 +310,8 @@
     el.undo.disabled = !history.past.length;
     el.redo.disabled = !history.future.length;
     if (document.activeElement !== el.planName) el.planName.value = project.name;
+    const count = el.rackCount.querySelector(`input[value="${project.racks.length}"]`);
+    if (count) count.checked = true;
     el.notice.hidden = !(project.meta && project.meta.example);
     el.stage.classList.toggle('is-armed', !!ui.armed);
     if (ui.armed) {
@@ -474,7 +477,7 @@
     input.addEventListener('change', () => {
       if (input.value.trim()) return;
       const i = M.rackIndex(project, rack.id);
-      commit((p) => void (M.rackById(p, rack.id).name = `Rack A0${i + 1}`), { key: 'rack:' + rack.id });
+      commit((p) => void (M.rackById(p, rack.id).name = M.defaultRackName(i)), { key: 'rack:' + rack.id });
     });
     $('#insp-clear-rack').addEventListener('click', async () => {
       const ok = await confirmDialog({
@@ -707,6 +710,15 @@
       prefs.zoom = nz;
       savePrefs();
     }
+  }
+
+  // Fit the sheet's width, but never so small that labels become unreadable,
+  // and show it from the top left.
+  function fitWidth() {
+    fitZoom('width', false);
+    if (ui.zoom < 0.5) setZoom(0.5, null, false);
+    el.canvas.scrollTop = 0;
+    el.canvas.scrollLeft = 0;
   }
 
   function fitZoom(mode, remember) {
@@ -1457,9 +1469,10 @@
   });
 
   function startNew(example) {
-    const next = example ? M.createExampleProject() : M.createEmptyProject();
+    const next = example ? M.createExampleProject() : M.createEmptyProject(project.racks.length);
     if (!example) next.name = 'Untitled rack plan';
     replaceProject(next);
+    fitWidth();
     toast(example ? 'Loaded the example plan' : 'Started an empty plan', { action: 'Undo', onAction: undo });
   }
 
@@ -1573,6 +1586,39 @@
     timer = setTimeout(dismiss, o.action ? 6000 : 3200);
   }
 
+  // ----------------------------------------------------------- rack count
+
+  el.rackCount.innerHTML = Array.from({ length: M.MAX_RACKS - M.MIN_RACKS + 1 }, (_, i) => {
+    const n = M.MIN_RACKS + i;
+    return `<label title="${n} rack${n === 1 ? '' : 's'}"><input type="radio" name="rack-count" value="${n}"><span>${n}</span></label>`;
+  }).join('');
+
+  el.rackCount.addEventListener('change', (e) => {
+    if (e.target.name === 'rack-count') changeRackCount(parseInt(e.target.value, 10));
+  });
+
+  async function changeRackCount(n) {
+    const before = project.racks.length;
+    if (n === before) return;
+    const lost = M.devicesBeyond(project, n);
+    const removed = project.racks.slice(n);
+    const names = removed.map((r) => r.name).join(', ');
+    if (lost.length) {
+      const ok = await confirmDialog({
+        title: removed.length === 1 ? `Remove ${names}?` : `Remove ${removed.length} racks?`,
+        body:
+          `${names} ${removed.length === 1 ? 'holds' : 'hold'} ${lost.length} device${lost.length === 1 ? '' : 's'}, ` +
+          `which ${lost.length === 1 ? 'is' : 'are'} removed with ${removed.length === 1 ? 'it' : 'them'}. Undo brings everything back.`,
+        ok: removed.length === 1 ? 'Remove rack' : 'Remove racks',
+      });
+      if (!ok) return renderChrome();
+    }
+    commit((p) => void M.setRackCount(p, n));
+    fitWidth();
+    if (n > before) toast(n - before === 1 ? `Added ${project.racks[n - 1].name}` : `Added ${n - before} racks`);
+    else toast(`Removed ${names}`, lost.length ? { action: 'Undo', onAction: undo } : undefined);
+  }
+
   // -------------------------------------------------------------- toolbar
 
   el.undo.addEventListener('click', undo);
@@ -1597,25 +1643,29 @@
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || $('dialog[open]')) return;
     const t = e.target;
-    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    // Form controls keep their own keys (arrows switch radio buttons); only
+    // text fields also keep their own undo.
+    const formControl = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    const textEntry =
+      formControl && t.tagName !== 'SELECT' && !(t.tagName === 'INPUT' && /^(radio|checkbox|button|submit|reset|color|file|range)$/.test(t.type));
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key;
 
     if (mod && !e.altKey && (key === 'z' || key === 'Z')) {
-      if (typing) return;
+      if (textEntry) return;
       e.preventDefault();
       if (e.shiftKey) redo();
       else undo();
       return;
     }
     if (mod && (key === 'y' || key === 'Y')) {
-      if (typing) return;
+      if (textEntry) return;
       e.preventDefault();
       redo();
       return;
     }
-    if (typing) {
-      if (key === 'Escape' || (key === 'Enter' && t.tagName === 'INPUT')) t.blur();
+    if (formControl) {
+      if (textEntry && (key === 'Escape' || (key === 'Enter' && t.tagName === 'INPUT'))) t.blur();
       return;
     }
     if (t.closest && t.closest('.menu')) return;
@@ -1700,11 +1750,9 @@
   // ----------------------------------------------------------------- boot
 
   render();
-  if (prefs.zoom) setZoom(prefs.zoom, null, false);
-  else {
-    fitZoom('width', false);
-    if (ui.zoom < 0.5) setZoom(0.5, null, false);
-  }
-  el.canvas.scrollTop = 0;
-  el.canvas.scrollLeft = 0;
+  if (prefs.zoom) {
+    setZoom(prefs.zoom, null, false);
+    el.canvas.scrollTop = 0;
+    el.canvas.scrollLeft = 0;
+  } else fitWidth();
 })();
