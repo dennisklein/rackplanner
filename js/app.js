@@ -1032,7 +1032,7 @@
       `</div></section>` +
       `<section class="insp-sec"><h3><label for="insp-notes">Notes</label></h3>` +
       `<textarea id="insp-notes" rows="3" placeholder="Cabling, purchase order, plans …">${esc(d.notes || '')}</textarea></section>` +
-      `<div class="insp-actions">` +
+      `<div class="insp-actions is-pinned">` +
       `<button type="button" class="btn" id="insp-dup" title="Duplicate (Ctrl+D)">${icon('copy')}Duplicate</button>` +
       `<button type="button" class="btn danger-text" id="insp-del" title="Delete (Del)">${icon('trash')}Delete</button>` +
       `</div>`;
@@ -1126,7 +1126,7 @@
       `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div></div>` +
       `</div></section>` +
       `<section class="insp-sec"><h3>Devices</h3><ol class="contents">${rows}</ol></section>` +
-      `<div class="insp-actions">` +
+      `<div class="insp-actions is-pinned">` +
       `<button type="button" class="btn" id="multi-dup" title="Duplicate (Ctrl+D)">${icon('copy')}Duplicate</button>` +
       `<button type="button" class="btn" id="multi-clear">Clear selection</button>` +
       `<button type="button" class="btn danger-text" id="multi-del">${icon('trash')}Delete ${devs.length}</button>` +

@@ -96,7 +96,7 @@
   </header>
 
   <aside class="bin" aria-label="Devices and clusters">
-    <section class="panel-sec">
+    <section class="panel-sec bin-parts">
       <div class="sec-head">
         <h2>Devices</h2>
         <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit device and rack types"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
@@ -104,7 +104,7 @@
       <p class="sec-hint"><span class="hint-pointer">Drag onto a rack, or click one and then click a slot.</span><span class="hint-touch">Tap a device, then tap a free slot in a rack.</span></p>
       <div class="parts" id="parts"></div>
     </section>
-    <section class="panel-sec">
+    <section class="panel-sec bin-clusters">
       <div class="sec-head">
         <h2>Clusters</h2>
         <button class="btn icon sm" id="btn-add-cluster" type="button" title="New cluster" aria-label="New cluster"><svg class="ic"><use href="#i-plus"/></svg></button>
@@ -138,16 +138,18 @@
         <button class="btn sm primary" id="btn-start-empty" type="button">Start empty</button>
       </div>
     </div>
-    <div class="canvas" id="canvas">
-      <svg id="scene" class="scene" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Rack elevation drawing"></svg>
-      <div class="floormap" id="floormap" hidden></div>
-    </div>
-    <div class="armed-hint" id="armed-hint" role="status" hidden></div>
-    <div class="zoom" id="zoom" role="group" aria-label="Zoom">
-      <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
-      <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
-      <button class="btn icon sm" id="btn-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
-      <button class="btn sm" id="btn-zoom-fit" type="button" title="Fit the sheet (0)"><svg class="ic"><use href="#i-fit"/></svg><span>Fit</span></button>
+    <div class="viewport">
+      <div class="canvas" id="canvas">
+        <svg id="scene" class="scene" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Rack elevation drawing"></svg>
+        <div class="floormap" id="floormap" hidden></div>
+      </div>
+      <div class="armed-hint" id="armed-hint" role="status" hidden></div>
+      <div class="zoom" id="zoom" role="group" aria-label="Zoom">
+        <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+        <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
+        <button class="btn icon sm" id="btn-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+        <button class="btn sm" id="btn-zoom-fit" type="button" title="Fit the sheet (0)"><svg class="ic"><use href="#i-fit"/></svg><span>Fit</span></button>
+      </div>
     </div>
   </main>
 

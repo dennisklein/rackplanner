@@ -697,6 +697,37 @@ test('exports the shown row as SVG in fallback fonts and as PNG', async ({ page 
   expect(fs.statSync(await png.path()).size).toBeGreaterThan(50000);
 });
 
+test('keeps clusters, the placing hint and a selection’s actions in view', async ({ page }) => {
+  /** Whether `sel` is fully visible inside the box it scrolls in (or the window). */
+  const shown = (sel, box) =>
+    page.evaluate(
+      ({ sel, box }) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        const b = box ? document.querySelector(box).getBoundingClientRect() : { top: 0, bottom: innerHeight };
+        return r.height > 0 && r.top >= b.top && r.bottom <= b.bottom;
+      },
+      { sel, box }
+    );
+  // The device list scrolls on its own, so the clusters below it stay on screen.
+  expect(await shown('.cl-row')).toBe(true);
+
+  // The plan name reads as a title, not as a second text box next to the search.
+  expect(await page.locator('#plan-name').evaluate((e) => getComputedStyle(e).borderTopColor)).toBe('rgba(0, 0, 0, 0)');
+
+  // The click-to-place hint floats over the drawing, below the row picker and the example notice.
+  await page.locator('.part[data-type="compute-node"]').click();
+  const hint = await page.locator('#armed-hint').boundingBox();
+  const notice = await page.locator('#example-notice').boundingBox();
+  expect(hint.y).toBeGreaterThanOrEqual(notice.y + notice.height);
+  await page.keyboard.press('Escape');
+
+  // Below a device's long form, Duplicate and Delete stay in reach.
+  await device(page, 'cn-001').click();
+  expect(await shown('#insp-del', '#inspector')).toBe(true);
+  await device(page, 'cn-002').click({ modifiers: ['Shift'] });
+  expect(await shown('#multi-del', '#inspector')).toBe(true);
+});
+
 test.describe('offline', () => {
   test.use({ serviceWorkers: 'allow' });
 
