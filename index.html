@@ -388,16 +388,14 @@
       </div>
     </header>
     <div class="dlg-body catalog" id="cat-panel" role="tabpanel">
-      <div class="cat-side">
-        <div class="cat-list" id="cat-list" role="listbox" aria-label="Types"></div>
-        <div class="menu-wrap cat-new">
-          <button type="button" class="btn sm" id="cat-new" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-cat-new"><svg class="ic"><use href="#i-plus"/></svg><span>New type</span></button>
-          <div class="menu menu-up" id="menu-cat-new" role="menu" hidden></div>
-        </div>
-      </div>
+      <div class="cat-list" id="cat-list" role="listbox" aria-label="Types"></div>
       <div class="cat-form" id="cat-form"></div>
     </div>
     <footer class="dlg-foot">
+      <div class="menu-wrap">
+        <button type="button" class="btn" id="cat-new" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-cat-new"><svg class="ic"><use href="#i-plus"/></svg><span>New type</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
+        <div class="menu menu-up" id="menu-cat-new" role="menu" hidden></div>
+      </div>
       <span class="spacer"></span>
       <button type="button" class="btn primary" data-close>Done</button>
     </footer>

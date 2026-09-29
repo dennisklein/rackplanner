@@ -282,6 +282,20 @@ test('the closed place dialog ignores the browser’s own undo', async ({ page }
   expect(errors).toEqual([]);
 });
 
+test('tall device types fit their card in the parts panel', async ({ page }) => {
+  await page.click('#btn-catalog');
+  await page.click('#cat-new');
+  await page.click('[data-template="1"]');
+  await page.fill('#cat-height', '12');
+  await page.press('#cat-height', 'Tab');
+  await page.click('#dlg-catalog [data-close]');
+  for (const card of await page.locator('.part').all()) {
+    const [art, svg, box] = await Promise.all(['.part-art', '.part-art svg', ':scope'].map((sel) => card.locator(sel).first().boundingBox()));
+    expect(svg.y + svg.height).toBeLessThanOrEqual(art.y + art.height + 0.5);
+    expect(svg.x + svg.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+  }
+});
+
 test('rack types set height and budgets; racks over budget are flagged', async ({ page }) => {
   await page.locator('.rack-head[data-rack="r1"]').click();
   await page.selectOption('#insp-rack-type', 'rack-42');
@@ -633,5 +647,15 @@ test.describe('on a phone', () => {
     await page.touchscreen.tap(target.x, target.y);
     await expect(page.locator('#dlg-place')).toBeVisible();
     await expect(page.locator('#place-where')).toContainText('Rack A01 · U30');
+  });
+
+  test('adds a device type from a template in the catalog', async ({ page }) => {
+    await page.locator('#btn-catalog').tap();
+    const list = await page.locator('#cat-list').boundingBox();
+    const form = await page.locator('#cat-form').boundingBox();
+    expect(list.y + list.height).toBeLessThanOrEqual(form.y);
+    await page.locator('#cat-new').tap();
+    await page.locator('[data-template="1"]').tap();
+    await expect(page.locator('#cat-label')).toHaveValue('GPU server 2');
   });
 });

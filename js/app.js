@@ -815,11 +815,11 @@
       el.parts.innerHTML = types
         .map((t) => {
           const pv = R.renderPreview(t, ui.theme, null, t.variable ? 'reserved' : t.defaultName, measure, 2);
-          const w = 150;
-          const h = Math.round((pv.height * w) / pv.width);
+          // The drawing fits a box at most 72 px tall: tall devices get narrower, not taller.
+          const artH = clamp(Math.round(pv.height * 0.62) + 8, 22, 72);
           return (
             `<button type="button" class="part${t.variable ? ' part-reserved' : ''}" data-type="${esc(t.id)}" aria-pressed="false">` +
-            `<span class="part-art" style="height:${clamp(h + 8, 22, 64)}px"><svg viewBox="0 0 ${pv.width} ${pv.height}" width="${w}" height="${h}" aria-hidden="true">${pv.body}</svg></span>` +
+            `<span class="part-art" style="height:${artH}px"><svg viewBox="0 0 ${pv.width} ${pv.height}" preserveAspectRatio="xMinYMid meet" aria-hidden="true">${pv.body}</svg></span>` +
             `<span class="part-meta"><span class="part-name">${esc(t.label)}</span><span class="part-spec">${esc(M.formatTypeSpec(t))}</span></span>` +
             `<span class="part-count" data-count></span></button>`
           );
