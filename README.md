@@ -8,6 +8,11 @@ belong to color-coded clusters, so the equipment that works together stands out.
 There is no server and no build step: plain HTML, CSS and JavaScript. Plans are
 saved in the browser and can be exported as files.
 
+Live version: https://dennisklein.github.io/rackplanner/ (once GitHub Pages is
+enabled, see [Deployment](#deployment)).
+
+Public domain under CC0 1.0: use it for anything, no strings attached. See [License](#license).
+
 ## Running it
 
 Open `index.html` in a browser. It also works from `file://`.
@@ -19,7 +24,7 @@ npm start            # http://localhost:8080 via http-server
 python3 -m http.server
 ```
 
-You can deploy it as is to GitHub Pages or any other static host.
+It runs as is on any static host.
 
 ## What you can plan
 
@@ -103,3 +108,29 @@ npm test
 ```
 
 This uses Node's built-in test runner (Node 18 or later) and needs no dependencies.
+
+## Deployment
+
+`.github/workflows/pages.yml` runs the tests and publishes the site to GitHub
+Pages on every push to `main`. You can also start it by hand from the Actions tab.
+
+It needs a one-time setup in the repository settings:
+
+1. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
+2. **Settings → General → Default branch** should be `main`. The `github-pages`
+   environment only accepts deployments from the default branch unless you add
+   other branches under **Settings → Environments → github-pages**.
+
+GitHub Pages for a private repository needs a paid GitHub plan; on the free plan
+the repository has to be public.
+
+## License
+
+[![CC0](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/)
+
+Rackplanner is dedicated to the public domain under
+[CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
+To the extent possible under law, the authors have waived all copyright and
+related rights to this work. You can copy, modify, distribute and use it, even
+commercially, without asking permission or giving credit. The full legal text
+is in [LICENSE](LICENSE).
