@@ -1,0 +1,11 @@
+{
+  "name": "rackplanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Client-side planner for datacenter rack layouts",
+  "license": "MIT",
+  "scripts": {
+    "start": "npx --yes http-server -p 8080 -c-1 .",
+    "test": "node --test test/*.test.js"
+  }
+}

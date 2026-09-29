@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rackplanner</title>
+<meta name="description" content="Plan datacenter rack layouts: place switches, compute and storage nodes in three 47U racks and color them by cluster.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='2' fill='%232a3038'/%3E%3Crect x='9' y='6' width='14' height='3' fill='%23f2c230'/%3E%3Crect x='9' y='11' width='14' height='6' fill='%232f6fdb'/%3E%3Crect x='9' y='19' width='14' height='6' fill='%230f9d8a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="1.5" width="16" height="21" rx="1.5" class="bm-frame"/>
+        <rect x="6.5" y="4.5" width="11" height="2.5" class="bm-tape"/>
+        <rect x="6.5" y="8.5" width="11" height="4.5" class="bm-a"/>
+        <rect x="6.5" y="14.5" width="11" height="4.5" class="bm-b"/>
+      </svg>
+      <span class="brand-name">Rackplanner</span>
+    </div>
+    <div class="plan-name-wrap">
+      <label for="plan-name" class="sr-only">Plan name</label>
+      <input id="plan-name" class="plan-name" type="text" spellcheck="false" autocomplete="off" maxlength="120">
+    </div>
+    <div class="tb-actions">
+      <div class="tb-group" role="group" aria-label="History">
+        <button class="btn icon" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic"><use href="#i-undo"/></svg></button>
+        <button class="btn icon" id="btn-redo" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic"><use href="#i-redo"/></svg></button>
+      </div>
+      <button class="btn" id="btn-open" type="button"><svg class="ic"><use href="#i-upload"/></svg><span>Open</span></button>
+      <div class="menu-wrap">
+        <button class="btn" id="btn-export" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-export"><svg class="ic"><use href="#i-download"/></svg><span>Export</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
+        <div class="menu" id="menu-export" role="menu" hidden>
+          <button type="button" role="menuitem" data-export="png"><span>PNG image</span><small>For docs, tickets and chat</small></button>
+          <button type="button" role="menuitem" data-export="svg"><span>SVG drawing</span><small>Scalable, opens in vector editors</small></button>
+          <button type="button" role="menuitem" data-export="csv"><span>CSV inventory</span><small>Every device with rack and position</small></button>
+          <hr>
+          <button type="button" role="menuitem" data-export="json"><span>Plan file (.json)</span><small>Re-open it later with Open</small></button>
+          <button type="button" role="menuitem" data-export="copy"><span>Copy plan as JSON</span><small>Paste it into Open elsewhere</small></button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button class="btn" id="btn-new" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-new"><svg class="ic"><use href="#i-file"/></svg><span>New</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
+        <div class="menu menu-right" id="menu-new" role="menu" hidden>
+          <button type="button" role="menuitem" data-new="empty"><span>Empty racks</span><small>Three empty 47U racks</small></button>
+          <button type="button" role="menuitem" data-new="example"><span>Example plan</span><small>Three racks with five clusters</small></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <aside class="bin" aria-label="Devices and clusters">
+    <section class="panel-sec">
+      <div class="sec-head"><h2>Devices</h2></div>
+      <p class="sec-hint"><span class="hint-pointer">Drag onto a rack, or click one and then click a slot.</span><span class="hint-touch">Tap a device, then tap a free slot in a rack.</span></p>
+      <div class="parts" id="parts"></div>
+    </section>
+    <section class="panel-sec">
+      <div class="sec-head">
+        <h2>Clusters</h2>
+        <button class="btn icon sm" id="btn-add-cluster" type="button" title="New cluster" aria-label="New cluster"><svg class="ic"><use href="#i-plus"/></svg></button>
+      </div>
+      <ul class="clusters" id="clusters"></ul>
+      <p class="sec-hint" id="clusters-hint"></p>
+    </section>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div class="notice" id="example-notice" hidden>
+      <p><strong>This is an example plan.</strong> Edit it freely, or start from empty racks.</p>
+      <div class="notice-actions">
+        <button class="btn sm" id="btn-keep-example" type="button">Keep example</button>
+        <button class="btn sm primary" id="btn-start-empty" type="button">Start empty</button>
+      </div>
+    </div>
+    <div class="canvas" id="canvas">
+      <svg id="scene" class="scene" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Rack elevation drawing"></svg>
+    </div>
+    <div class="armed-hint" id="armed-hint" role="status" hidden></div>
+    <div class="zoom" role="group" aria-label="Zoom">
+      <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+      <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
+      <button class="btn icon sm" id="btn-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button class="btn sm" id="btn-zoom-fit" type="button" title="Fit the sheet (0)"><svg class="ic"><use href="#i-fit"/></svg><span>Fit</span></button>
+    </div>
+  </main>
+
+  <aside class="inspector" id="inspector" aria-label="Details" aria-live="polite"></aside>
+</div>
+
+<dialog class="dlg" id="dlg-place" aria-labelledby="place-title">
+  <form id="place-form" novalidate>
+    <header class="dlg-head">
+      <span class="tape">Place device</span>
+      <h2 id="place-title">Device</h2>
+      <p class="dlg-sub" id="place-where"></p>
+    </header>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="place-name">Name</label>
+        <input id="place-name" class="mono" type="text" autocomplete="off" spellcheck="false" maxlength="80">
+      </div>
+      <div class="field-row" id="place-multi">
+        <div class="field field-qty">
+          <label for="place-qty">Quantity</label>
+          <input id="place-qty" type="number" min="1" step="1" value="1" inputmode="numeric">
+        </div>
+        <div class="field">
+          <span class="label" id="place-dir-label">Stack</span>
+          <div class="seg" role="radiogroup" aria-labelledby="place-dir-label">
+            <label><input type="radio" name="place-dir" value="up" checked><span><svg class="ic ic-sm"><use href="#i-up"/></svg>Upward</span></label>
+            <label><input type="radio" name="place-dir" value="down"><span><svg class="ic ic-sm"><use href="#i-down"/></svg>Downward</span></label>
+          </div>
+        </div>
+      </div>
+      <p class="preview-line" id="place-preview"></p>
+      <div class="field">
+        <span class="label" id="place-cluster-label">Cluster</span>
+        <div class="chips" id="place-clusters" role="radiogroup" aria-labelledby="place-cluster-label"></div>
+      </div>
+      <div class="new-cluster" id="place-new" hidden>
+        <div class="field">
+          <label for="place-new-name">New cluster name</label>
+          <input id="place-new-name" type="text" maxlength="60" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <span class="label" id="place-new-color-label">Color</span>
+          <div class="swatches" id="place-new-colors" role="radiogroup" aria-labelledby="place-new-color-label"></div>
+        </div>
+      </div>
+      <p class="form-error" id="place-error" role="alert" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="place-submit">Place</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlg-cluster" aria-labelledby="cluster-title">
+  <form id="cluster-form" novalidate>
+    <header class="dlg-head">
+      <span class="tape" id="cluster-kicker">New cluster</span>
+      <h2 id="cluster-title">Cluster</h2>
+    </header>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="cluster-name">Name</label>
+        <input id="cluster-name" type="text" maxlength="60" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <span class="label" id="cluster-color-label">Color</span>
+        <div class="swatches" id="cluster-colors" role="radiogroup" aria-labelledby="cluster-color-label"></div>
+      </div>
+      <div class="cluster-preview" id="cluster-preview" aria-hidden="true"></div>
+      <p class="form-error" id="cluster-error" role="alert" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <button type="button" class="btn danger-text" id="cluster-delete" hidden><svg class="ic"><use href="#i-trash"/></svg>Delete cluster</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="cluster-submit">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg dlg-sm" id="dlg-confirm" aria-labelledby="confirm-title">
+  <form method="dialog">
+    <header class="dlg-head"><h2 id="confirm-title">Are you sure?</h2></header>
+    <div class="dlg-body"><p id="confirm-body"></p></div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn primary" value="ok" id="confirm-ok">OK</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlg-open" aria-labelledby="open-title">
+  <form id="open-form" novalidate>
+    <header class="dlg-head">
+      <span class="tape">Open plan</span>
+      <h2 id="open-title">Open a saved plan</h2>
+      <p class="dlg-sub">Pick a plan file exported from Rackplanner, or paste its JSON. It replaces the current plan; Undo brings the current one back.</p>
+    </header>
+    <div class="dlg-body">
+      <div><button type="button" class="btn" id="open-file"><svg class="ic"><use href="#i-upload"/></svg>Choose a .json file…</button></div>
+      <div class="field">
+        <label for="open-text">Or paste the plan JSON</label>
+        <textarea id="open-text" class="mono" rows="7" spellcheck="false" placeholder='{ "app": "rackplanner", … }'></textarea>
+      </div>
+      <p class="form-error" id="open-error" role="alert" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary">Open pasted plan</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlg-copy" aria-labelledby="copy-title">
+  <form method="dialog">
+    <header class="dlg-head">
+      <span class="tape">Export</span>
+      <h2 id="copy-title">Plan as JSON</h2>
+      <p class="dlg-sub">Your browser blocked clipboard access. The text below is selected; copy it with Ctrl+C or ⌘C.</p>
+    </header>
+    <div class="dlg-body">
+      <label for="copy-text" class="sr-only">Plan JSON</label>
+      <textarea id="copy-text" class="mono" rows="10" readonly spellcheck="false"></textarea>
+    </div>
+    <footer class="dlg-foot"><span class="spacer"></span><button class="btn primary" value="ok">Done</button></footer>
+  </form>
+</dialog>
+
+<input type="file" id="file-input" accept=".json,application/json" hidden>
+<div class="drag-chip" id="drag-chip" hidden></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="js/model.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
