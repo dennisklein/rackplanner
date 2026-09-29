@@ -44,10 +44,10 @@ test('canPlace keeps devices inside U1–U47', () => {
 test('canPlace rejects overlaps but not neighbours or other racks', () => {
   const p = project([['storage-node', 'r1', 'u', 10, 'sn-01']]); // U10–13
   const at = (u, rack) => M.canPlace(p, 'compute-node', { rack: rack || 'r1', kind: 'u', at: u });
-  assert.ok(at(8).ok, 'U8–9 sits directly below');
-  assert.ok(at(14).ok, 'U14–15 sits directly above');
-  assert.ok(!at(9).ok, 'U9–10 overlaps the bottom unit');
-  assert.ok(!at(13).ok, 'U13–14 overlaps the top unit');
+  assert.ok(at(8).ok, 'U8–9 sits directly above');
+  assert.ok(at(14).ok, 'U14–15 sits directly below');
+  assert.ok(!at(9).ok, 'U9–10 overlaps the first unit');
+  assert.ok(!at(13).ok, 'U13–14 overlaps the last unit');
   assert.match(at(12).reason, /sn-01/);
   assert.ok(at(12, 'r2').ok, 'other racks are independent');
   assert.ok(M.canPlace(p, 'storage-node', { rack: 'r1', kind: 'u', at: 10 }, 'd1').ok, 'ignored device');
@@ -63,11 +63,11 @@ test('side slots take one 1U device each', () => {
   assert.ok(M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 47 }).ok);
 });
 
-test('planPositions stacks upward or downward and skips occupied units', () => {
+test('planPositions stacks toward higher or lower unit numbers and skips occupied units', () => {
   const p = project([['switch-rj45', 'r1', 'u', 14]]);
   assert.deepEqual(M.planPositions(p, 'compute-node', 'r1', 10, 3, 1), [10, 12, 15]);
   assert.deepEqual(M.planPositions(p, 'compute-node', 'r1', 10, 3, -1), [10, 8, 6]);
-  assert.deepEqual(M.planPositions(p, 'storage-node', 'r1', 40, 5, 1), [40, 44], 'stops at the top');
+  assert.deepEqual(M.planPositions(p, 'storage-node', 'r1', 40, 5, 1), [40, 44], 'stops at U47');
   assert.equal(M.planPositions(p, 'compute-node', 'r2', 1, Infinity, 1).length, 23);
 });
 
@@ -85,7 +85,7 @@ test('validLocs, nudgeTarget and nearestLoc find free space', () => {
     { rack: 'r1', kind: 'side', at: 1 },
   ]);
   assert.equal(sw.length, 2 + 47 - 4);
-  assert.deepEqual(M.nearestLoc(p, 'compute-node', 'r1', 21, null), { rack: 'r1', kind: 'u', at: 24 });
+  assert.deepEqual(M.nearestLoc(p, 'compute-node', 'r1', 21, null), { rack: 'r1', kind: 'u', at: 18 });
 });
 
 test('names count up in series', () => {
@@ -103,11 +103,11 @@ test('names count up in series', () => {
 
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 }), {
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }), {
     name: 'cn-013',
     cluster: 'c-kestrel',
   });
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 5 }, 4), {
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }, 4), {
     name: 'gpu-009',
     cluster: 'c-osprey',
   });
@@ -171,6 +171,23 @@ test('normalizeProject drops what does not fit and keeps the rest', () => {
   assert.throws(() => M.normalizeProject({ foo: 1 }), /not a rack plan/);
 });
 
+test('version 1 plans, counted from the bottom, keep their layout', () => {
+  const raw = {
+    version: 1,
+    devices: [
+      { id: 'a', type: 'switch-rj45', name: 'top', loc: { rack: 'r1', kind: 'u', at: 47 } },
+      { id: 'b', type: 'storage-node', name: 'bottom', loc: { rack: 'r1', kind: 'u', at: 1 } },
+      { id: 'c', type: 'compute-node', name: 'mid', loc: { rack: 'r2', kind: 'u', at: 21 } },
+      { id: 'd', type: 'switch-qsfp', name: 'side', loc: { rack: 'r3', kind: 'side', at: 0 } },
+    ],
+  };
+  const { project: p, warnings } = M.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
+  assert.equal(p.version, 2);
+  assert.equal(M.normalizeProject(JSON.parse(M.serialize(p))).project.devices[1].loc.at, 44, 'version 2 is kept');
+});
+
 test('toCSV lists devices top to bottom and neutralises formulas', () => {
   const p = project([
     ['compute-node', 'r1', 'u', 5, '=cmd()'],
@@ -180,7 +197,7 @@ test('toCSV lists devices top to bottom and neutralises formulas', () => {
   p.devices[0].cluster = 'c1';
   const lines = M.toCSV(p).trim().split('\r\n');
   assert.equal(lines[0], 'Rack,Position,Height (U),Type,Name,Cluster,Notes');
-  assert.equal(lines[1], 'Rack A01,U47,1,48-port switch,"sw, ""core""",,');
-  assert.equal(lines[2], "Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,");
+  assert.equal(lines[1], "Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,");
+  assert.equal(lines[2], 'Rack A01,U47,1,48-port switch,"sw, ""core""",,');
   assert.equal(lines[3], 'Rack A01,Side V1,1,24-port switch,leaf,,');
 });

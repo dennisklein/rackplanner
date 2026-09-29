@@ -97,6 +97,7 @@
     sceneH: 1200,
   };
   let lastDragEnd = 0;
+  let restoringFocus = false;
 
   function loadProject() {
     const saved = readJSON(STORAGE_KEY);
@@ -236,9 +237,16 @@
     el.svg.setAttribute('viewBox', `0 0 ${out.width} ${out.height}`);
     el.svg.innerHTML = out.body + '<g id="ghost-layer"></g>';
     applyZoom();
-    if (focusedId) {
+    // Keep keyboard focus on the redrawn device only while it stays selected;
+    // otherwise restoring it would select it again.
+    const s2 = ui.selection;
+    if (focusedId && s2 && s2.kind === 'device' && s2.id === focusedId) {
       const g = findDevEl(focusedId);
-      if (g) g.focus({ preventScroll: true });
+      if (g) {
+        restoringFocus = true;
+        g.focus({ preventScroll: true });
+        restoringFocus = false;
+      }
     }
   }
 
@@ -350,8 +358,8 @@
         return `<option value="${locKey(l)}"${cur ? ' selected' : ''}>${label}</option>`;
       })
       .join('');
-    const canUp = !!M.nudgeTarget(project, d, 1);
-    const canDown = !!M.nudgeTarget(project, d, -1);
+    const canUp = !!M.nudgeTarget(project, d, -1);
+    const canDown = !!M.nudgeTarget(project, d, 1);
 
     el.inspector.innerHTML =
       `<div class="insp-head">` +
@@ -415,8 +423,8 @@
     $('#insp-slot').addEventListener('change', (e) => moveDevice(id, parseLocKey(d.loc.rack, e.target.value)));
     const up = $('#insp-up');
     const down = $('#insp-down');
-    if (up) up.addEventListener('click', () => nudge(id, 1));
-    if (down) down.addEventListener('click', () => nudge(id, -1));
+    if (up) up.addEventListener('click', () => nudge(id, -1));
+    if (down) down.addEventListener('click', () => nudge(id, 1));
     const notes = $('#insp-notes');
     notes.addEventListener('input', () => {
       const v = notes.value;
@@ -585,11 +593,12 @@
     return changed;
   }
 
+  // dir follows unit numbers: -1 moves up the rack (toward U1), +1 moves down.
   function nudge(id, dir, reveal) {
     const d = M.deviceById(project, id);
     if (!d || d.loc.kind !== 'u') return;
     const loc = M.nudgeTarget(project, d, dir);
-    if (!loc) return toast(dir > 0 ? `No free space above ${d.name}` : `No free space below ${d.name}`, { warn: true });
+    if (!loc) return toast(dir < 0 ? `No free space above ${d.name}` : `No free space below ${d.name}`, { warn: true });
     moveDevice(id, loc, { reveal });
   }
 
@@ -613,9 +622,10 @@
     const h = M.typeById(d.type).height;
     let loc = at || null;
     if (!loc && d.loc.kind === 'u') {
-      const above = M.planPositions(project, d.type, d.loc.rack, d.loc.at + h, 1, 1);
-      const below = M.planPositions(project, d.type, d.loc.rack, d.loc.at - h, 1, -1);
-      const u = above.length ? above[0] : below[0];
+      // Prefer the next free spot below, where the next name in series belongs.
+      const below = M.planPositions(project, d.type, d.loc.rack, d.loc.at + h, 1, 1);
+      const above = M.planPositions(project, d.type, d.loc.rack, d.loc.at - h, 1, -1);
+      const u = below.length ? below[0] : above[0];
       if (u) loc = { rack: d.loc.rack, kind: 'u', at: u };
     } else if (!loc) {
       loc = M.nearestLoc(project, d.type, d.loc.rack, M.RACK_UNITS, null, true);
@@ -996,7 +1006,7 @@
   // Keyboard focus on a device selects it, so Tab walks through the racks.
   el.svg.addEventListener('focusin', (e) => {
     const g = e.target.closest && e.target.closest('.dev');
-    if (!g || ui.drag) return;
+    if (!g || ui.drag || restoringFocus) return;
     const s = ui.selection;
     if (s && s.kind === 'device' && s.id === g.dataset.id) return;
     ui.selection = { kind: 'device', id: g.dataset.id };
@@ -1104,7 +1114,7 @@
     $('#place-where').textContent = `${M.formatLoc(project, loc, typeId)} · ${type.spec}`;
     $('#place-multi').hidden = loc.kind !== 'u';
     $('#place-qty').value = '1';
-    $('input[name="place-dir"][value="up"]').checked = true;
+    $('input[name="place-dir"][value="down"]').checked = true;
     const hint = M.suggestPlacement(project, typeId, loc, 1);
     const last = prefs.lastCluster && M.clusterById(project, prefs.lastCluster) ? prefs.lastCluster : null;
     const initial = hint.cluster !== undefined ? hint.cluster : last || (project.clusters.length ? null : '__new');
@@ -1126,7 +1136,7 @@
     const qtyInput = $('#place-qty');
     let qty = parseInt(qtyInput.value, 10);
     if (!Number.isFinite(qty) || qty < 1) qty = 1;
-    const dir = $('input[name="place-dir"]:checked').value === 'down' ? -1 : 1;
+    const dir = $('input[name="place-dir"]:checked').value === 'up' ? -1 : 1;
     const nameInput = $('#place-name');
     if (!place.nameTouched) nameInput.value = M.suggestPlacement(project, type.id, place.loc, qty).name;
     const line = $('#place-preview');
@@ -1147,7 +1157,7 @@
     if (place.positions.length < qty) {
       place.valid = false;
       line.classList.add('bad');
-      line.textContent = `Only ${max} fit ${dir > 0 ? 'upward' : 'downward'} from U${place.loc.at} in this rack.`;
+      line.textContent = `Only ${max} fit ${dir < 0 ? 'upward' : 'downward'} from U${place.loc.at} in this rack.`;
     } else if (qty > 1) {
       const names = M.nameSequence(nameInput.value.trim(), qty);
       const lo = Math.min(...place.positions);
@@ -1630,7 +1640,7 @@
       }
       if (key === 'ArrowUp' || key === 'ArrowDown') {
         e.preventDefault();
-        return nudge(d.id, key === 'ArrowUp' ? 1 : -1, true);
+        return nudge(d.id, key === 'ArrowUp' ? -1 : 1, true);
       }
       if (key === 'ArrowLeft' || key === 'ArrowRight') {
         e.preventDefault();

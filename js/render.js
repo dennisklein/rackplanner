@@ -46,7 +46,8 @@
   const sideX = (i) => bayX(i) + BAY_W + RAIL;
   const slotX = (i) => sideX(i) + (SIDE_W - SLOT_W) / 2 - 2;
   const slotY = (k) => U_TOP + SLOT_GAP + k * (SLOT_H + SLOT_GAP);
-  const uTopY = (bottomU, height) => U_TOP + (M.RACK_UNITS - (bottomU + height - 1)) * U;
+  // Units are numbered from the top: U1 is the topmost row, U47 the bottom one.
+  const unitY = (u) => U_TOP + (u - 1) * U;
 
   // ---------------------------------------------------------------- fonts
 
@@ -320,7 +321,7 @@
     const i = M.rackIndex(project, loc.rack);
     const type = M.typeById(typeId);
     if (loc.kind === 'side') return { x: slotX(i), y: slotY(loc.at), w: SLOT_W, h: SLOT_H, rotated: true };
-    return { x: bayX(i), y: uTopY(loc.at, type.height), w: BAY_W, h: type.height * U, rotated: false };
+    return { x: bayX(i), y: unitY(loc.at), w: BAY_W, h: type.height * U, rotated: false };
   }
 
   // Side-mounted devices are drawn rotated so their label reads bottom to top.
@@ -376,14 +377,14 @@
     // Rails.
     s += `<rect x="${lx}" y="${U_TOP}" width="${RAIL}" height="${UH}" fill="${T.rail}"/>`;
     s += `<rect x="${rx}" y="${U_TOP}" width="${RAIL}" height="${UH}" fill="${T.rail}"/>`;
-    // Unit slots, alternating shade; U1 sits at the bottom.
+    // Unit slots, alternating shade; U1 sits at the top.
     let slotsA = '';
     let slotsB = '';
     let holes = '';
     let ticks = '';
     let nums = '';
     for (let u = 1; u <= M.RACK_UNITS; u++) {
-      const y = uTopY(u, 1);
+      const y = unitY(u);
       if (u % 2) slotsA += rectPath(bx, y, BAY_W, U);
       else slotsB += rectPath(bx, y, BAY_W, U);
       for (const hy of [3, 8.5, 14]) {
@@ -589,7 +590,7 @@
       }
       const top = Math.round((y - grab - U_TOP) / U);
       const t = Math.max(0, Math.min(M.RACK_UNITS - type.height, top));
-      return { rack, kind: 'u', at: M.RACK_UNITS - t - type.height + 1 };
+      return { rack, kind: 'u', at: t + 1 };
     }
     return null;
   }

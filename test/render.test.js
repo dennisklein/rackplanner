@@ -33,12 +33,15 @@ test('export SVG is standalone and escapes user text', () => {
 test('locateDrop snaps to units and finds side slots', () => {
   const p = M.createEmptyProject();
   const bayCenter = (i) => 28 + i * (G.RACK_W + 36) + 10 + 24 + G.BAY_W / 2;
-  const yOfU = (u) => G.U_TOP + (M.RACK_UNITS - u) * G.U + G.U / 2; // middle of unit u
+  const unitTop = (u) => G.U_TOP + (u - 1) * G.U; // U1 is the top row
   // Grab a 2U device at its centre and hover the boundary between U10 and U11.
-  const loc = R.locateDrop(p, 'compute-node', bayCenter(1), yOfU(10) - G.U / 2, G.U);
+  const loc = R.locateDrop(p, 'compute-node', bayCenter(1), unitTop(11), G.U);
   assert.deepEqual(loc, { rack: 'r2', kind: 'u', at: 10 });
-  // Clamps inside the rack.
-  assert.deepEqual(R.locateDrop(p, 'storage-node', bayCenter(0), G.U_TOP - 30, 40), { rack: 'r1', kind: 'u', at: 44 });
+  // Clamps inside the rack, at either end.
+  assert.deepEqual(R.locateDrop(p, 'storage-node', bayCenter(0), G.U_TOP - 30, 40), { rack: 'r1', kind: 'u', at: 1 });
+  assert.deepEqual(R.locateDrop(p, 'storage-node', bayCenter(0), unitTop(47) + 30, 40), { rack: 'r1', kind: 'u', at: 44 });
+  // A device drawn at U10 sits ten rows below U1's top edge.
+  assert.equal(R.locRect(p, 'compute-node', { rack: 'r1', kind: 'u', at: 10 }).y, unitTop(10));
   // Side channel, upper and lower halves.
   const sideX = 28 + 2 * (G.RACK_W + 36) + G.RACK_W - 20;
   assert.deepEqual(R.locateDrop(p, 'switch-rj45', sideX, G.U_TOP + 100, 10), { rack: 'r3', kind: 'side', at: 0 });

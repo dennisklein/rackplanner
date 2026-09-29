@@ -5,7 +5,7 @@
  * tests. A project looks like this:
  *
  *   {
- *     version: 1,
+ *     version: 2,
  *     name: 'Untitled rack plan',
  *     racks:    [{ id: 'r1', name: 'Rack A01' }, ...],          // always 3
  *     clusters: [{ id, name, color: '#rrggbb' }],
@@ -15,9 +15,13 @@
  *   }
  *
  * A device either sits in the rack's 47 height units (kind 'u', `at` is the
- * bottom-most unit it occupies, U1 is at the bottom) or in one of the two
- * vertical side slots (kind 'side', `at` is 0 for the upper and 1 for the
- * lower slot). Side slots take 1U devices only.
+ * lowest-numbered unit it occupies; units are numbered from the top, so U1 is
+ * the topmost unit and U47 the bottom one) or in one of the two vertical side
+ * slots (kind 'side', `at` is 0 for the upper and 1 for the lower slot).
+ * Side slots take 1U devices only.
+ *
+ * Version 1 plans numbered units from the bottom; normalizeProject converts
+ * them so their layout stays the same.
  */
 (function (root, factory) {
   'use strict';
@@ -27,7 +31,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
   const RACK_UNITS = 47;
   const SIDE_SLOTS = 2;
   const RACK_COUNT = 3;
@@ -121,18 +125,18 @@
 
     // Every rack gets a management switch and a high-speed leaf on top.
     ['r1', 'r2', 'r3'].forEach((rack, i) => {
-      add('switch-rj45', `sw-mgmt-a0${i + 1}`, 'c-net', rack, 'u', 47);
-      add('switch-qsfp', `ib-leaf-a0${i + 1}`, 'c-net', rack, 'u', 46);
+      add('switch-rj45', `sw-mgmt-a0${i + 1}`, 'c-net', rack, 'u', 1);
+      add('switch-qsfp', `ib-leaf-a0${i + 1}`, 'c-net', rack, 'u', 2);
     });
     add('switch-rj45', 'sw-bmc-a01', 'c-net', 'r1', 'side', 0);
     add('switch-rj45', 'sw-bmc-a03', 'c-net', 'r3', 'side', 0);
 
-    for (let i = 0; i < 12; i++) add('compute-node', `cn-${String(i + 1).padStart(3, '0')}`, 'c-kestrel', 'r1', 'u', 43 - i * 2);
-    for (let i = 0; i < 8; i++) add('compute-node', `gpu-${String(i + 1).padStart(3, '0')}`, 'c-osprey', 'r2', 'u', 43 - i * 2);
-    for (let i = 0; i < 3; i++) add('storage-node', `ceph-0${i + 1}`, 'c-ceph', 'r2', 'u', 21 - i * 4);
-    add('storage-node', 'oss-01', 'c-lustre', 'r3', 'u', 41);
-    add('storage-node', 'oss-02', 'c-lustre', 'r3', 'u', 37);
-    for (let i = 0; i < 4; i++) add('storage-enclosure', `jbod-0${i + 1}`, 'c-lustre', 'r3', 'u', 33 - i * 4);
+    for (let i = 0; i < 12; i++) add('compute-node', `cn-${String(i + 1).padStart(3, '0')}`, 'c-kestrel', 'r1', 'u', 4 + i * 2);
+    for (let i = 0; i < 8; i++) add('compute-node', `gpu-${String(i + 1).padStart(3, '0')}`, 'c-osprey', 'r2', 'u', 4 + i * 2);
+    for (let i = 0; i < 3; i++) add('storage-node', `ceph-0${i + 1}`, 'c-ceph', 'r2', 'u', 24 + i * 4);
+    add('storage-node', 'oss-01', 'c-lustre', 'r3', 'u', 4);
+    add('storage-node', 'oss-02', 'c-lustre', 'r3', 'u', 8);
+    for (let i = 0; i < 4; i++) add('storage-enclosure', `jbod-0${i + 1}`, 'c-lustre', 'r3', 'u', 12 + i * 4);
     return p;
   }
 
@@ -183,9 +187,10 @@
   }
 
   /**
-   * Finds up to `count` free bottom-U positions for devices of `typeId` in a
-   * rack, starting at `startU` and stacking upward (dir > 0) or downward
-   * (dir < 0). Occupied units are skipped.
+   * Finds up to `count` free positions (lowest unit number of each device)
+   * for devices of `typeId` in a rack, starting at `startU` and stacking
+   * toward higher unit numbers (dir > 0, downward in the rack) or lower ones
+   * (dir < 0, upward). Occupied units are skipped.
    */
   function planPositions(project, typeId, rackId, startU, count, dir, ignore) {
     const type = typeById(typeId);
@@ -219,14 +224,14 @@
         if (canPlace(project, typeId, loc, ignore).ok) out.push(loc);
       }
     }
-    for (let u = RACK_UNITS - type.height + 1; u >= 1; u--) {
+    for (let u = 1; u + type.height - 1 <= RACK_UNITS; u++) {
       const loc = { rack: rackId, kind: 'u', at: u };
       if (canPlace(project, typeId, loc, ignore).ok) out.push(loc);
     }
     return out;
   }
 
-  /** Nearest free U position above (dir > 0) or below (dir < 0) the device's current one. */
+  /** Nearest free U position with a higher (dir > 0, further down) or lower (dir < 0, further up) number. */
   function nudgeTarget(project, device, dir) {
     if (device.loc.kind !== 'u') return null;
     const h = typeById(device.type).height;
@@ -315,7 +320,7 @@
     const type = typeById(typeId);
     const n = Math.max(1, count || 1);
     const same = project.devices.filter((d) => d.type === typeId);
-    const pos = (l) => (l.kind === 'u' ? l.at : RACK_UNITS - (l.at + 0.5) * (RACK_UNITS / SIDE_SLOTS));
+    const pos = (l) => (l.kind === 'u' ? l.at : (l.at + 0.5) * (RACK_UNITS / SIDE_SLOTS));
     let ref = null;
     if (loc) {
       for (const d of same) {
@@ -389,7 +394,7 @@
   function sortedDevices(project, rackId) {
     const order = (d) => {
       const r = rackIndex(project, d.loc.rack);
-      const pos = d.loc.kind === 'u' ? RACK_UNITS - d.loc.at : RACK_UNITS + 1 + d.loc.at;
+      const pos = d.loc.kind === 'u' ? d.loc.at : RACK_UNITS + 1 + d.loc.at;
       return r * 1000 + pos;
     };
     return project.devices.filter((d) => !rackId || d.loc.rack === rackId).sort((a, b) => order(a) - order(b));
@@ -424,6 +429,8 @@
     }
     const warnings = [];
     const p = createEmptyProject();
+    // Version 1 counted units from the bottom of the rack.
+    const bottomUp = Number(raw.version) === 1;
     const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
     if (str(raw.name, 120)) p.name = str(raw.name, 120);
 
@@ -465,6 +472,7 @@
         kind: loc.kind === 'side' ? 'side' : 'u',
         at: Number(loc.at),
       };
+      if (bottomUp && nloc.kind === 'u') nloc.at = RACK_UNITS + 2 - nloc.at - type.height;
       const fit = canPlace(p, type.id, nloc);
       if (!fit.ok) {
         warnings.push(`Skipped ${name}: ${fit.reason}.`);

@@ -25,7 +25,7 @@ You can deploy it as is to GitHub Pages or any other static host.
 
 | Rack | Units |
 | --- | --- |
-| 3 racks, 19″ | 47 height units each (U1 at the bottom) |
+| 3 racks, 19″ | 47 height units each, numbered from the top (U1) to the bottom (U47) |
 | Side slots | 2 vertical 1U slots per rack, on the right, one above the other |
 
 | Device | Height | Front |
@@ -47,7 +47,7 @@ there are drawn rotated.
   (a named color). It suggests both from the nearest device of the same type,
   so dropping a node next to `cn-012` offers `cn-013` in the same cluster.
   You can create a new cluster with its own color right there.
-- **Several at once**: set a quantity to stack devices upward or downward from
+- **Several at once**: set a quantity to stack devices downward or upward from
   the drop point. Occupied units are skipped and names count up (`cn-013 … cn-020`).
 - **Edit**: select a device to rename it, change its cluster, move it to
   another rack or slot, add notes, duplicate or delete it. Click a rack's
