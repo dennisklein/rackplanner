@@ -341,6 +341,46 @@ test('several devices can be selected and moved together', async ({ page }) => {
   await expect(devices(page)).toHaveCount(34);
 });
 
+test('duplicates several devices, racks, rows and floors', async ({ page }) => {
+  // Two devices: copied as a block below them, with names continuing the series.
+  await device(page, 'cn-001').click();
+  await device(page, 'cn-002').click({ modifiers: ['Shift'] });
+  await page.keyboard.press('Control+d');
+  await expect(devices(page)).toHaveCount(39);
+  await expect(page.locator('.multi-title')).toHaveText('2 devices');
+  await expect(page.locator('.contents .nm')).toHaveText(['cn-013', 'cn-014']);
+  await expect(page.locator('.contents .u')).toHaveText(['A01 U28–29', 'A01 U30–31']);
+  await page.click('#multi-dup');
+  await expect(devices(page)).toHaveCount(41);
+  await expect(page.locator('.contents .nm')).toHaveText(['cn-015', 'cn-016']);
+
+  // A rack: the copy with its devices lands right after it.
+  await page.locator('.rack-head[data-rack="r2"]').click();
+  await page.keyboard.press('Control+d');
+  await expect(racks(page)).toHaveCount(4);
+  await expect(racks(page).nth(2)).toContainText('Rack A04');
+  await expect(page.locator('#insp-rack-name')).toHaveValue('Rack A04');
+  await expect(devices(page)).toHaveCount(41 + 13);
+  await expect(device(page, 'gpu-009')).toBeVisible();
+  await page.click('#insp-dup-rack');
+  await expect(racks(page)).toHaveCount(5);
+
+  // A row and a floor.
+  await page.click('#btn-row');
+  await page.click('[data-row-action="settings"]');
+  await page.click('#row-dup');
+  await expect(page.locator('#row-label')).toHaveText('Row C');
+  await expect(racks(page)).toHaveCount(5);
+  await page.click('.ftab:has-text("First floor")');
+  await page.click('.ftab:has-text("First floor")');
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('.ftab[aria-pressed="true"]')).toHaveText('First floor (copy)');
+  await expect(page.locator('.rack-head').first()).toContainText('Rack 3A01');
+
+  for (let i = 0; i < 6; i++) await page.keyboard.press('Control+z');
+  expect(await planDevices(page)).toBe(65);
+});
+
 test('reserved space gets its own height and counts in the rack stats', async ({ page }) => {
   await dragPart(page, 'reserved', await spot(page, 'reserved', { rack: 'r1', kind: 'u', at: 30 }, 2));
   await page.mouse.up();

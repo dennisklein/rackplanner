@@ -92,11 +92,17 @@ makes a 1U PDU look like a vertical power strip.
 - **Select several**: <kbd>Shift</kbd>-click devices, <kbd>Shift</kbd>-drag
   across the empty sheet, press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole row,
   or use the select buttons on a rack, row or cluster. Then move them
-  together (drag, or the arrow keys), give them one cluster or owner, rename
-  them in series or delete them.
+  together (drag, or the arrow keys), duplicate them, give them one cluster
+  or owner, rename them in series or delete them.
+- **Duplicate**: <kbd>Ctrl</kbd>+<kbd>D</kbd> (or the Duplicate button) copies
+  whatever is selected. A device or a group of devices is copied into the
+  nearest free space, below it first, then above, then in the neighbouring
+  racks, keeping the group's layout; names continue each series (`cn-013`,
+  `cn-014`). A rack, row or floor is copied with all its devices and
+  inserted right after the original.
 - **Racks, rows and floors**: click a rack's yellow label to rename it, change
-  its type, move it left or right, insert a rack beside it, move it to
-  another row or delete it. The dashed **Add rack** slot at the end of a row
+  its type, move it left or right, insert a rack beside it, duplicate it,
+  move it to another row or delete it. The dashed **Add rack** slot at the end of a row
   adds one. Row and floor settings (from the row picker, the pencil on the
   floor map, or a click on the active floor tab) rename, reorder, move and
   delete them, and show their totals.
@@ -122,7 +128,7 @@ makes a 1U PDU look like a vertical power strip.
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack |
 | <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area |
 | <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device in the row |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor |
 | <kbd>Del</kbd> | Delete |
 | <kbd>Tab</kbd> | Walk through devices, top to bottom |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |

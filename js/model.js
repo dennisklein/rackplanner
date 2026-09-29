@@ -1005,6 +1005,144 @@
   }
 
   /**
+   * Where copies of the devices in `ids` fit as a block, keeping their
+   * spacing: below them in their racks, else above, else in the nearest
+   * racks of their rows (same height first). Side-slot devices take the same
+   * slot or another free one in their target rack. Returns [{ id, loc }]
+   * with `id` the original's, or null when there is no room.
+   */
+  function copyTargets(project, ids) {
+    const set = new Set(ids);
+    const devs = sortedDevices(project).filter((d) => set.has(d.id));
+    if (!devs.length) return null;
+    const grids = new Map();
+    const grid = (rackId) => {
+      if (!grids.has(rackId)) grids.set(rackId, rackGrid(project, rackId));
+      return grids.get(rackId);
+    };
+    const sideTaken = (rackId) => new Set(project.devices.filter((d) => d.loc.rack === rackId && d.loc.kind === 'side').map((d) => d.loc.at));
+    const attempt = (dRack, dU) => {
+      const claimed = new Map();
+      const out = [];
+      for (const d of devs) {
+        const pos = locateRack(project, d.loc.rack);
+        const target = pos && pos.row.racks[pos.index + dRack];
+        if (!target) return null;
+        let mine = claimed.get(target.id);
+        if (!mine) claimed.set(target.id, (mine = { units: new Set(), side: sideTaken(target.id) }));
+        if (d.loc.kind === 'side') {
+          if (deviceHeight(project, d) !== 1) return null;
+          const slots = rackSideSlots(project, target);
+          const order = [d.loc.at].concat(Array.from({ length: slots }, (_, i) => i));
+          const at = order.find((s) => s < slots && !mine.side.has(s));
+          if (at === undefined) return null;
+          mine.side.add(at);
+          out.push({ id: d.id, loc: { rack: target.id, kind: 'side', at } });
+          continue;
+        }
+        const g = grid(target.id);
+        const h = deviceHeight(project, d);
+        const at = d.loc.at + dU;
+        if (at < 1 || at + h - 1 > g.length - 2) return null;
+        for (let u = at; u < at + h; u++) if (g[u] || mine.units.has(u)) return null;
+        for (let u = at; u < at + h; u++) mine.units.add(u);
+        out.push({ id: d.id, loc: { rack: target.id, kind: 'u', at } });
+      }
+      return out;
+    };
+    const tryShifts = (dRack) => {
+      if (dRack !== 0) {
+        const same = attempt(dRack, 0);
+        if (same) return same;
+      }
+      for (let k = 1; k <= LIMITS.unitsMax; k++) {
+        const down = attempt(dRack, k);
+        if (down) return down;
+      }
+      for (let k = 1; k <= LIMITS.unitsMax; k++) {
+        const up = attempt(dRack, -k);
+        if (up) return up;
+      }
+      return null;
+    };
+    const found = tryShifts(0);
+    if (found) return found;
+    for (let n = 1; n < LIMITS.racks; n++) {
+      for (const dRack of [n, -n]) {
+        const r = tryShifts(dRack);
+        if (r) return r;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Adds copies of the devices in racks that `rackMap` maps (old rack id →
+   * new rack id), at the same positions, with new ids and names that continue
+   * each series. Returns the copies.
+   */
+  function copyDevicesInto(project, rackMap) {
+    const named = { devices: project.devices.slice() };
+    const copies = [];
+    for (const d of sortedDevices(project)) {
+      if (!rackMap.has(d.loc.rack)) continue;
+      const c = Object.assign(clone(d), { id: uid('d'), name: nextFreeName(named, d.name), loc: Object.assign({}, d.loc, { rack: rackMap.get(d.loc.rack) }) });
+      named.devices.push(c);
+      copies.push(c);
+    }
+    project.devices.push(...copies);
+    return copies;
+  }
+
+  /** Inserts a copy of a rack, with copies of its devices, right after it. Null when the row is full. */
+  function duplicateRack(project, rackId) {
+    const pos = locateRack(project, rackId);
+    if (!pos || pos.row.racks.length >= LIMITS.racks) return null;
+    const rack = addRack(project, pos.row.id, { index: pos.index + 1, type: pos.rack.type });
+    copyDevicesInto(project, new Map([[rackId, rack.id]]));
+    return rack;
+  }
+
+  function copyRowInto(project, source, floor, index) {
+    const row = { id: nextId('row', structureIds(project)), name: nextRowName(floor), racks: [] };
+    floor.rows.splice(index, 0, row);
+    const map = new Map();
+    source.racks.forEach((r, i) => {
+      const rack = { id: nextId('r', structureIds(project)), name: defaultRackName(project, row.id, i), type: r.type };
+      row.racks.push(rack);
+      map.set(r.id, rack.id);
+    });
+    return { row, map };
+  }
+
+  /** Inserts a copy of a row, with its racks and devices, right after it. Null when the floor is full. */
+  function duplicateRow(project, rowId) {
+    const pos = locateRow(project, rowId);
+    if (!pos || pos.floor.rows.length >= LIMITS.rows) return null;
+    const { row, map } = copyRowInto(project, pos.row, pos.floor, pos.rowIndex + 1);
+    copyDevicesInto(project, map);
+    return row;
+  }
+
+  /** Inserts a copy of a floor, with everything on it, right after it. Null when the plan has six floors. */
+  function duplicateFloor(project, floorId) {
+    const i = project.floors.findIndex((f) => f.id === floorId);
+    if (i < 0 || project.floors.length >= LIMITS.floors) return null;
+    const source = project.floors[i];
+    const floor = { id: nextId('f', structureIds(project)), name: `${source.name} (copy)`.slice(0, 60), rows: [] };
+    project.floors.splice(i + 1, 0, floor);
+    const map = new Map();
+    source.rows.forEach((r, k) => copyRowInto(project, r, floor, k).map.forEach((v, key) => map.set(key, v)));
+    // Rows keep their names on the copied floor, and racks are named after them.
+    floor.rows.forEach((row, k) => {
+      row.name = source.rows[k].name;
+      row.racks.forEach((rack, j) => (rack.name = defaultRackName(project, row.id, j)));
+    });
+    copyDevicesInto(project, map);
+    return floor;
+  }
+
+  /**
    * Finds devices that don't fit their rack: outside its units or side
    * slots, or overlapping. Limited to `rackIdSet` when given. Returns a
    * message for the first problem, or null.
@@ -1446,6 +1584,10 @@
     canAddAll,
     shiftMoves,
     groupNudge,
+    copyTargets,
+    duplicateRack,
+    duplicateRow,
+    duplicateFloor,
     layoutProblem,
     formatPosition,
     formatLoc,

@@ -716,6 +716,29 @@
     return made;
   }
 
+  function duplicateStructure(kind, id) {
+    const name = kind === 'rack' ? M.rackById(project, id).name : kind === 'row' ? M.rowById(project, id).name : M.floorById(project, id).name;
+    const before = project.devices.length;
+    let made = null;
+    commit((p) => {
+      made = kind === 'rack' ? M.duplicateRack(p, id) : kind === 'row' ? M.duplicateRow(p, id) : M.duplicateFloor(p, id);
+      return made ? undefined : false;
+    });
+    if (!made) {
+      const full = { rack: `A row holds up to ${M.LIMITS.racks} racks`, row: `A floor holds up to ${M.LIMITS.rows} rows`, floor: `A plan holds up to ${M.LIMITS.floors} floors` };
+      return toast(full[kind], { warn: true });
+    }
+    const n = project.devices.length - before;
+    ui.selection = { kind, id: made.id };
+    if (kind === 'rack') render();
+    else setRow(kind === 'row' ? made.id : made.rows[0].id);
+    if (kind === 'rack') {
+      const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(made.id)}"]`);
+      if (head) ensureVisible(head);
+    }
+    toast(`Added ${made.name}, a copy of ${name}${n ? ` with ${plural(n, 'device')}` : ''}`, { action: 'Undo', onAction: undo });
+  }
+
   async function deleteRack(rackId) {
     const pos = M.locateRack(project, rackId);
     if (!pos) return;
@@ -1081,6 +1104,7 @@
       `</div></section>` +
       `<section class="insp-sec"><h3>Devices</h3><ol class="contents">${rows}</ol></section>` +
       `<div class="insp-actions">` +
+      `<button type="button" class="btn" id="multi-dup" title="Duplicate (Ctrl+D)">${icon('copy')}Duplicate</button>` +
       `<button type="button" class="btn" id="multi-clear">Clear selection</button>` +
       `<button type="button" class="btn danger-text" id="multi-del">${icon('trash')}Delete ${devs.length}</button>` +
       `</div>`;
@@ -1111,6 +1135,7 @@
         else groupToRack(g === 'left' ? -1 : 1);
       })
     );
+    $('#multi-dup').addEventListener('click', () => duplicateDevices(ids));
     $('#multi-clear').addEventListener('click', clearSelection);
     $('#multi-del').addEventListener('click', () => deleteDevices(ids));
   }
@@ -1179,6 +1204,7 @@
       (devs.length ? `<ol class="contents">${contentsList(devs)}</ol>` : `<p class="empty-note">Empty. Drag devices from the left onto this rack.</p>`) +
       `</section>` +
       `<div class="insp-actions">` +
+      `<button type="button" class="btn" id="insp-dup-rack"${rowFull ? ` disabled title="${esc(pos.row.name)} is full"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate rack</button>` +
       `<button type="button" class="btn" id="insp-rack-select"${devs.length ? '' : ' disabled'}>${icon('select')}Select devices</button>` +
       `<button type="button" class="btn danger-text" id="insp-clear-rack"${devs.length ? '' : ' disabled'}>${icon('trash')}Empty rack</button>` +
       `<button type="button" class="btn danger-text" id="insp-del-rack"${n <= 1 ? ' disabled title="A row needs at least one rack"' : ''}>${icon('trash')}Delete rack</button>` +
@@ -1219,6 +1245,7 @@
       setRow(target);
       toast(`Moved ${rack.name} to ${M.formatWhere(project, target)}`, { action: 'Undo', onAction: undo });
     });
+    $('#insp-dup-rack').addEventListener('click', () => duplicateStructure('rack', id));
     $('#insp-rack-select').addEventListener('click', () => selectDevices(devs.map((d) => d.id)));
     $('#insp-clear-rack').addEventListener('click', async () => {
       const ok = await confirmDialog({
@@ -1271,6 +1298,7 @@
       `<div class="insp-actions">` +
       `<button type="button" class="btn" id="row-open">${icon('rack')}Show elevation</button>` +
       `<button type="button" class="btn" id="row-add"${pos.floor.rows.length >= M.LIMITS.rows ? ' disabled' : ''}>${icon('plus')}Add row after</button>` +
+      `<button type="button" class="btn" id="row-dup"${pos.floor.rows.length >= M.LIMITS.rows ? ` disabled title="${esc(pos.floor.name)} is full"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate row</button>` +
       `<button type="button" class="btn" id="row-select"${devs.length ? '' : ' disabled'}>${icon('select')}Select devices</button>` +
       `<button type="button" class="btn danger-text" id="row-del"${pos.floor.rows.length <= 1 ? ' disabled title="A floor needs at least one row"' : ''}>${icon('trash')}Delete row</button>` +
       `</div>`;
@@ -1296,6 +1324,7 @@
     );
     $('#row-open').addEventListener('click', () => setRow(id, { view: 'sheet' }));
     $('#row-add').addEventListener('click', () => addRowTo(pos.floor.id, pos.rowIndex + 1));
+    $('#row-dup').addEventListener('click', () => duplicateStructure('row', id));
     $('#row-select').addEventListener('click', () => {
       setRow(id, { view: 'sheet', render: false });
       selectDevices(devs.map((d) => d.id));
@@ -1330,6 +1359,7 @@
       `<div class="insp-actions">` +
       `<button type="button" class="btn" id="floor-map">${icon('map')}Floor map</button>` +
       `<button type="button" class="btn" id="floor-add-row"${floor.rows.length >= M.LIMITS.rows ? ' disabled' : ''}>${icon('plus')}Add row</button>` +
+      `<button type="button" class="btn" id="floor-dup"${project.floors.length >= M.LIMITS.floors ? ' disabled title="The plan has six floors"' : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate floor</button>` +
       `<button type="button" class="btn danger-text" id="floor-del"${project.floors.length <= 1 ? ' disabled title="A plan needs at least one floor"' : ''}>${icon('trash')}Delete floor</button>` +
       `</div>`;
     const id = floor.id;
@@ -1346,6 +1376,7 @@
     $$('[data-floor-act]', el.inspector).forEach((b) => b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)))));
     $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
     $('#floor-add-row').addEventListener('click', () => addRowTo(id));
+    $('#floor-dup').addEventListener('click', () => duplicateStructure('floor', id));
     $('#floor-del').addEventListener('click', () => deleteFloor(id));
   }
 
@@ -1414,7 +1445,7 @@
       `<dt><kbd>Alt</kbd> + drop</dt><dd>Copy instead of move</dd>` +
       `<dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Next free position</dd>` +
       `<dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Neighbouring rack</dd>` +
-      `<dt><kbd>Ctrl</kbd> <kbd>D</kbd></dt><dd>Duplicate</dd>` +
+      `<dt><kbd>Ctrl</kbd> <kbd>D</kbd></dt><dd>Duplicate the selection</dd>` +
       `<dt><kbd>Del</kbd></dt><dd>Delete</dd>` +
       `<dt><kbd>Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo; add <kbd>Shift</kbd> to redo</dd>` +
       `<dt><kbd>0</kbd> <kbd>1</kbd></dt><dd>Fit sheet, 100%</dd>` +
@@ -1541,7 +1572,17 @@
     toast(`Added ${copy.name} at ${M.formatDeviceLoc(project, copy)}`);
   }
 
-  function copyGroup(moves) {
+  /** Duplicates the selected devices: one like duplicateDevice, several as a block. */
+  function duplicateDevices(ids) {
+    if (ids.length === 1) return duplicateDevice(ids[0]);
+    const targets = M.copyTargets(project, ids);
+    if (!targets) return toast(`No room left for a copy of the ${plural(ids.length, 'device')}`, { warn: true });
+    copyGroup(targets, 'Duplicated');
+    const g = findDevEl(ui.selection.ids[0]);
+    if (g) ensureVisible(g);
+  }
+
+  function copyGroup(moves, verb) {
     const copies = [];
     const scratch = Object.assign({}, project, { devices: project.devices.slice() });
     for (const m of moves) {
@@ -1552,7 +1593,8 @@
     }
     ui.selection = { kind: 'devices', ids: copies.map((c) => c.id) };
     commit((p) => void p.devices.push(...copies));
-    toast(`Copied ${plural(copies.length, 'device')}`, { action: 'Undo', onAction: undo });
+    const first = copies[0];
+    toast(`${verb || 'Copied'} ${plural(copies.length, 'device')}, from ${first.name} at ${M.formatDeviceLoc(project, first)}`, { action: 'Undo', onAction: undo });
   }
 
   function deleteDevices(ids) {
@@ -3380,9 +3422,10 @@
         return;
       }
     }
-    if (d && mod && (key === 'd' || key === 'D')) {
+    if (mod && !e.shiftKey && !e.altKey && (key === 'd' || key === 'D') && ui.selection) {
       e.preventDefault();
-      return duplicateDevice(d.id);
+      const s = ui.selection;
+      return s.kind === 'devices' ? duplicateDevices(s.ids) : duplicateStructure(s.kind, s.id);
     }
     if (mod && (key === 'a' || key === 'A') && ui.view === 'sheet') {
       e.preventDefault();

@@ -228,6 +228,64 @@ test('groups of devices move together', () => {
   ]).ok, 'moved devices are checked against each other');
 });
 
+test('copies of a group go below it, else above, else into the next rack', () => {
+  const p = project([
+    ['compute-node', 'r1', 'u', 10, 'cn-001'],
+    ['compute-node', 'r1', 'u', 12, 'cn-002'],
+    ['switch-rj45', 'r1', 'side', 0, 'sw-side'],
+  ]);
+  assert.deepEqual(M.copyTargets(p, ['d1', 'd2']), [
+    { id: 'd1', loc: { rack: 'r1', kind: 'u', at: 14 } },
+    { id: 'd2', loc: { rack: 'r1', kind: 'u', at: 16 } },
+  ], 'right below, keeping the spacing');
+  const withSide = M.copyTargets(p, ['d1', 'd3']);
+  assert.deepEqual(withSide.find((m) => m.id === 'd3').loc, { rack: 'r1', kind: 'side', at: 1 }, 'the other side slot');
+
+  // A full rack sends the copies to its neighbour, at the same height.
+  const full = project([['storage-node', 'r1', 'u', 1, 'top'], ['storage-node', 'r1', 'u', 5, 'next']]);
+  for (let u = 9; u + 3 <= 47; u += 4) full.devices.push(M.newDevice({ type: 'storage-node', name: `f${u}`, loc: { rack: 'r1', kind: 'u', at: u } }));
+  assert.deepEqual(M.copyTargets(full, [full.devices[0].id, full.devices[1].id]).map((m) => m.loc), [
+    { rack: 'r2', kind: 'u', at: 1 },
+    { rack: 'r2', kind: 'u', at: 5 },
+  ]);
+  M.setRowRackCount(full, 'row1', 1);
+  assert.equal(M.copyTargets(full, [full.devices[0].id]), null, 'no room anywhere');
+});
+
+test('racks, rows and floors can be duplicated with their devices', () => {
+  const p = M.createExampleProject();
+  const before = p.devices.length;
+  const rack = M.duplicateRack(p, 'r1');
+  const row = p.floors[0].rows[0];
+  assert.deepEqual(row.racks.map((r) => r.id).slice(0, 3), ['r1', rack.id, 'r2'], 'right after the original');
+  assert.equal(rack.name, 'Rack A04');
+  assert.equal(rack.type, 'rack-47');
+  const copies = M.devicesWithin(p, rack.id);
+  assert.equal(copies.length, M.devicesWithin(p, 'r1').length);
+  assert.deepEqual(copies.slice(0, 3).map((d) => [d.name, d.loc.kind, d.loc.at]), [['sw-mgmt-a04', 'u', 1], ['ib-leaf-a04', 'u', 2], ['cn-013', 'u', 4]]);
+  assert.equal(M.layoutProblem(p), null);
+
+  const row2 = M.duplicateRow(p, 'row2');
+  assert.equal(p.floors[0].rows[2], row2, 'after Row B');
+  assert.equal(row2.name, 'Row C');
+  assert.deepEqual(row2.racks.map((r) => [r.name, r.type]), [['Rack C01', 'rack-48'], ['Rack C02', 'rack-48'], ['Rack C03', 'rack-48']]);
+  assert.equal(M.devicesWithin(p, row2.id).length, M.devicesWithin(p, 'row2').length);
+  assert.ok(M.devicesWithin(p, row2.id).some((d) => d.type === 'reserved' && d.height === 8));
+
+  const floor = M.duplicateFloor(p, 'f2');
+  assert.equal(floor.name, 'First floor (copy)');
+  assert.deepEqual(floor.rows.map((r) => r.racks.map((k) => k.name)), [['Rack 3A01', 'Rack 3A02']]);
+  assert.equal(M.devicesWithin(p, floor.id).length, M.devicesWithin(p, 'f2').length);
+  assert.equal(new Set(p.devices.map((d) => d.id)).size, p.devices.length, 'new ids');
+  assert.equal(new Set(p.devices.map((d) => d.name)).size, p.devices.length, 'new names');
+  assert.equal(new Set(M.structureIds(p)).size, M.structureIds(p).size);
+  assert.equal(M.layoutProblem(p), null);
+  assert.ok(p.devices.length > before);
+
+  const small = M.createEmptyProject(16);
+  assert.equal(M.duplicateRack(small, 'r1'), null, 'a full row takes no copy');
+});
+
 test('names count up in series', () => {
   assert.deepEqual(M.nameSequence('cn-008', 3), ['cn-008', 'cn-009', 'cn-010']);
   assert.deepEqual(M.nameSequence('node', 2), ['node-01', 'node-02']);
