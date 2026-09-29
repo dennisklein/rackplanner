@@ -321,6 +321,9 @@ test('reserved space gets its own height and counts in the rack stats', async ({
   await dragPart(page, 'reserved', await spot(page, 'reserved', { rack: 'r1', kind: 'u', at: 30 }, 2));
   await page.mouse.up();
   await expect(page.locator('#place-height-field')).toBeVisible();
+  await page.fill('#place-height', '20');
+  await expect(page.locator('#place-preview')).toHaveText('A 20U device must sit within U1–47');
+  await expect(page.locator('#place-submit')).toBeDisabled();
   await page.fill('#place-height', '6');
   await page.fill('#place-name', 'Future storage');
   await page.click('#place-submit');

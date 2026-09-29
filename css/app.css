@@ -372,7 +372,8 @@ p { margin: 0; }
 
 .floormap { padding: 18px 20px 72px; display: flex; flex-direction: column; gap: 16px; min-width: max-content; }
 .fm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.fm-title h2 { font: 600 22px/1.1 var(--font-display); letter-spacing: .01em; }
+.fm-title { min-width: 0; max-width: min(720px, 100%); }
+.fm-title h2 { font: 600 22px/1.1 var(--font-display); letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-title p { color: var(--ink-2); font-size: 13px; margin-top: 3px; }
 .fm-metric { height: 30px; background: var(--surface); }
 .fm-metric button { padding: 0 11px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 13px; }
@@ -390,7 +391,9 @@ p { margin: 0; }
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px; margin-left: -4px;
   border: 0; border-radius: 3px; background: none; cursor: pointer;
   font: 600 16px/1.2 var(--font-display); letter-spacing: .02em;
+  max-width: 320px; min-width: 0;
 }
+.fm-row-open > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-row-open:hover { background: var(--surface-2); }
 .fm-row-meta { flex: 1; color: var(--ink-3); font-size: 12.5px; }
 .fm-racks { display: flex; align-items: flex-end; gap: 8px; }

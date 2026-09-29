@@ -148,7 +148,7 @@
     sceneH: 1200,
     layout: null,
   };
-  let lastDragEnd = -Infinity;
+  let lastPaletteDragEnd = -Infinity;
   let restoringFocus = false;
 
   function savePrefs() {
@@ -527,7 +527,7 @@
     const colors = new Map(project.clusters.map((c) => [c.id, c.color]));
     const fs = M.statsWithin(project, floor.id, stats);
     let html =
-      `<div class="fm-head"><div class="fm-title"><h2>${esc(floor.name)}</h2><p>${esc(plural(floor.rows.length, 'row'))} · ${esc(statsLine(fs))}</p></div>` +
+      `<div class="fm-head"><div class="fm-title"><h2 title="${esc(floor.name)}">${esc(floor.name)}</h2><p>${esc(plural(floor.rows.length, 'row'))} · ${esc(statsLine(fs))}</p></div>` +
       `<div class="seg fm-metric" role="group" aria-label="Rack meters show">` +
       Object.entries(METRICS)
         .map(([k, label]) => `<button type="button" data-metric="${k}" aria-pressed="${ui.metric === k}">${label}</button>`)
@@ -537,7 +537,7 @@
       const rs = M.statsWithin(project, row.id, stats);
       html +=
         `<section class="fm-row${row.id === ui.rowId ? ' is-current' : ''}${sel && sel.kind === 'row' && sel.id === row.id ? ' is-selected' : ''}" aria-label="${esc(row.name)}">` +
-        `<div class="fm-row-head"><button type="button" class="fm-row-open" data-open-row="${esc(row.id)}" title="Show the elevation of ${esc(row.name)}">${esc(row.name)}${icon('right', 'ic-sm')}</button>` +
+        `<div class="fm-row-head"><button type="button" class="fm-row-open" data-open-row="${esc(row.id)}" title="Show the elevation of ${esc(row.name)}"><span>${esc(row.name)}</span>${icon('right', 'ic-sm')}</button>` +
         `<span class="fm-row-meta">${esc(statsLine(rs))}</span>` +
         `<button type="button" class="btn icon sm subtle" data-edit-row="${esc(row.id)}" title="Row settings" aria-label="Settings for ${esc(row.name)}">${icon('pencil')}</button></div>` +
         `<div class="fm-racks">`;
@@ -1780,7 +1780,8 @@
       if (d.source === 'device') selectDevice(d.deviceId, true);
       return;
     }
-    lastDragEnd = performance.now();
+    // A drag from the parts bin ends with a click on the card; ignore that one.
+    if (d.source === 'palette') lastPaletteDragEnd = performance.now();
     if (!d.loc || !d.ok) {
       render();
       if (d.loc && d.reason) toast(d.reason, { warn: true });
@@ -1876,7 +1877,7 @@
   });
   el.parts.addEventListener('click', (e) => {
     const card = e.target.closest('.part');
-    if (!card || performance.now() - lastDragEnd < 400) return;
+    if (!card || performance.now() - lastPaletteDragEnd < 400) return;
     if (ui.view === 'map') setView('sheet');
     toggleArm(card.dataset.type);
   });
@@ -2359,6 +2360,13 @@
     } else {
       place.positions = M.planPositions(project, type.id, loc.rack, loc.at, qty, dir, null, height).map((at) => ({ rack: loc.rack, at }));
       max = M.planPositions(project, type.id, loc.rack, loc.at, Infinity, dir, null, height).length;
+      // The first device goes where it was dropped (a taller reservation may no longer fit there).
+      const here = M.canPlace(project, type.id, loc, null, height);
+      if (!here.ok) {
+        place.valid = false;
+        line.classList.add('bad');
+        line.textContent = here.reason;
+      }
     }
     qtyInput.max = String(Math.max(1, max));
     if (!place.valid) {
