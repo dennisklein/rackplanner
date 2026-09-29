@@ -62,6 +62,28 @@ test('locateDrop snaps to units and finds side slots', () => {
   assert.equal(R.locateDrop(p, 'switch-rj45', bayCenter(0), 5000, 10), null);
 });
 
+test('exports use fallback fonts for both measuring and drawing text', () => {
+  assert.equal(R.withoutWebFonts(R.FONTS.title.family), "'Arial Narrow', sans-serif");
+  assert.equal(R.withoutWebFonts(R.FONTS.legend.css), "500 12px 'Segoe UI', system-ui, -apple-system, sans-serif");
+  assert.ok(!/Plex|Barlow/.test(R.withoutWebFonts(R.FONTS.name.css)));
+  const seen = [];
+  const measure = (t, css) => (seen.push(css), t.length * 6);
+  const svg = R.exportSVG(M.createExampleProject(), { measure, date: '2026-01-01' });
+  assert.ok(seen.length > 0 && seen.every((css) => !/Plex|Barlow/.test(css)), 'measured without web fonts');
+  assert.ok(!/Plex|Barlow/.test(svg), 'drawn without web fonts');
+});
+
+test('a multi-U ghost over a side slot stays inside the slot', () => {
+  const p = M.createEmptyProject();
+  const side = { rack: 'r1', kind: 'side', at: 0 };
+  const big = R.renderGhost(p, 'storage-node', side, false, {});
+  assert.ok(!big.includes('rotate(-90)'), 'no rotated 4U face');
+  const slot = R.locRect(p, 'storage-node', side);
+  const widths = [...big.matchAll(/width="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(widths.every((w) => w <= slot.w + 3), `all shapes fit the ${slot.w}px slot`);
+  assert.ok(R.renderGhost(p, 'switch-rj45', side, true, {}).includes('rotate(-90)'), '1U devices still preview rotated');
+});
+
 test('color schemes derive from the cluster color', () => {
   const light = R.schemeFor('#2f6fdb', 'light');
   const dark = R.schemeFor('#2f6fdb', 'dark');

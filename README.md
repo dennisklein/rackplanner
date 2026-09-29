@@ -101,21 +101,28 @@ css/app.css       styles, light and dark themes
 js/model.js       data model and placement rules (no DOM, shared with tests)
 js/render.js      SVG drawing of racks and devices, sheet geometry, hit testing
 js/app.js         UI state, undo history, drag and drop, dialogs, export
-test/             Node tests for model and renderer
+test/             unit tests for model and renderer
+e2e/              browser tests (Playwright) and their static server
 ```
 
 ## Tests
 
 ```sh
-npm test
+npm test             # unit tests: placement rules, import, drawing (no dependencies)
+npm ci               # once, for the browser tests
+npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
 ```
 
-This uses Node's built-in test runner (Node 18 or later) and needs no dependencies.
+The unit tests use Node's built-in test runner (Node 18 or later). The browser
+tests in `e2e/` start a small static server and cover dragging, the placement
+dialog, keyboard use, rack count, undo, export and the phone layout. If Chromium
+is missing, install it with `npx playwright install chromium`. The app itself
+has no dependencies; Playwright is only needed to run these tests.
 
 ## Deployment
 
-`.github/workflows/pages.yml` runs the tests and publishes the site to GitHub
-Pages on every push to `main`. You can also start it by hand from the Actions tab.
+`.github/workflows/pages.yml` runs the unit and browser tests and publishes the
+site to GitHub Pages on every push to `main`. Nothing is deployed if a test fails. You can also start it by hand from the Actions tab.
 
 It needs a one-time setup in the repository settings:
 

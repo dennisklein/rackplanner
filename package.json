@@ -6,6 +6,10 @@
   "license": "CC0-1.0",
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
   }
 }

@@ -466,20 +466,30 @@
     // Version 1 counted units from the bottom of the rack.
     const bottomUp = Number(raw.version) === 1;
     const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+    // Ids may be written as numbers in hand-made files; they are kept as strings.
+    const idOf = (v) => (typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v)) ? String(v).trim().slice(0, 80) : '');
     if (str(raw.name, 120)) p.name = str(raw.name, 120);
 
-    const rackIds = new Map(p.racks.map((r) => [r.id, r.id]));
-    rawRacks.slice(0, MAX_RACKS).forEach((r, i) => {
-      if (str(r.name, 60)) p.racks[i].name = str(r.name, 60);
-      if (r.id != null) rackIds.set(String(r.id), p.racks[i].id);
-    });
+    // Map the file's rack ids to r1..rN by position. Without racks in the
+    // file, devices may refer to the default ids directly.
+    const rackIds = new Map();
+    if (rawRacks.length) {
+      rawRacks.slice(0, MAX_RACKS).forEach((r, i) => {
+        if (str(r.name, 60)) p.racks[i].name = str(r.name, 60);
+        rackIds.set(idOf(r.id) || p.racks[i].id, p.racks[i].id);
+      });
+    } else {
+      p.racks.forEach((r) => rackIds.set(r.id, r.id));
+    }
     if (rawRacks.length > MAX_RACKS) warnings.push(`Only the first ${MAX_RACKS} racks were kept.`);
 
     const clusterIds = new Set();
-    (Array.isArray(raw.clusters) ? raw.clusters : []).forEach((c) => {
+    (Array.isArray(raw.clusters) ? raw.clusters : []).forEach((c, i) => {
       if (!c || typeof c !== 'object') return;
-      const id = str(c.id, 80);
-      if (!id || clusterIds.has(id)) return;
+      const id = idOf(c.id);
+      const label = str(c.name, 60) || `#${i + 1}`;
+      if (!id) return void warnings.push(`Skipped cluster ${label}: it has no id.`);
+      if (clusterIds.has(id)) return void warnings.push(`Skipped cluster ${label}: its id “${id}” is used twice.`);
       clusterIds.add(id);
       p.clusters.push({
         id,
@@ -499,30 +509,43 @@
       }
       const loc = d.loc && typeof d.loc === 'object' ? d.loc : {};
       const nloc = {
-        rack: rackIds.get(String(loc.rack)) || null,
+        rack: rackIds.get(idOf(loc.rack)) || null,
         kind: loc.kind === 'side' ? 'side' : 'u',
         at: Number(loc.at),
       };
+      if (!nloc.rack) {
+        const ref = idOf(loc.rack);
+        return void warnings.push(`Skipped ${name}: ${ref ? `rack “${ref}” is not in the plan` : 'it has no rack'}.`);
+      }
       if (bottomUp && nloc.kind === 'u') nloc.at = RACK_UNITS + 2 - nloc.at - type.height;
       const fit = canPlace(p, type.id, nloc);
       if (!fit.ok) {
         warnings.push(`Skipped ${name}: ${fit.reason}.`);
         return;
       }
-      let id = str(d.id, 80);
+      let id = idOf(d.id);
       if (!id || deviceIds.has(id)) id = uid('d');
       deviceIds.add(id);
+      const cluster = idOf(d.cluster);
+      if (cluster && !clusterIds.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned.`);
       p.devices.push({
         id,
         type: type.id,
         name,
-        cluster: clusterIds.has(d.cluster) ? d.cluster : null,
+        cluster: clusterIds.has(cluster) ? cluster : null,
         notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : '',
         loc: nloc,
       });
     });
     if (raw.meta && typeof raw.meta === 'object' && raw.meta.example === true) p.meta.example = true;
     return { project: p, warnings };
+  }
+
+  /** True when the plan still equals the example (the notice flag aside). */
+  function isPristineExample(project) {
+    const ex = createExampleProject();
+    const pick = (p) => JSON.stringify([p.name, p.racks, p.clusters, p.devices]);
+    return pick(project) === pick(ex);
   }
 
   function csvCell(value) {
@@ -568,6 +591,7 @@
     normalizeHex,
     createEmptyProject,
     createExampleProject,
+    isPristineExample,
     defaultRackName,
     setRackCount,
     devicesBeyond,

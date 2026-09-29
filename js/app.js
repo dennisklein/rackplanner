@@ -62,6 +62,7 @@
     if (w === undefined) {
       measureCtx.font = font;
       w = measureCtx.measureText(text).width;
+      if (measureCache.size > 5000) measureCache.clear();
       measureCache.set(key, w);
     }
     return w;
@@ -96,7 +97,7 @@
     sceneW: 1200,
     sceneH: 1200,
   };
-  let lastDragEnd = 0;
+  let lastDragEnd = -Infinity;
   let restoringFocus = false;
 
   function loadProject() {
@@ -310,8 +311,9 @@
     el.undo.disabled = !history.past.length;
     el.redo.disabled = !history.future.length;
     if (document.activeElement !== el.planName) el.planName.value = project.name;
-    const count = el.rackCount.querySelector(`input[value="${project.racks.length}"]`);
-    if (count) count.checked = true;
+    for (const b of el.rackCount.querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', String(Number(b.dataset.count) === project.racks.length));
+    }
     el.notice.hidden = !(project.meta && project.meta.example);
     el.stage.classList.toggle('is-armed', !!ui.armed);
     if (ui.armed) {
@@ -1456,8 +1458,12 @@
     const item = e.target.closest('[data-new]');
     if (!item) return;
     closeMenus();
-    const example = item.dataset.new === 'example';
-    if (project.devices.length && !(project.meta && project.meta.example)) {
+    startNew(item.dataset.new === 'example');
+  });
+
+  // Replacing a plan asks first, unless it is empty or the untouched example.
+  async function startNew(example) {
+    if (project.devices.length && !M.isPristineExample(project)) {
       const ok = await confirmDialog({
         title: example ? 'Load the example plan?' : 'Start with empty racks?',
         body: `This replaces “${project.name}”. Undo brings it back, or export it first to keep a copy.`,
@@ -1465,10 +1471,10 @@
       });
       if (!ok) return;
     }
-    startNew(example);
-  });
+    replaceWithNew(example);
+  }
 
-  function startNew(example) {
+  function replaceWithNew(example) {
     const next = example ? M.createExampleProject() : M.createEmptyProject(project.racks.length);
     if (!example) next.name = 'Untitled rack plan';
     replaceProject(next);
@@ -1477,11 +1483,7 @@
   }
 
   $('#btn-start-empty').addEventListener('click', () => startNew(false));
-  $('#btn-keep-example').addEventListener('click', () => {
-    delete project.meta.example;
-    persist();
-    renderChrome();
-  });
+  $('#btn-keep-example').addEventListener('click', () => commit((p) => void delete p.meta.example));
 
   // --------------------------------------------------------------- export
 
@@ -1588,13 +1590,16 @@
 
   // ----------------------------------------------------------- rack count
 
+  // Plain buttons rather than radios: arrow keys must not add or remove racks.
   el.rackCount.innerHTML = Array.from({ length: M.MAX_RACKS - M.MIN_RACKS + 1 }, (_, i) => {
     const n = M.MIN_RACKS + i;
-    return `<label title="${n} rack${n === 1 ? '' : 's'}"><input type="radio" name="rack-count" value="${n}"><span>${n}</span></label>`;
+    const label = `${n} rack${n === 1 ? '' : 's'}`;
+    return `<button type="button" data-count="${n}" aria-pressed="false" aria-label="${label}" title="${label}">${n}</button>`;
   }).join('');
 
-  el.rackCount.addEventListener('change', (e) => {
-    if (e.target.name === 'rack-count') changeRackCount(parseInt(e.target.value, 10));
+  el.rackCount.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-count]');
+    if (b) changeRackCount(Number(b.dataset.count));
   });
 
   async function changeRackCount(n) {
@@ -1697,6 +1702,8 @@
         return moveToRack(d.id, key === 'ArrowLeft' ? -1 : 1);
       }
       if (key === 'Enter' || key === 'F2') {
+        // On a focused button or link, Enter keeps activating it.
+        if (key === 'Enter' && t.closest && t.closest('button, a[href], summary')) return;
         e.preventDefault();
         const input = $('#insp-name');
         if (input) {
@@ -1735,6 +1742,8 @@
   if (document.fonts) {
     const remeasure = () => {
       measureCache.clear();
+      partsTheme = null;
+      renderParts();
       renderScene();
     };
     const faces = Object.values(R.FONTS).map((f) => f.css);

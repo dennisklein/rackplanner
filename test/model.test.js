@@ -188,7 +188,13 @@ test('normalizeProject drops what does not fit and keeps the rest', () => {
   assert.equal(p.devices[1].cluster, null);
   assert.notEqual(p.devices[1].id, 'a', 'duplicate ids are replaced');
   assert.deepEqual(p.devices[1].loc, { rack: 'r3', kind: 'side', at: 1 });
-  assert.equal(warnings.length, 3);
+  assert.deepEqual(warnings, [
+    'Skipped cluster dupe: its id “c1” is used twice.',
+    'Skipped cn-2: Overlaps cn-1 at U10–11.',
+    'Skipped t: unknown device type “toaster”.',
+    'Skipped sn: Side slots take 1U devices only.',
+    'sw refers to unknown cluster “nope” and is left unassigned.',
+  ]);
   assert.throws(() => M.normalizeProject([]), /not a rack plan/);
   assert.throws(() => M.normalizeProject({ foo: 1 }), /not a rack plan/);
 });
@@ -204,6 +210,41 @@ test('normalizeProject keeps between 1 and 5 racks', () => {
   assert.deepEqual(seven.project.devices.map((d) => d.loc.rack), ['r5'], 'device in the 7th rack is dropped');
   assert.equal(seven.warnings.length, 2);
   assert.equal(M.normalizeProject({ devices: [] }).project.racks.length, 3, 'default when racks are missing');
+});
+
+test('normalizeProject skips devices in racks the file does not have', () => {
+  const { project: p, warnings } = M.normalizeProject({
+    racks: [{ id: 'r2' }, { id: 'r3' }],
+    devices: [
+      { type: 'compute-node', name: 'orphan', loc: { rack: 'r1', kind: 'u', at: 1 } },
+      { type: 'compute-node', name: 'first', loc: { rack: 'r2', kind: 'u', at: 1 } },
+    ],
+  });
+  assert.deepEqual(p.devices.map((d) => [d.name, d.loc.rack]), [['first', 'r1']]);
+  assert.deepEqual(warnings, ['Skipped orphan: rack “r1” is not in the plan.']);
+  // Without racks in the file, devices may use the default ids.
+  const bare = M.normalizeProject({ devices: [{ type: 'switch-rj45', name: 'sw', loc: { rack: 'r3', kind: 'u', at: 5 } }] });
+  assert.equal(bare.project.devices[0].loc.rack, 'r3');
+});
+
+test('normalizeProject accepts numeric ids', () => {
+  const { project: p, warnings } = M.normalizeProject({
+    racks: [{ id: 1 }, { id: 2 }],
+    clusters: [{ id: 7, name: 'HPC', color: '#2f6fdb' }, { name: 'no id' }],
+    devices: [{ id: 3, type: 'compute-node', name: 'cn-1', cluster: 7, loc: { rack: 2, kind: 'u', at: 1 } }],
+  });
+  assert.deepEqual(p.clusters.map((c) => c.id), ['7']);
+  assert.deepEqual(p.devices.map((d) => [d.id, d.cluster, d.loc.rack]), [['3', '7', 'r2']]);
+  assert.deepEqual(warnings, ['Skipped cluster no id: it has no id.']);
+});
+
+test('isPristineExample notices any edit', () => {
+  const p = M.createExampleProject();
+  assert.ok(M.isPristineExample(p));
+  assert.ok(M.isPristineExample(Object.assign(JSON.parse(JSON.stringify(p)), { meta: {} })), 'the notice flag does not count');
+  p.devices[5].name = 'renamed';
+  assert.ok(!M.isPristineExample(p));
+  assert.ok(!M.isPristineExample(M.createEmptyProject()));
 });
 
 test('version 1 plans, counted from the bottom, keep their layout', () => {

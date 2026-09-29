@@ -182,8 +182,14 @@ p { margin: 0; }
   letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
 }
 .rack-count .seg { height: 32px; background: var(--surface); }
-.rack-count .seg span { padding: 0 10px; font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
-.rack-count .seg input:not(:checked) + span:hover { background: var(--surface-2); color: var(--ink); }
+.rack-count .seg button {
+  padding: 0 10px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer;
+  font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.rack-count .seg button + button { border-left: 1px solid var(--line-strong); }
+.rack-count .seg button:hover { background: var(--surface-2); color: var(--ink); }
+.rack-count .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.rack-count .seg button:focus-visible { outline: 2px solid var(--tape); outline-offset: -3px; }
 
 /* Menus */
 .menu-wrap { position: relative; }

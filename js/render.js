@@ -54,6 +54,9 @@
   const FONT_MONO = `'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace`;
   const FONT_UI = `Barlow, 'Segoe UI', system-ui, -apple-system, sans-serif`;
   const FONT_COND = `'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif`;
+  const WEB_FONTS = /'IBM Plex Mono',\s*|'Barlow Condensed',\s*|\bBarlow,\s*/g;
+  /** A font stack without the web fonts, which exported files cannot load. */
+  const withoutWebFonts = (stack) => stack.replace(WEB_FONTS, '');
   const FONTS = {
     name1: { css: `500 11px ${FONT_MONO}`, family: FONT_MONO, size: 11, weight: 500 },
     name: { css: `600 12.5px ${FONT_MONO}`, family: FONT_MONO, size: 12.5, weight: 600 },
@@ -580,7 +583,11 @@
     const sc = schemeFor(o.color || null, theme);
     const color = ok ? T.ok : T.bad;
     let s = `<g pointer-events="none">`;
-    s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${deviceFace(typeId, o.name || type.label, sc, theme, o.measure)}</g>`;
+    // A device taller than 1U cannot be drawn into a side slot; only mark the slot.
+    const fitsShape = !(loc.kind === 'side' && type.height !== 1);
+    if (fitsShape) {
+      s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${deviceFace(typeId, o.name || type.label, sc, theme, o.measure)}</g>`;
+    }
     if (!ok) s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r.w}" height="${r.h}" fill="${T.bad}" fill-opacity="0.18"/>`;
     s += `<rect x="${r1(r.x - 1.5)}" y="${r1(r.y - 1.5)}" width="${r.w + 3}" height="${r.h + 3}" rx="2.5" fill="none" stroke="${color}" stroke-width="2"/>`;
     return s + '</g>';
@@ -620,19 +627,34 @@
     };
   }
 
-  /** Complete standalone SVG document (light theme) for download. */
+  /**
+   * Complete standalone SVG document (light theme) for download. Exported
+   * files cannot load the page's web fonts (a PNG is rasterised from an
+   * <img>, an .svg is opened elsewhere), so text is set and measured in the
+   * fallback fonts to keep labels inside their boxes.
+   */
   function exportSVG(project, opts) {
-    const o = Object.assign({}, opts, { theme: 'light', interactive: false, selectedDevice: null, selectedRack: null, focusCluster: null, draggingId: null });
+    const measure = opts && opts.measure;
+    const o = Object.assign({}, opts, {
+      theme: 'light',
+      interactive: false,
+      selectedDevice: null,
+      selectedRack: null,
+      focusCluster: null,
+      draggingId: null,
+      measure: measure ? (t, css) => measure(t, withoutWebFonts(css)) : undefined,
+    });
     const sc = renderScene(project, o);
+    const body = sc.body.replace(/font-family="([^"]*)"/g, (m, stack) => `font-family="${withoutWebFonts(stack)}"`);
     return (
       `<?xml version="1.0" encoding="UTF-8"?>\n` +
       `<svg xmlns="http://www.w3.org/2000/svg" width="${sc.width}" height="${sc.height}" viewBox="0 0 ${sc.width} ${sc.height}">` +
-      `<title>${esc(project.name)}</title>${sc.body}</svg>`
+      `<title>${esc(project.name)}</title>${body}</svg>`
     );
   }
 
   return {
-    geometry: { U, BAY_W, RACK_W, U_TOP, RACK_TOP, SLOT_H },
+    geometry: { U, BAY_W, RACK_W, U_TOP, RACK_TOP, SLOT_W, SLOT_H },
     sheetWidth,
     THEMES,
     FONTS,
@@ -645,5 +667,6 @@
     locateDrop,
     locRect,
     exportSVG,
+    withoutWebFonts,
   };
 });
