@@ -1,0 +1,13 @@
+{
+  "name": "Rackplanner",
+  "short_name": "Rackplanner",
+  "description": "Plan datacenter rack layouts in the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e6eaee",
+  "theme_color": "#2a3038",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

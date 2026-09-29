@@ -1,8 +1,8 @@
 {
   "name": "rackplanner",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Client-side planner for datacenter rack layouts",
+  "description": "Client-side planner for datacenter rack layouts across floors and rows",
   "license": "CC0-1.0",
   "scripts": {
     "start": "npx --yes http-server -p 8080 -c-1 .",

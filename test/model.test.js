@@ -8,19 +8,36 @@ function project(devices) {
   const p = M.createEmptyProject();
   p.clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
   let n = 0;
-  for (const [type, rack, kind, at, name] of devices || []) {
-    p.devices.push({ id: `d${++n}`, type, name: name || `dev-${n}`, cluster: null, notes: '', loc: { rack, kind, at } });
+  for (const [type, rack, kind, at, name, extra] of devices || []) {
+    p.devices.push(M.newDevice(Object.assign({ id: `d${++n}`, type, name: name || `dev-${n}`, loc: { rack, kind, at } }, extra)));
   }
   return p;
 }
 
-test('racks have 47 units and two 1U side slots', () => {
+test('a new plan has one floor with one row of three 47U racks and the standard catalog', () => {
   const p = M.createEmptyProject();
-  assert.equal(p.racks.length, 3, 'three racks by default');
-  assert.equal(M.RACK_UNITS, 47);
-  assert.equal(M.SIDE_SLOTS, 2);
+  assert.equal(p.version, 3);
+  assert.deepEqual(p.floors, [
+    {
+      id: 'f1',
+      name: 'Floor 1',
+      rows: [
+        {
+          id: 'row1',
+          name: 'Row A',
+          racks: [
+            { id: 'r1', name: 'Rack A01', type: 'rack-47' },
+            { id: 'r2', name: 'Rack A02', type: 'rack-47' },
+            { id: 'r3', name: 'Rack A03', type: 'rack-47' },
+          ],
+        },
+      ],
+    },
+  ]);
+  assert.equal(M.rackUnits(p, 'r1'), 47);
+  assert.equal(M.rackSideSlots(p, 'r1'), 2);
   assert.deepEqual(
-    M.DEVICE_TYPES.map((t) => [t.id, t.height]),
+    p.deviceTypes.map((t) => [t.id, t.height]),
     [
       ['switch-rj45', 1],
       ['switch-qsfp', 1],
@@ -29,31 +46,76 @@ test('racks have 47 units and two 1U side slots', () => {
       ['storage-enclosure', 4],
     ]
   );
+  assert.deepEqual(M.placeableTypes(p).map((t) => t.id).slice(-1), ['reserved']);
+  assert.equal(M.createEmptyProject(1).floors[0].rows[0].racks.length, 1);
+  assert.equal(M.createEmptyProject(40).floors[0].rows[0].racks.length, 16, 'clamped to 16');
 });
 
-test('rack count can be set between 1 and 5', () => {
-  assert.deepEqual(M.createEmptyProject(1).racks, [{ id: 'r1', name: 'Rack A01' }]);
-  assert.equal(M.createEmptyProject(9).racks.length, 5, 'clamped to 5');
-  assert.equal(M.createEmptyProject(0).racks.length, 3, 'falls back to the default');
+test('floors, rows and racks respect their limits', () => {
+  const p = M.createEmptyProject(1);
+  for (let i = 0; i < 10; i++) M.addFloor(p, { racks: 1 });
+  assert.equal(p.floors.length, 6, 'at most six floors');
+  assert.deepEqual(p.floors.map((f) => f.name).slice(0, 3), ['Floor 1', 'Floor 2', 'Floor 3']);
+  assert.equal(M.addFloor(p), null);
 
+  const f = p.floors[0];
+  for (let i = 0; i < 10; i++) M.addRow(p, f.id, { racks: 1 });
+  assert.equal(f.rows.length, 8, 'at most eight rows per floor');
+  assert.deepEqual(f.rows.map((r) => r.name).slice(0, 3), ['Row A', 'Row B', 'Row C']);
+
+  const row = f.rows[0];
+  for (let i = 0; i < 20; i++) M.addRack(p, row.id);
+  assert.equal(row.racks.length, 16, 'at most sixteen racks per row');
+  assert.equal(row.racks[15].name, 'Rack A16');
+  assert.equal(M.allRacks(p).length, 16 + 7 + 5, 'rack ids stay unique across the plan');
+  assert.equal(new Set(M.allRacks(p).map((r) => r.rack.id)).size, 28);
+  assert.equal(p.floors[1].rows[0].racks[0].name, 'Rack 2A01', 'racks on upper floors carry the floor number');
+});
+
+test('racks can be inserted, reordered, moved to another row and removed', () => {
+  const p = project([
+    ['compute-node', 'r2', 'u', 5, 'cn-a'],
+    ['compute-node', 'r3', 'u', 5, 'cn-b'],
+  ]);
+  const row = p.floors[0].rows[0];
+  const inserted = M.addRack(p, 'row1', { index: 1 });
+  assert.deepEqual(row.racks.map((r) => r.id), ['r1', inserted.id, 'r2', 'r3']);
+  assert.equal(inserted.name, 'Rack A04', 'gets a free name');
+  M.renumberRacks(p, 'row1');
+  assert.deepEqual(row.racks.map((r) => r.name), ['Rack A01', 'Rack A02', 'Rack A03', 'Rack A04']);
+
+  assert.ok(M.moveRack(p, 'r3', 'row1', 0));
+  assert.deepEqual(row.racks.map((r) => r.id), ['r3', 'r1', inserted.id, 'r2']);
+  assert.equal(M.deviceById(p, 'd2').loc.rack, 'r3', 'devices travel with their rack');
+
+  const row2 = M.addRow(p, 'f1', { racks: 1 });
+  assert.ok(M.moveRack(p, 'r2', row2.id, 0));
+  assert.deepEqual(row2.racks.map((r) => r.id), ['r2', row2.racks[1].id]);
+  assert.equal(M.locateRack(p, 'r2').row.id, row2.id);
+
+  assert.deepEqual(M.devicesWithin(p, row2.id).map((d) => d.name), ['cn-a']);
+  assert.ok(M.removeRack(p, 'r2'));
+  assert.equal(p.devices.length, 1, 'its devices are removed with it');
+  assert.ok(!M.removeRack(p, row2.racks[0].id), 'a row keeps one rack');
+  assert.ok(M.removeRow(p, row2.id));
+  assert.ok(!M.removeRow(p, 'row1'), 'a floor keeps one row');
+  assert.ok(!M.removeFloor(p, 'f1'), 'a plan keeps one floor');
+});
+
+test('row rack count can be set between 1 and 16', () => {
   const p = M.createExampleProject();
-  M.setRackCount(p, 5);
-  assert.deepEqual(p.racks.map((r) => r.id), ['r1', 'r2', 'r3', 'r4', 'r5']);
-  assert.deepEqual(p.racks.slice(3).map((r) => r.name), ['Rack A04', 'Rack A05']);
-  assert.equal(p.devices.length, 37, 'adding racks keeps every device');
-
-  const inR2andR3 = p.devices.filter((d) => d.loc.rack !== 'r1').length;
-  assert.equal(M.devicesBeyond(p, 1).length, inR2andR3);
-  assert.equal(M.devicesBeyond(p, 3).length, 0, 'r4 and r5 are empty');
-  M.setRackCount(p, 1);
-  assert.deepEqual(p.racks.map((r) => r.id), ['r1']);
-  assert.ok(p.devices.every((d) => d.loc.rack === 'r1'), 'devices in removed racks are gone');
-  assert.equal(p.devices.length, 37 - inR2andR3);
-  M.setRackCount(p, 0);
-  assert.equal(p.racks.length, 1, 'never fewer than one rack');
+  M.setRowRackCount(p, 'row1', 5);
+  assert.deepEqual(p.floors[0].rows[0].racks.map((r) => r.name).slice(3), ['Rack A04', 'Rack A05']);
+  const inA2andA3 = p.devices.filter((d) => d.loc.rack === 'r2' || d.loc.rack === 'r3').length;
+  assert.equal(M.devicesBeyond(p, 'row1', 1).length, inA2andA3);
+  assert.equal(M.devicesBeyond(p, 'row1', 3).length, 0);
+  const before = p.devices.length;
+  M.setRowRackCount(p, 'row1', 0);
+  assert.equal(p.floors[0].rows[0].racks.length, 1, 'never fewer than one rack');
+  assert.equal(p.devices.length, before - inA2andA3);
 });
 
-test('canPlace keeps devices inside U1–U47', () => {
+test('canPlace keeps devices inside the rack type’s units', () => {
   const p = project();
   assert.ok(M.canPlace(p, 'storage-node', { rack: 'r1', kind: 'u', at: 44 }).ok);
   assert.ok(!M.canPlace(p, 'storage-node', { rack: 'r1', kind: 'u', at: 45 }).ok);
@@ -61,6 +123,8 @@ test('canPlace keeps devices inside U1–U47', () => {
   assert.ok(!M.canPlace(p, 'switch-rj45', { rack: 'r1', kind: 'u', at: 0 }).ok);
   assert.ok(!M.canPlace(p, 'switch-rj45', { rack: 'r1', kind: 'u', at: 1.5 }).ok);
   assert.ok(!M.canPlace(p, 'switch-rj45', { rack: 'nope', kind: 'u', at: 3 }).ok);
+  assert.equal(M.setRackType(p, 'r2', 'rack-42'), null);
+  assert.match(M.canPlace(p, 'switch-rj45', { rack: 'r2', kind: 'u', at: 43 }).reason, /U1–42/);
 });
 
 test('canPlace rejects overlaps but not neighbours or other racks', () => {
@@ -75,14 +139,19 @@ test('canPlace rejects overlaps but not neighbours or other racks', () => {
   assert.ok(M.canPlace(p, 'storage-node', { rack: 'r1', kind: 'u', at: 10 }, 'd1').ok, 'ignored device');
 });
 
-test('side slots take one 1U device each', () => {
+test('side slots take one 1U device each and follow the rack type', () => {
   const p = project([['switch-rj45', 'r1', 'side', 0]]);
   assert.ok(!M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'side', at: 0 }).ok);
   assert.ok(M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'side', at: 1 }).ok);
   assert.ok(!M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'side', at: 2 }).ok);
   assert.match(M.canPlace(p, 'compute-node', { rack: 'r2', kind: 'side', at: 0 }).reason, /1U/);
-  // Side slots don't block rack units.
-  assert.ok(M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 47 }).ok);
+  assert.ok(M.canPlace(p, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 47 }).ok, 'side slots don’t block rack units');
+  const t = M.addRackType(p, { name: 'Open frame', units: 24, sideSlots: 0 });
+  assert.equal(M.setRackType(p, 'r2', t.id), null);
+  assert.match(M.canPlace(p, 'switch-qsfp', { rack: 'r2', kind: 'side', at: 0 }).reason, /no side slots/);
+  assert.equal(M.maxSideSlots(47), 3);
+  assert.equal(M.maxSideSlots(12), 0);
+  assert.equal(M.cleanRackType({ units: 24, sideSlots: 4 }).sideSlots, 1, 'side slots are limited by the height');
 });
 
 test('planPositions stacks toward higher or lower unit numbers and skips occupied units', () => {
@@ -91,6 +160,28 @@ test('planPositions stacks toward higher or lower unit numbers and skips occupie
   assert.deepEqual(M.planPositions(p, 'compute-node', 'r1', 10, 3, -1), [10, 8, 6]);
   assert.deepEqual(M.planPositions(p, 'storage-node', 'r1', 40, 5, 1), [40, 44], 'stops at U47');
   assert.equal(M.planPositions(p, 'compute-node', 'r2', 1, Infinity, 1).length, 23);
+  assert.deepEqual(M.planPositions(p, 'reserved', 'r1', 1, 2, 1, null, 8), [1, 15], 'reserved space uses its own height');
+});
+
+test('planSpread spreads devices evenly and overflows into racks with room', () => {
+  const p = project([['storage-node', 'r2', 'u', 14]]);
+  const plan = M.planSpread(p, 'compute-node', ['r1', 'r2', 'r3'], 10, 7, 1);
+  assert.deepEqual(plan, [
+    { rack: 'r1', at: 10 },
+    { rack: 'r1', at: 12 },
+    { rack: 'r1', at: 14 },
+    { rack: 'r2', at: 10 },
+    { rack: 'r2', at: 12 },
+    { rack: 'r3', at: 10 },
+    { rack: 'r3', at: 12 },
+  ]);
+  const full = M.planSpread(p, 'storage-node', ['r1', 'r2'], 40, 5, 1);
+  assert.deepEqual(full, [
+    { rack: 'r1', at: 40 },
+    { rack: 'r1', at: 44 },
+    { rack: 'r2', at: 40 },
+    { rack: 'r2', at: 44 },
+  ], 'fewer when the racks run out of space');
 });
 
 test('validLocs, nudgeTarget and nearestLoc find free space', () => {
@@ -110,6 +201,33 @@ test('validLocs, nudgeTarget and nearestLoc find free space', () => {
   assert.deepEqual(M.nearestLoc(p, 'compute-node', 'r1', 21, null), { rack: 'r1', kind: 'u', at: 18 });
 });
 
+test('groups of devices move together', () => {
+  const p = project([
+    ['compute-node', 'r1', 'u', 10, 'a'],
+    ['compute-node', 'r1', 'u', 12, 'b'],
+    ['compute-node', 'r1', 'u', 16, 'c'],
+    ['switch-rj45', 'r1', 'side', 0, 'side'],
+    ['storage-node', 'r2', 'u', 12, 'blocker'],
+  ]);
+  assert.deepEqual(M.groupNudge(p, ['d1', 'd2'], 1), [
+    { id: 'd1', loc: { rack: 'r1', kind: 'u', at: 11 } },
+    { id: 'd2', loc: { rack: 'r1', kind: 'u', at: 13 } },
+  ], 'a and b move down together');
+  assert.equal(M.groupNudge(p, ['d2', 'd3'], -1)[0].loc.at, 8, 'b and c jump over a together');
+  assert.deepEqual(M.groupNudge(p, ['d1', 'd2'], -1).map((m) => m.loc.at), [9, 11]);
+  assert.equal(M.groupNudge(p, ['d4'], 1), null, 'side-slot devices don’t nudge');
+
+  const right = M.shiftMoves(p, ['d1', 'd2', 'd4'], 1, 0);
+  assert.deepEqual(right.map((m) => m.loc.rack), ['r2', 'r2', 'r2']);
+  assert.match(M.canMoveAll(p, right).reason, /blocker/);
+  assert.ok(M.canMoveAll(p, M.shiftMoves(p, ['d1', 'd4'], 1, 0)).ok);
+  assert.equal(M.shiftMoves(p, ['d1'], -1, 0), null, 'no rack left of the first one');
+  assert.ok(!M.canMoveAll(p, [
+    { id: 'd1', loc: { rack: 'r3', kind: 'u', at: 1 } },
+    { id: 'd2', loc: { rack: 'r3', kind: 'u', at: 2 } },
+  ]).ok, 'moved devices are checked against each other');
+});
+
 test('names count up in series', () => {
   assert.deepEqual(M.nameSequence('cn-008', 3), ['cn-008', 'cn-009', 'cn-010']);
   assert.deepEqual(M.nameSequence('node', 2), ['node-01', 'node-02']);
@@ -125,155 +243,114 @@ test('names count up in series', () => {
 
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }), {
-    name: 'cn-013',
-    cluster: 'c-kestrel',
-  });
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }, 4), {
-    name: 'gpu-009',
-    cluster: 'c-osprey',
-  });
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }), { name: 'cn-013', cluster: 'c-kestrel' });
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }, 4), { name: 'gpu-009', cluster: 'c-osprey' });
   const empty = M.createEmptyProject();
   assert.deepEqual(M.suggestPlacement(empty, 'storage-enclosure', null), { name: 'jbod-01', cluster: undefined });
   assert.equal(M.suggestName(empty, 'compute-node', 3), 'cn-001');
+  assert.equal(M.suggestName(empty, 'reserved'), 'reserved-01');
 });
 
-test('example project is valid', () => {
+test('the example plan is valid and spans floors, rows and custom types', () => {
   const p = M.createExampleProject();
-  for (const d of p.devices) {
-    const r = M.canPlace(p, d.type, d.loc, d.id);
-    assert.ok(r.ok, `${d.name}: ${r.reason}`);
-    assert.ok(M.clusterById(p, d.cluster), `${d.name} has a cluster`);
-  }
-  const { project: again, warnings } = M.normalizeProject(JSON.parse(M.serialize(p)));
-  assert.deepEqual(warnings, []);
-  assert.equal(again.devices.length, p.devices.length);
-});
-
-test('rackStats reports usage and the largest free block', () => {
-  const p = project([
-    ['storage-node', 'r1', 'u', 1],
-    ['compute-node', 'r1', 'u', 40],
-    ['switch-rj45', 'r1', 'side', 1],
-  ]);
-  assert.deepEqual(M.rackStats(p, 'r1'), { used: 6, free: 41, largestFree: 35, sideUsed: 1, count: 3 });
-});
-
-test('normalizeProject drops what does not fit and keeps the rest', () => {
-  const raw = {
-    name: '  Hall 3  ',
-    racks: [{ id: 'x', name: 'West' }, { id: 'y' }, { id: 'z', name: 'East' }],
-    clusters: [
-      { id: 'c1', name: 'HPC', color: '#ABC' },
-      { id: 'c1', name: 'dupe', color: '#fff' },
-      { id: 'c2', name: '', color: 'red' },
-    ],
-    devices: [
-      { id: 'a', type: 'compute-node', name: 'cn-1', cluster: 'c1', loc: { rack: 'x', kind: 'u', at: 10 } },
-      { id: 'b', type: 'compute-node', name: 'cn-2', cluster: 'c1', loc: { rack: 'x', kind: 'u', at: 11 } },
-      { id: 'c', type: 'toaster', name: 't', loc: { rack: 'x', kind: 'u', at: 1 } },
-      { id: 'd', type: 'storage-node', name: 'sn', loc: { rack: 'x', kind: 'side', at: 0 } },
-      { id: 'a', type: 'switch-qsfp', name: 'sw', cluster: 'nope', loc: { rack: 'z', kind: 'side', at: 1 } },
-      null,
-    ],
-  };
-  const { project: p, warnings } = M.normalizeProject(raw);
-  assert.equal(p.name, 'Hall 3');
-  assert.deepEqual(p.racks.map((r) => r.name), ['West', 'Rack A02', 'East']);
-  assert.deepEqual(p.clusters.map((c) => [c.id, c.color]), [
-    ['c1', '#aabbcc'],
-    ['c2', M.nextClusterColor({ clusters: [{ color: '#aabbcc' }] })],
-  ]);
-  assert.deepEqual(p.devices.map((d) => d.name), ['cn-1', 'sw']);
-  assert.equal(p.devices[1].cluster, null);
-  assert.notEqual(p.devices[1].id, 'a', 'duplicate ids are replaced');
-  assert.deepEqual(p.devices[1].loc, { rack: 'r3', kind: 'side', at: 1 });
-  assert.deepEqual(warnings, [
-    'Skipped cluster dupe: its id “c1” is used twice.',
-    'Skipped cn-2: Overlaps cn-1 at U10–11.',
-    'Skipped t: unknown device type “toaster”.',
-    'Skipped sn: Side slots take 1U devices only.',
-    'sw refers to unknown cluster “nope” and is left unassigned.',
-  ]);
-  assert.throws(() => M.normalizeProject([]), /not a rack plan/);
-  assert.throws(() => M.normalizeProject({ foo: 1 }), /not a rack plan/);
-});
-
-test('normalizeProject keeps between 1 and 5 racks', () => {
-  const racks = (n) => Array.from({ length: n }, (_, i) => ({ id: `rack-${i}`, name: `R${i}` }));
-  const dev = (rack) => ({ type: 'compute-node', name: `n-${rack}`, loc: { rack, kind: 'u', at: 1 } });
-  const one = M.normalizeProject({ racks: racks(1), devices: [dev('rack-0')] });
-  assert.deepEqual(one.project.racks, [{ id: 'r1', name: 'R0' }]);
-  assert.equal(one.project.devices.length, 1);
-  const seven = M.normalizeProject({ racks: racks(7), devices: [dev('rack-4'), dev('rack-6')] });
-  assert.equal(seven.project.racks.length, 5);
-  assert.deepEqual(seven.project.devices.map((d) => d.loc.rack), ['r5'], 'device in the 7th rack is dropped');
-  assert.equal(seven.warnings.length, 2);
-  assert.equal(M.normalizeProject({ devices: [] }).project.racks.length, 3, 'default when racks are missing');
-});
-
-test('normalizeProject skips devices in racks the file does not have', () => {
-  const { project: p, warnings } = M.normalizeProject({
-    racks: [{ id: 'r2' }, { id: 'r3' }],
-    devices: [
-      { type: 'compute-node', name: 'orphan', loc: { rack: 'r1', kind: 'u', at: 1 } },
-      { type: 'compute-node', name: 'first', loc: { rack: 'r2', kind: 'u', at: 1 } },
-    ],
-  });
-  assert.deepEqual(p.devices.map((d) => [d.name, d.loc.rack]), [['first', 'r1']]);
-  assert.deepEqual(warnings, ['Skipped orphan: rack “r1” is not in the plan.']);
-  // Without racks in the file, devices may use the default ids.
-  const bare = M.normalizeProject({ devices: [{ type: 'switch-rj45', name: 'sw', loc: { rack: 'r3', kind: 'u', at: 5 } }] });
-  assert.equal(bare.project.devices[0].loc.rack, 'r3');
-});
-
-test('normalizeProject accepts numeric ids', () => {
-  const { project: p, warnings } = M.normalizeProject({
-    racks: [{ id: 1 }, { id: 2 }],
-    clusters: [{ id: 7, name: 'HPC', color: '#2f6fdb' }, { name: 'no id' }],
-    devices: [{ id: 3, type: 'compute-node', name: 'cn-1', cluster: 7, loc: { rack: 2, kind: 'u', at: 1 } }],
-  });
-  assert.deepEqual(p.clusters.map((c) => c.id), ['7']);
-  assert.deepEqual(p.devices.map((d) => [d.id, d.cluster, d.loc.rack]), [['3', '7', 'r2']]);
-  assert.deepEqual(warnings, ['Skipped cluster no id: it has no id.']);
-});
-
-test('isPristineExample notices any edit', () => {
-  const p = M.createExampleProject();
+  assert.equal(M.layoutProblem(p), null);
+  for (const d of p.devices) assert.ok(M.canPlace(p, d.type, d.loc, d.id, d.height).ok, d.name);
+  assert.equal(p.floors.length, 2);
+  assert.equal(M.allRows(p).length, 3);
+  assert.equal(M.devicesWithin(p, 'row1').length, 37, 'row A keeps the original layout');
+  assert.ok(p.devices.some((d) => d.type === 'reserved'));
+  assert.ok(p.devices.some((d) => d.type === 'gpu-server'));
+  assert.equal(M.rackUnits(p, 'r7'), 42);
   assert.ok(M.isPristineExample(p));
-  assert.ok(M.isPristineExample(Object.assign(JSON.parse(JSON.stringify(p)), { meta: {} })), 'the notice flag does not count');
+  assert.ok(M.isPristineExample(Object.assign(M.clone(p), { meta: {} })), 'the notice flag does not count');
   p.devices[5].name = 'renamed';
   assert.ok(!M.isPristineExample(p));
   assert.ok(!M.isPristineExample(M.createEmptyProject()));
 });
 
-test('version 1 plans, counted from the bottom, keep their layout', () => {
-  const raw = {
-    version: 1,
-    devices: [
-      { id: 'a', type: 'switch-rj45', name: 'top', loc: { rack: 'r1', kind: 'u', at: 47 } },
-      { id: 'b', type: 'storage-node', name: 'bottom', loc: { rack: 'r1', kind: 'u', at: 1 } },
-      { id: 'c', type: 'compute-node', name: 'mid', loc: { rack: 'r2', kind: 'u', at: 21 } },
-      { id: 'd', type: 'switch-qsfp', name: 'side', loc: { rack: 'r3', kind: 'side', at: 0 } },
-    ],
-  };
-  const { project: p, warnings } = M.normalizeProject(raw);
-  assert.deepEqual(warnings, []);
-  assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
-  assert.equal(p.version, 2);
-  assert.equal(M.normalizeProject(JSON.parse(M.serialize(p))).project.devices[1].loc.at, 44, 'version 2 is kept');
+test('rack stats report space, reserved units, power and weight against budgets', () => {
+  const p = project([
+    ['storage-node', 'r1', 'u', 1],
+    ['compute-node', 'r1', 'u', 40, 'cn', { powerW: 1000 }],
+    ['switch-rj45', 'r1', 'side', 1],
+    ['reserved', 'r1', 'u', 10, 'future', { height: 5, powerW: 3000 }],
+  ]);
+  assert.deepEqual(M.rackStats(p, 'r1'), {
+    units: 47,
+    used: 6,
+    reserved: 5,
+    free: 36,
+    largestFree: 25,
+    sideUsed: 1,
+    sideSlots: 2,
+    count: 3,
+    powerW: 900 + 1000 + 150 + 3000,
+    powerBudgetW: 12000,
+    weightKg: 40 + 25 + 6,
+    weightBudgetKg: 1200,
+    overPower: false,
+    overWeight: false,
+  });
+  M.updateRackType(p, 'rack-47', { powerW: 5000 });
+  assert.ok(M.rackStats(p, 'r1').overPower);
+  const all = M.statsByRack(p);
+  assert.equal(all.size, 3);
+  const row = M.statsWithin(p, 'row1', all);
+  assert.equal(row.racks, 3);
+  assert.equal(row.units, 141);
+  assert.equal(row.overPower, 1);
+  assert.equal(M.powerOf(p, M.deviceById(p, 'd1')), 900, 'type default');
+  assert.equal(M.powerOf(p, M.deviceById(p, 'd2')), 1000, 'per-device override');
 });
 
-test('toCSV lists devices top to bottom and neutralises formulas', () => {
-  const p = project([
-    ['compute-node', 'r1', 'u', 5, '=cmd()'],
-    ['switch-rj45', 'r1', 'u', 47, 'sw, "core"'],
-    ['switch-qsfp', 'r1', 'side', 0, 'leaf'],
-  ]);
-  p.devices[0].cluster = 'c1';
-  const lines = M.toCSV(p).trim().split('\r\n');
-  assert.equal(lines[0], 'Rack,Position,Height (U),Type,Name,Cluster,Notes');
-  assert.equal(lines[1], "Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,");
-  assert.equal(lines[2], 'Rack A01,U47,1,48-port switch,"sw, ""core""",,');
-  assert.equal(lines[3], 'Rack A01,Side V1,1,24-port switch,leaf,,');
+test('device types can be added, changed and deleted', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1'], ['compute-node', 'r1', 'u', 3, 'cn-2']]);
+  const gpu = M.addDeviceType(p, M.TYPE_TEMPLATES[1]);
+  assert.equal(gpu.id, 't1');
+  assert.equal(gpu.label, 'GPU server');
+  assert.equal(M.addDeviceType(p, M.TYPE_TEMPLATES[1]).label, 'GPU server 2', 'labels stay unique');
+  assert.equal(M.updateDeviceType(p, gpu.id, { height: 8, face: 'bogus', powerW: -5 }), null);
+  assert.deepEqual([gpu.id, M.typeOf(p, gpu.id).height, M.typeOf(p, gpu.id).face, M.typeOf(p, gpu.id).powerW], ['t1', 8, 'generic', 0]);
+  assert.match(M.updateDeviceType(p, 'compute-node', { height: 3 }), /overlap/);
+  assert.equal(M.typeOf(p, 'compute-node').height, 2, 'refused changes leave the type alone');
+  M.deleteDeviceType(p, 'compute-node');
+  assert.equal(p.devices.length, 0, 'its devices go with it');
+  assert.equal(M.cleanDeviceType({ height: 99 }).height, 20);
+  assert.equal(M.formatTypeSpec(M.typeOf(p, 'switch-rj45')), '1U · 48 × RJ45');
+  assert.equal(M.formatTypeSpec(M.RESERVED, 3), '3U · placeholder');
+  assert.equal(M.formatTypeSpec(M.RESERVED), 'any height · placeholder');
+});
+
+test('rack types refuse changes that would push devices out', () => {
+  const p = project([['compute-node', 'r1', 'u', 44, 'low'], ['switch-rj45', 'r2', 'side', 1, 'side']]);
+  assert.match(M.updateRackType(p, 'rack-47', { units: 42 }), /low would stick out/);
+  assert.equal(M.rackUnits(p, 'r1'), 47);
+  assert.match(M.updateRackType(p, 'rack-47', { sideSlots: 1 }), /side slot/);
+  assert.equal(M.updateRackType(p, 'rack-47', { units: 45, name: 'Tall' }), null);
+  assert.equal(M.rackTypeById(p, 'rack-47').name, 'Tall');
+  assert.match(M.deleteRackType(p, 'rack-47'), /3 racks use/);
+  assert.equal(M.deleteRackType(p, 'rack-42'), null);
+  assert.equal(M.setRackType(p, 'r1', 'rack-48'), null);
+});
+
+test('search finds floors, rows, racks and devices by any field', () => {
+  const p = M.createExampleProject();
+  M.deviceById(p, 'ex-9').serial = 'SN-4711';
+  const r = M.search(p, 'row a');
+  assert.deepEqual(r.rows.map((x) => x.detail), ['Ground floor · 3 racks', 'First floor · 2 racks']);
+  assert.deepEqual(M.search(p, 'first').floors.map((x) => x.name), ['First floor']);
+  assert.deepEqual(M.search(p, 'b02').racks.map((x) => x.name), ['Rack B02']);
+  const sn = M.search(p, 'sn-4711');
+  assert.deepEqual(sn.devices.map((x) => x.name), ['cn-001']);
+  assert.equal(sn.devices[0].detail, 'Ground floor · Row A · Rack A01 · U4–5');
+  assert.equal(M.search(p, 'heron gpu').counts.devices, 7, 'every word must match: GPU servers of Heron AI and the reserved batch');
+  assert.equal(M.search(p, '').counts.devices, 0);
+  const match = M.deviceMatcher(p, 'kestrel');
+  assert.equal(p.devices.filter(match).length, 12, 'cluster names count');
+});
+
+test('layoutProblem finds devices that don’t fit', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'a'], ['compute-node', 'r1', 'u', 2, 'b']]);
+  assert.match(M.layoutProblem(p), /b would overlap a in Rack A01/);
+  assert.equal(M.layoutProblem(p, new Set(['r2'])), null);
 });

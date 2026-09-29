@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rackplanner</title>
-<meta name="description" content="Plan datacenter rack layouts: place switches, compute and storage nodes in one to five 47U racks and color them by cluster.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='2' fill='%232a3038'/%3E%3Crect x='9' y='6' width='14' height='3' fill='%23f2c230'/%3E%3Crect x='9' y='11' width='14' height='6' fill='%232f6fdb'/%3E%3Crect x='9' y='19' width='14' height='6' fill='%230f9d8a'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<meta name="description" content="Plan datacenter rack layouts: place switches, servers and storage in racks on up to six floors, color them by cluster and track space, power and weight.">
+<meta name="theme-color" content="#2a3038">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -21,6 +21,8 @@
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
   <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"/></symbol>
@@ -28,6 +30,14 @@
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M8 7V3h7l4 4v11h-4"/><path d="M4 7h8l3 3v11H4z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><rect x="3.5" y="4" width="4" height="7" rx=".6"/><rect x="10" y="4" width="4" height="7" rx=".6"/><rect x="16.5" y="4" width="4" height="7" rx=".6"/><rect x="3.5" y="14" width="4" height="6" rx=".6"/><rect x="10" y="14" width="4" height="6" rx=".6"/></symbol>
+  <symbol id="i-rack" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8 7h8M8 11h8M8 15h8"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 18a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 14h10v7H7z"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></symbol>
 </svg>
 
 <div class="app" id="app">
@@ -45,32 +55,40 @@
       <label for="plan-name" class="sr-only">Plan name</label>
       <input id="plan-name" class="plan-name" type="text" spellcheck="false" autocomplete="off" maxlength="120">
     </div>
+    <div class="search" id="search-wrap">
+      <svg class="ic search-ic" aria-hidden="true"><use href="#i-search"/></svg>
+      <label for="search" class="sr-only">Search floors, rows, racks and devices</label>
+      <input id="search" type="search" placeholder="Search devices, racks, rows, floors" autocomplete="off" spellcheck="false"
+             role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list">
+      <kbd class="search-key" aria-hidden="true">/</kbd>
+      <div class="search-results" id="search-results" role="listbox" aria-label="Search results" hidden></div>
+    </div>
     <div class="tb-actions">
-      <div class="rack-count">
-        <span class="rc-label" id="rack-count-label">Racks</span>
-        <div class="seg" id="rack-count" role="group" aria-labelledby="rack-count-label"></div>
-      </div>
       <div class="tb-group" role="group" aria-label="History">
         <button class="btn icon" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic"><use href="#i-undo"/></svg></button>
         <button class="btn icon" id="btn-redo" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic"><use href="#i-redo"/></svg></button>
       </div>
-      <button class="btn" id="btn-open" type="button"><svg class="ic"><use href="#i-upload"/></svg><span>Open</span></button>
+      <button class="btn" id="btn-plans" type="button" title="Plans saved in this browser"><svg class="ic"><use href="#i-files"/></svg><span>Plans</span></button>
+      <button class="btn" id="btn-open" type="button" title="Open a plan file or import a CSV"><svg class="ic"><use href="#i-upload"/></svg><span>Open</span></button>
       <div class="menu-wrap">
         <button class="btn" id="btn-export" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-export"><svg class="ic"><use href="#i-download"/></svg><span>Export</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
         <div class="menu" id="menu-export" role="menu" hidden>
-          <button type="button" role="menuitem" data-export="png"><span>PNG image</span><small>For docs, tickets and chat</small></button>
-          <button type="button" role="menuitem" data-export="svg"><span>SVG drawing</span><small>Scalable, opens in vector editors</small></button>
-          <button type="button" role="menuitem" data-export="csv"><span>CSV inventory</span><small>Every device with rack and position</small></button>
+          <button type="button" role="menuitem" data-export="png"><span>PNG image</span><small>This row, for docs, tickets and chat</small></button>
+          <button type="button" role="menuitem" data-export="svg"><span>SVG drawing</span><small>This row, opens in vector editors</small></button>
+          <button type="button" role="menuitem" data-export="print"><span>Print or PDF…</span><small>One sheet per row, with title blocks</small></button>
+          <button type="button" role="menuitem" data-export="csv"><span>CSV inventory</span><small>Every device with location and fields</small></button>
           <hr>
           <button type="button" role="menuitem" data-export="json"><span>Plan file (.json)</span><small>Re-open it later with Open</small></button>
           <button type="button" role="menuitem" data-export="copy"><span>Copy plan as JSON</span><small>Paste it into Open elsewhere</small></button>
+          <button type="button" role="menuitem" data-export="share"><span>Share link…</span><small>The plan travels inside the link</small></button>
         </div>
       </div>
       <div class="menu-wrap">
         <button class="btn" id="btn-new" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-new"><svg class="ic"><use href="#i-file"/></svg><span>New</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
         <div class="menu menu-right" id="menu-new" role="menu" hidden>
-          <button type="button" role="menuitem" data-new="empty"><span>Empty racks</span><small>Same number of racks, all empty</small></button>
-          <button type="button" role="menuitem" data-new="example"><span>Example plan</span><small>Three racks with five clusters</small></button>
+          <button type="button" role="menuitem" data-new="empty"><span>Empty plan</span><small>One row of three 47U racks</small></button>
+          <button type="button" role="menuitem" data-new="layout"><span>Copy of this layout</span><small>Same floors, racks and catalog, no devices</small></button>
+          <button type="button" role="menuitem" data-new="example"><span>Example plan</span><small>Two floors, three rows, custom types</small></button>
         </div>
       </div>
     </div>
@@ -78,7 +96,10 @@
 
   <aside class="bin" aria-label="Devices and clusters">
     <section class="panel-sec">
-      <div class="sec-head"><h2>Devices</h2></div>
+      <div class="sec-head">
+        <h2>Devices</h2>
+        <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit device and rack types"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
+      </div>
       <p class="sec-hint"><span class="hint-pointer">Drag onto a rack, or click one and then click a slot.</span><span class="hint-touch">Tap a device, then tap a free slot in a rack.</span></p>
       <div class="parts" id="parts"></div>
     </section>
@@ -93,6 +114,22 @@
   </aside>
 
   <main class="stage" id="stage">
+    <nav class="nav" aria-label="Floors and rows">
+      <div class="floor-tabs" id="floor-tabs"></div>
+      <div class="row-nav">
+        <button class="btn icon sm" id="btn-row-prev" type="button" title="Previous row ([)" aria-label="Previous row"><svg class="ic"><use href="#i-left"/></svg></button>
+        <div class="menu-wrap">
+          <button class="btn sm row-btn" id="btn-row" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-row"><svg class="ic"><use href="#i-rack"/></svg><span id="row-label">Row</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
+          <div class="menu menu-rows" id="menu-row" role="menu" hidden></div>
+        </div>
+        <button class="btn icon sm" id="btn-row-next" type="button" title="Next row (])" aria-label="Next row"><svg class="ic"><use href="#i-right"/></svg></button>
+      </div>
+      <span class="nav-spacer"></span>
+      <div class="seg view-toggle" role="group" aria-label="View">
+        <button type="button" data-view="sheet" aria-pressed="true" title="Rack elevation of this row"><svg class="ic ic-sm"><use href="#i-rack"/></svg>Elevation</button>
+        <button type="button" data-view="map" aria-pressed="false" title="All rows of this floor (M)"><svg class="ic ic-sm"><use href="#i-map"/></svg>Floor map</button>
+      </div>
+    </nav>
     <div class="notice" id="example-notice" hidden>
       <p><strong>This is an example plan.</strong> Edit it freely, or start from empty racks.</p>
       <div class="notice-actions">
@@ -102,9 +139,10 @@
     </div>
     <div class="canvas" id="canvas">
       <svg id="scene" class="scene" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Rack elevation drawing"></svg>
+      <div class="floormap" id="floormap" hidden></div>
     </div>
     <div class="armed-hint" id="armed-hint" role="status" hidden></div>
-    <div class="zoom" role="group" aria-label="Zoom">
+    <div class="zoom" id="zoom" role="group" aria-label="Zoom">
       <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
       <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
       <button class="btn icon sm" id="btn-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
@@ -127,18 +165,26 @@
         <label for="place-name">Name</label>
         <input id="place-name" class="mono" type="text" autocomplete="off" spellcheck="false" maxlength="80">
       </div>
-      <div class="field-row" id="place-multi">
-        <div class="field field-qty">
+      <div class="field-row">
+        <div class="field field-qty" id="place-height-field" hidden>
+          <label for="place-height">Height (U)</label>
+          <input id="place-height" type="number" min="1" step="1" value="2" inputmode="numeric">
+        </div>
+        <div class="field field-qty" id="place-qty-field">
           <label for="place-qty">Quantity</label>
           <input id="place-qty" type="number" min="1" step="1" value="1" inputmode="numeric">
         </div>
-        <div class="field">
+        <div class="field" id="place-dir-field">
           <span class="label" id="place-dir-label">Stack</span>
           <div class="seg" role="radiogroup" aria-labelledby="place-dir-label">
             <label><input type="radio" name="place-dir" value="down" checked><span><svg class="ic ic-sm"><use href="#i-down"/></svg>Downward</span></label>
             <label><input type="radio" name="place-dir" value="up"><span><svg class="ic ic-sm"><use href="#i-up"/></svg>Upward</span></label>
           </div>
         </div>
+      </div>
+      <div class="spread" id="place-spread-wrap" hidden>
+        <label class="check"><input type="checkbox" id="place-spread"><span>Spread evenly across racks in this row</span></label>
+        <div class="chips" id="place-racks" role="group" aria-label="Racks to spread over" hidden></div>
       </div>
       <p class="preview-line" id="place-preview"></p>
       <div class="field">
@@ -203,25 +249,38 @@
   </form>
 </dialog>
 
+<dialog class="dlg" id="dlg-report" aria-labelledby="report-title">
+  <form method="dialog">
+    <header class="dlg-head">
+      <span class="tape">Import</span>
+      <h2 id="report-title">Imported</h2>
+      <p class="dlg-sub" id="report-sub"></p>
+    </header>
+    <div class="dlg-body"><ul class="report-list" id="report-list"></ul></div>
+    <footer class="dlg-foot"><span class="spacer"></span><button class="btn primary" value="ok">OK</button></footer>
+  </form>
+</dialog>
+
 <dialog class="dlg" id="dlg-open" aria-labelledby="open-title">
   <form id="open-form" novalidate>
     <header class="dlg-head">
-      <span class="tape">Open plan</span>
-      <h2 id="open-title">Open a saved plan</h2>
-      <p class="dlg-sub">Pick a plan file exported from Rackplanner, or paste its JSON. It replaces the current plan; Undo brings the current one back.</p>
+      <span class="tape">Open</span>
+      <h2 id="open-title">Open a plan or import a CSV</h2>
+      <p class="dlg-sub">A plan file (.json) opens as a new plan next to your others. A CSV inventory needs Rack, Position and Name or Type columns, like the CSV export.</p>
     </header>
     <div class="dlg-body">
-      <div><button type="button" class="btn" id="open-file"><svg class="ic"><use href="#i-upload"/></svg>Choose a .json file…</button></div>
+      <div><button type="button" class="btn" id="open-file"><svg class="ic"><use href="#i-upload"/></svg>Choose a .json or .csv file…</button></div>
       <div class="field">
-        <label for="open-text">Or paste the plan JSON</label>
-        <textarea id="open-text" class="mono" rows="7" spellcheck="false" placeholder='{ "app": "rackplanner", … }'></textarea>
+        <label for="open-text">Or paste a plan’s JSON or CSV rows</label>
+        <textarea id="open-text" class="mono" rows="7" spellcheck="false" placeholder='{ "app": "rackplanner", … }  or  Floor,Row,Rack,Position,…'></textarea>
       </div>
+      <label class="check"><input type="checkbox" id="open-merge"><span>Add CSV devices to the current plan instead of starting a new one</span></label>
       <p class="form-error" id="open-error" role="alert" hidden></p>
     </div>
     <footer class="dlg-foot">
       <span class="spacer"></span>
       <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" class="btn primary">Open pasted plan</button>
+      <button type="submit" class="btn primary">Open pasted text</button>
     </footer>
   </form>
 </dialog>
@@ -241,12 +300,119 @@
   </form>
 </dialog>
 
-<input type="file" id="file-input" accept=".json,application/json" hidden>
+<dialog class="dlg" id="dlg-share" aria-labelledby="share-title">
+  <form method="dialog">
+    <header class="dlg-head">
+      <span class="tape">Share</span>
+      <h2 id="share-title">Share link</h2>
+      <p class="dlg-sub">Whoever opens this link gets their own copy of the plan. The plan is packed into the link itself; nothing is uploaded anywhere.</p>
+    </header>
+    <div class="dlg-body">
+      <label for="share-url" class="sr-only">Link</label>
+      <textarea id="share-url" class="mono" rows="3" readonly spellcheck="false"></textarea>
+      <p class="sec-hint" id="share-size"></p>
+    </div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="share-copy"><svg class="ic"><use href="#i-copy"/></svg>Copy link</button>
+      <button class="btn primary" value="ok">Done</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlg-print" aria-labelledby="print-title">
+  <form id="print-form" novalidate>
+    <header class="dlg-head">
+      <span class="tape">Print</span>
+      <h2 id="print-title">Print or save as PDF</h2>
+      <p class="dlg-sub">Each row prints on its own sheet with the cluster legend and title block. Choose “Save as PDF” in the print dialog for a file.</p>
+    </header>
+    <div class="dlg-body">
+      <div class="field">
+        <span class="label" id="print-scope-label">Sheets</span>
+        <div class="radios" id="print-scope" role="radiogroup" aria-labelledby="print-scope-label"></div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="print-paper">Paper</label>
+          <select id="print-paper">
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="letter">Letter</option>
+            <option value="legal">Legal</option>
+            <option value="ledger">Tabloid</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="label" id="print-orient-label">Orientation</span>
+          <div class="seg" role="radiogroup" aria-labelledby="print-orient-label">
+            <label><input type="radio" name="print-orient" value="landscape" checked><span>Landscape</span></label>
+            <label><input type="radio" name="print-orient" value="portrait"><span>Portrait</span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary"><svg class="ic"><use href="#i-print"/></svg>Print</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg dlg-wide" id="dlg-plans" aria-labelledby="plans-title">
+  <form method="dialog">
+    <header class="dlg-head">
+      <span class="tape">Plans</span>
+      <h2 id="plans-title">Plans in this browser</h2>
+      <p class="dlg-sub">Changes are saved automatically. Browser storage can be cleared, so export plan files you want to keep.</p>
+    </header>
+    <div class="dlg-body"><ul class="plan-list" id="plan-list"></ul></div>
+    <footer class="dlg-foot">
+      <button type="button" class="btn" data-plan-new="empty"><svg class="ic"><use href="#i-plus"/></svg>New empty plan</button>
+      <span class="spacer"></span>
+      <button class="btn primary" value="ok">Done</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="dlg dlg-wide" id="dlg-catalog" aria-labelledby="catalog-title">
+  <div class="dlg-shell">
+    <header class="dlg-head">
+      <span class="tape">Catalog</span>
+      <h2 id="catalog-title">Device and rack types</h2>
+      <p class="dlg-sub">Types belong to this plan and travel with its file. Changes apply right away; Undo takes them back.</p>
+      <div class="seg tabs" role="tablist" aria-label="Catalog">
+        <button type="button" role="tab" id="cat-tab-devices" data-tab="devices" aria-selected="true" aria-controls="cat-panel">Device types</button>
+        <button type="button" role="tab" id="cat-tab-racks" data-tab="racks" aria-selected="false" aria-controls="cat-panel">Rack types</button>
+      </div>
+    </header>
+    <div class="dlg-body catalog" id="cat-panel" role="tabpanel">
+      <div class="cat-side">
+        <div class="cat-list" id="cat-list" role="listbox" aria-label="Types"></div>
+        <div class="menu-wrap cat-new">
+          <button type="button" class="btn sm" id="cat-new" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-cat-new"><svg class="ic"><use href="#i-plus"/></svg><span>New type</span></button>
+          <div class="menu menu-up" id="menu-cat-new" role="menu" hidden></div>
+        </div>
+      </div>
+      <div class="cat-form" id="cat-form"></div>
+    </div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn primary" data-close>Done</button>
+    </footer>
+  </div>
+</dialog>
+
+<input type="file" id="file-input" accept=".json,.csv,.tsv,.txt,application/json,text/csv" hidden>
 <div class="drag-chip" id="drag-chip" hidden></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="print-root" id="print-root" aria-hidden="true"></div>
 
 <script src="js/model.js"></script>
+<script src="js/io.js"></script>
 <script src="js/render.js"></script>
+<script src="js/library.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
