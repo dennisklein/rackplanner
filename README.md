@@ -14,8 +14,8 @@ clusters, so the equipment that works together stands out.
 
 **[Open Rackplanner](https://dennisklein.github.io/rackplanner/)**: it starts
 with an example plan of two floors, which you can explore, keep editing or
-swap for empty racks. It works with a mouse, the keyboard or touch, and
-follows your system's light or dark theme.
+swap for empty racks. It works with a mouse, the keyboard or touch, in a
+light or dark theme.
 
 There is no server and no build step: plain HTML, CSS and JavaScript. Plans are
 saved in your browser and never uploaded; they work offline and can be
@@ -132,6 +132,10 @@ makes a 1U PDU look like a vertical power strip.
   toward the power budget and turns red, with a “!”, when a rack is over its
   power or weight budget. The inspector shows the numbers for a rack, row,
   floor or the whole plan.
+- **Theme**: the button at the right end of the toolbar picks **Light**,
+  **Dark** or **Match system**, which follows your device's setting (the
+  default). The choice is remembered in this browser. Exported images and
+  printouts always use the light theme.
 - **Undo** everything with <kbd>Ctrl</kbd>+<kbd>Z</kbd>, redo with
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
 
@@ -242,9 +246,10 @@ tests in `e2e/` start a small static server and cover dragging, placing and
 spreading, navigation and search, the floor map, the catalog editor, rack
 types and budgets, selecting and moving several devices, reserved space, the
 plan list, share links, CSV and plan file import, printing, exports, offline
-caching, the panel layout and the phone layout. If Chromium is missing,
-install it with `npx playwright install chromium`. The app itself has no
-dependencies; Playwright is only needed for these tests and the screenshots.
+caching, the theme switch, the panel layout and the phone layout. If Chromium
+is missing, install it with `npx playwright install chromium`. The app itself
+has no dependencies; Playwright is only needed for these tests and the
+screenshots.
 
 ## Deployment
 

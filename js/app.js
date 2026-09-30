@@ -21,6 +21,12 @@
   const HISTORY_CHARS = 40e6;
   const COLOR_NAMES = ['Cobalt', 'Orange', 'Teal', 'Violet', 'Amber', 'Red', 'Green', 'Cyan', 'Rose', 'Indigo', 'Olive', 'Brown'];
   const SHARE_PREFIX = '#plan=';
+  // What the theme button offers, and how it names each one.
+  const THEME_PICKS = new Map([
+    ['system', 'match system'],
+    ['light', 'light'],
+    ['dark', 'dark'],
+  ]);
 
   // ------------------------------------------------------------ utilities
 
@@ -114,8 +120,9 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {} }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
+  if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   const lib = window.RP.library.create(storage);
   let planId = null;
   let project = null;
@@ -3070,6 +3077,7 @@
     ['#btn-new', '#menu-new'],
     ['#btn-row', '#menu-row', renderRowMenu],
     ['#cat-new', '#menu-cat-new'],
+    ['#btn-theme', '#menu-theme'],
   ].forEach(([b, m, fill]) => {
     const btn = $(b);
     const menu = $(m);
@@ -3107,6 +3115,15 @@
     if (!item) return;
     closeMenus();
     newPlan(item.dataset.new);
+  });
+
+  $('#menu-theme').addEventListener('click', (e) => {
+    const item = e.target.closest('[data-theme-pick]');
+    if (!item) return;
+    closeMenus();
+    prefs.theme = item.dataset.themePick;
+    savePrefs();
+    applyTheme();
   });
 
   // The example notice replaces the example in place, asking first if it was edited.
@@ -3462,6 +3479,22 @@
 
   // --------------------------------------------------------- environment
 
+  /**
+   * Applies the theme picked with the theme button: light or dark, or none
+   * so the system's setting decides. The head of index.html does the same
+   * before the first paint.
+   */
+  function applyTheme() {
+    const pick = prefs.theme;
+    if (pick === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', pick);
+    const btn = $('#btn-theme');
+    btn.querySelector('use').setAttribute('href', `#i-theme-${pick}`);
+    btn.title = `Theme: ${THEME_PICKS.get(pick)}`;
+    btn.setAttribute('aria-label', btn.title);
+    for (const b of $$('[data-theme-pick]')) b.setAttribute('aria-checked', String(b.dataset.themePick === pick));
+  }
+
   function onThemeChange() {
     const theme = detectTheme();
     if (theme === ui.theme) return;
@@ -3499,6 +3532,8 @@
 
   // ----------------------------------------------------------------- boot
 
+  applyTheme();
+  ui.theme = detectTheme();
   bootPlan();
   render();
   if (prefs.zoom) {

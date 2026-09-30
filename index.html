@@ -10,6 +10,13 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/app.css">
+<script>
+  // A theme picked in the app applies before the first paint (see applyTheme in js/app.js).
+  try {
+    var theme = JSON.parse(localStorage.getItem('rackplanner.prefs.v1') || '{}').theme;
+    if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) {}
+</script>
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -38,6 +45,9 @@
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
   <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 14h10v7H7z"/></symbol>
   <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r=".9"/><circle cx="15" cy="6" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="18" r=".9"/><circle cx="15" cy="18" r=".9"/></symbol>
+  <symbol id="i-theme-system" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
+  <symbol id="i-theme-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+  <symbol id="i-theme-dark" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
   <symbol id="i-select" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></symbol>
 </svg>
 
@@ -90,6 +100,14 @@
           <button type="button" role="menuitem" data-new="empty"><span>Empty plan</span><small>One row of three 47U racks</small></button>
           <button type="button" role="menuitem" data-new="layout"><span>Copy of this layout</span><small>Same floors, racks and catalog, no devices</small></button>
           <button type="button" role="menuitem" data-new="example"><span>Example plan</span><small>Two floors, three rows, custom types</small></button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button class="btn icon" id="btn-theme" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-theme" title="Theme: match system" aria-label="Theme: match system"><svg class="ic"><use href="#i-theme-system"/></svg></button>
+        <div class="menu menu-right" id="menu-theme" role="menu" aria-label="Theme" hidden>
+          <button type="button" role="menuitemradio" aria-checked="true" data-theme-pick="system"><span><svg class="ic ic-sm"><use href="#i-theme-system"/></svg> Match system</span><small>Light or dark, as set on this device</small></button>
+          <button type="button" role="menuitemradio" aria-checked="false" data-theme-pick="light"><span><svg class="ic ic-sm"><use href="#i-theme-light"/></svg> Light</span><small>Always light</small></button>
+          <button type="button" role="menuitemradio" aria-checked="false" data-theme-pick="dark"><span><svg class="ic ic-sm"><use href="#i-theme-dark"/></svg> Dark</span><small>Always dark</small></button>
         </div>
       </div>
     </div>

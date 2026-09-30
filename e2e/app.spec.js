@@ -728,6 +728,38 @@ test('keeps clusters, the placing hint and a selection’s actions in view', asy
   expect(await shown('#multi-del', '#inspector')).toBe(true);
 });
 
+test('the theme button picks light, dark or the system’s theme, and it is kept', async ({ page }) => {
+  const paper = () => page.locator('.scene .sheet').getAttribute('fill');
+  const html = page.locator('html');
+  const light = '#f8f9fb';
+  const dark = '#161b21';
+  expect(await paper()).toBe(light);
+
+  await page.click('#btn-theme');
+  await expect(page.locator('[data-theme-pick="system"]')).toHaveAttribute('aria-checked', 'true');
+  await page.click('[data-theme-pick="dark"]');
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(paper).toBe(dark);
+  await expect(page.locator('#btn-theme')).toHaveAttribute('aria-label', 'Theme: dark');
+
+  // Kept across visits, and set before the app's script runs, so pages don't flash light.
+  await page.route('**/js/app.js', (route) => route.abort());
+  await page.reload();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await page.unroute('**/js/app.js');
+  await page.reload();
+  await expect.poll(paper).toBe(dark);
+
+  // Matching the system again follows the browser's setting.
+  await page.click('#btn-theme');
+  await expect(page.locator('[data-theme-pick="dark"]')).toHaveAttribute('aria-checked', 'true');
+  await page.click('[data-theme-pick="system"]');
+  await expect(html).not.toHaveAttribute('data-theme');
+  await expect.poll(paper).toBe(light);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(paper).toBe(dark);
+});
+
 test.describe('offline', () => {
   test.use({ serviceWorkers: 'allow' });
 
