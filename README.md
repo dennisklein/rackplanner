@@ -323,8 +323,9 @@ Where a device sits:
   so a rack type has at most (units − 1) / 13 side slots, rounded down, and
   never more than 4.
 - Reserved space has the built-in type `reserved`, which is not stored in
-  `deviceTypes`. Each reservation stores its own `height` and counts as 0 W
-  and 0 kg.
+  `deviceTypes`. Each reservation stores its own `height`. It counts as 0 W
+  and 0 kg unless it has its own `powerW` or `weightKg`, such as the power
+  booked for equipment still to come.
 
 Floors, rows and racks share one id space, so an id names only one of them.
 New ones get the next free `f1`, `row1` or `r1`, new catalog types `t1` or
