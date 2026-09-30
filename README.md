@@ -232,6 +232,117 @@ docs/                README screenshots and the script that takes them
 `model.js`, `io.js`, `render.js` and `library.js` have no DOM access and run in
 Node as well as in the browser.
 
+## Data model
+
+A plan is one JSON document, and a plan file is that document as is. Floors
+hold rows and rows hold racks as nested arrays. Devices, the two type catalogs
+and clusters are flat lists at the top level and point at each other by id.
+
+```mermaid
+erDiagram
+    FLOOR ||--|{ ROW : contains
+    ROW ||--|{ RACK : contains
+    RACK }o..|| RACK_TYPE : "has type"
+    DEVICE }o..|| RACK : "mounted in"
+    DEVICE }o..|| DEVICE_TYPE : "has type"
+    DEVICE }o..o| CLUSTER : "grouped in"
+
+    FLOOR {
+        string id PK "f1, f2, ..."
+        string name "Floor 1"
+        Row[] rows "1 to 8"
+    }
+    ROW {
+        string id PK "row1, row2, ..."
+        string name "Row A"
+        Rack[] racks "1 to 16"
+    }
+    RACK {
+        string id PK "r1, r2, ..."
+        string name "Rack A01"
+        string type FK "rack type"
+    }
+    RACK_TYPE {
+        string id PK "rack-47, rt1, ..."
+        string name "47U rack"
+        int units "10 to 60"
+        int sideSlots "0 to 4"
+        number powerW "budget, 0 = none"
+        number weightKg "budget, 0 = none"
+    }
+    DEVICE {
+        string id PK "random"
+        string type FK "device type or reserved"
+        string cluster FK "or null"
+        string loc_rack FK "loc.rack"
+        string loc_kind "loc.kind: u or side"
+        int loc_at "loc.at: top unit or side slot"
+        int height "reserved space only"
+        string name "cn-013"
+        number powerW "null = the type's value"
+        number weightKg "null = the type's value"
+        string serial
+        string asset
+        string ip
+        string owner
+        string notes
+    }
+    DEVICE_TYPE {
+        string id PK "compute-node, t1, ..."
+        string label "Compute node"
+        string tag "COMPUTE"
+        string spec "server"
+        int height "1 to 20"
+        string face "drawing style"
+        string defaultName "cn-001"
+        number powerW "per device"
+        number weightKg "per device"
+    }
+    CLUSTER {
+        string id PK "random"
+        string name "Kestrel"
+        string color "#rrggbb"
+    }
+```
+
+Solid lines are arrays nested in their parent, dashed lines are ids. The three
+`loc_` fields are one object in the file, for example
+`"loc": { "rack": "r1", "kind": "u", "at": 5 }`. Besides the five lists
+(`floors`, `rackTypes`, `deviceTypes`, `clusters`, `devices`), the top level
+holds `version` (3), the plan's `name`, `info` with the site, author and
+revision for the title block, and `meta`. A plan has 1 to 6 floors, 1 to 20
+rack types and up to 60 device types.
+
+Where a device sits:
+
+- With `"kind": "u"`, `at` is the topmost unit the device fills. Units count
+  from the top, so a 2U device at 5 fills U5 and U6. It must stay within the
+  rack type's units and may not overlap another device.
+- With `"kind": "side"`, `at` is a side slot, counted from 0 at the top (V1 in
+  the app). Each slot holds one 1U device. A slot runs along 12U plus a 1U gap,
+  so a rack type has at most (units − 1) / 13 side slots, rounded down, and
+  never more than 4.
+- Reserved space has the built-in type `reserved`, which is not stored in
+  `deviceTypes`. Each reservation stores its own `height` and counts as 0 W
+  and 0 kg.
+
+Floors, rows and racks share one id space, so an id names only one of them.
+New ones get the next free `f1`, `row1` or `r1`, new catalog types `t1` or
+`rt1`. Device and cluster ids are random. Cluster ids starting with `__` are
+reserved for the app and replaced on import.
+
+What a delete does to the rest of the plan:
+
+| Deleting | Effect |
+| --- | --- |
+| A floor, row or rack | Deletes the devices in it. A plan keeps at least one floor, a floor one row, a row one rack. |
+| A device type | Deletes its devices. |
+| A rack type | Refused while a rack uses it. The last rack type always stays. |
+| A cluster | Its devices stay where they are, without a cluster. |
+
+**Open** reads plan files of every version. Version 1 counted units from the
+bottom, and versions 1 and 2 had a single list of racks, which becomes one row.
+
 ## Tests
 
 ```sh
