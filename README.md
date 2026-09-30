@@ -1,25 +1,34 @@
 # Rackplanner
 
-A client-side single-page app for planning datacenter rack layouts. Racks stand
-in rows, rows on floors, and each row is drawn in elevation view as a
-schematic drawing sheet. You place switches, servers, storage and anything
-else from a catalog you can extend, and track space, power and weight
-against each rack's budget. Devices get their own names and belong to
-color-coded clusters, so the equipment that works together stands out.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/elevation-dark.png">
+  <img src="docs/screenshots/elevation.png" alt="Rackplanner showing Row A of the example plan: three racks of switches, compute nodes, storage servers and disk enclosures in cluster colors, the devices and clusters on the left and the selected node's details on the right.">
+</picture>
+
+A single-page app for planning datacenter rack layouts, right in the browser.
+Racks stand in rows, rows on floors, and each row is drawn in elevation view as
+a schematic drawing sheet. You place switches, servers, storage and anything
+else from a catalog you can extend, and track space, power and weight against
+each rack's budget. Devices get their own names and belong to color-coded
+clusters, so the equipment that works together stands out.
+
+**[Open Rackplanner](https://dennisklein.github.io/rackplanner/)**: it starts
+with an example plan of two floors, which you can explore, keep editing or
+swap for empty racks. It works with a mouse, the keyboard or touch, and
+follows your system's light or dark theme.
 
 There is no server and no build step: plain HTML, CSS and JavaScript. Plans are
-saved in the browser, work offline, and can be exported as files or shared as
-links.
-
-Live version: https://dennisklein.github.io/rackplanner/ (once GitHub Pages is
-enabled, see [Deployment](#deployment)).
+saved in your browser and never uploaded; they work offline and can be
+exported as files or shared as links.
 
 Public domain under CC0 1.0: use it for anything, no strings attached. See [License](#license).
 
-## Running it
+## Running it yourself
 
-Open `index.html` in a browser. It also works from `file://`, except that
-there is no offline cache and share links point at the file on your own disk.
+The [live version](https://dennisklein.github.io/rackplanner/) needs nothing
+installed. To run your own copy, open `index.html` in a browser. It also works
+from `file://`, except that there is no offline cache and share links point at
+the file on your own disk.
 
 Or serve the folder with any static web server:
 
@@ -64,27 +73,21 @@ makes a 1U PDU look like a vertical power strip.
 
 ## Using it
 
-- **Move around**: the bar above the drawing has a tab per floor, the row
-  picker with previous and next buttons, and a switch between the
-  **Elevation** of the current row and the **Floor map**. The floor map shows
-  every row of a floor with a small drawing of each rack and a meter for
-  space, power or weight; click a rack to open it, a row name to see its
-  elevation.
-- **Search**: type in the search box (or press <kbd>/</kbd>) to find floors,
-  rows, racks and devices. Devices are found by name, type, cluster, serial
-  number, asset tag, IP address or owner. Pick a result to jump there. While
-  the search is on, matching devices stay highlighted in the drawing and
-  marked on the floor map.
-- **Place**: drag a device from the left panel onto a rack, or click it and then
-  click a free slot. A green outline means it fits; red explains the conflict.
+![The placement dialog for six compute nodes: named cn-013 to cn-018, in the Kestrel HPC cluster, spread over racks A01 to A03 two each.](docs/screenshots/placing.png)
+
+- **Place**: drag a device from the left panel onto a rack, or click it and
+  then click a free slot (on a touch screen, tap it and then tap a slot). A
+  green outline means it fits; red explains the conflict.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
   so dropping a node next to `cn-012` offers `cn-013` in the same cluster.
   You can create a new cluster with its own color right there.
 - **Several at once**: set a quantity to stack devices downward or upward from
   the drop point. Occupied units are skipped and names count up (`cn-013 … cn-020`).
-  Tick **Spread evenly across racks** to share them out over the racks of
-  the row you pick; a rack that runs out of space leaves the rest to the others.
+  Tick **Spread evenly across racks in this row** and pick the racks to share
+  them out; a rack that runs out of space leaves the rest to the others.
+- **Move**: drag devices between units, racks and side slots. Hold <kbd>Alt</kbd>
+  while dropping to copy instead.
 - **Edit a device**: select it to rename it, change its cluster, move it to any
   rack in the plan, and fill in its serial number, asset tag, IP address,
   owner and notes. Power and weight come from its type unless you enter
@@ -100,12 +103,25 @@ makes a 1U PDU look like a vertical power strip.
   racks, keeping the group's layout; names continue each series (`cn-013`,
   `cn-014`). A rack, row or floor is copied with all its devices and
   inserted right after the original.
+- **Clusters**: click one in the left panel to highlight its devices. Use the
+  pencil icon to rename or recolor it.
+- **Move around**: the bar above the drawing has a tab per floor, the row
+  picker with previous and next buttons, and a switch between the
+  **Elevation** of the current row and the **Floor map**. The floor map shows
+  every row of a floor with a small drawing of each rack and a meter for
+  space, power or weight; click a rack to open it, a row name to see its
+  elevation.
+- **Search**: type in the search box (or press <kbd>/</kbd>) to find floors,
+  rows, racks and devices. Devices are found by name, type, cluster, serial
+  number, asset tag, IP address or owner. Pick a result to jump there. While
+  the search is on, matching devices stay highlighted in the drawing and
+  marked on the floor map.
 - **Racks, rows and floors**: click a rack's yellow label to rename it, change
   its type, move it left or right, insert a rack beside it, duplicate it,
-  move it to another row or delete it. The dashed **Add rack** slot at the end of a row
-  adds one. Row and floor settings (from the row picker, the pencil on the
-  floor map, or a click on the active floor tab) rename, reorder, move and
-  delete them, and show their totals.
+  move it to another row or delete it. The dashed **Add rack** slot at the end
+  of a row adds one. Row and floor settings (from the row picker, the pencil
+  on the floor map, or a click on the active floor tab) rename, reorder, move
+  and delete them, and show their totals.
 - **Catalog**: the **Catalog** button above the devices edits device and
   rack types. Changes apply at once and are checked: a type can't grow if its
   devices would then overlap or stick out of their racks. Drag types by their
@@ -116,11 +132,13 @@ makes a 1U PDU look like a vertical power strip.
   toward the power budget and turns red, with a “!”, when a rack is over its
   power or weight budget. The inspector shows the numbers for a rack, row,
   floor or the whole plan.
-- **Clusters**: click one in the left panel to highlight its devices. Use the
-  pencil icon to rename or recolor it.
-- **Move**: drag devices between units, racks and side slots. Hold <kbd>Alt</kbd>
-  while dropping to copy instead.
-- **Undo** everything with <kbd>Ctrl</kbd>+<kbd>Z</kbd>, redo with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
+- **Undo** everything with <kbd>Ctrl</kbd>+<kbd>Z</kbd>, redo with
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+
+<p>
+  <img src="docs/screenshots/floor-map.png" width="49%" alt="The floor map of the ground floor: two rows of three racks, each drawn small with its devices and a power meter, with totals per row.">
+  <img src="docs/screenshots/catalog.png" width="49%" alt="The catalog editor with the GPU server type selected: a drawing of its front, its name, tag, height, drawing style, description, first name, power and weight.">
+</p>
 
 | Shortcut | Action |
 | --- | --- |
@@ -132,13 +150,15 @@ makes a 1U PDU look like a vertical power strip.
 | <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area |
 | <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device in the row |
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor |
+| <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device |
 | <kbd>Del</kbd> | Delete |
 | <kbd>Tab</kbd> | Walk through devices, top to bottom |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo, redo |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |
 | <kbd>Ctrl</kbd>+scroll | Zoom at the pointer |
 | <kbd>Esc</kbd> | Cancel placing or dragging, deselect, clear the search |
 
-Drag the empty sheet to pan.
+On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
 
 ## Saving, sharing and exporting
 
@@ -163,6 +183,11 @@ Plans saved by earlier versions are moved into the list automatically.
   it gets their own copy in their browser; nothing is uploaded. Very large
   plans make long links, so send the file instead if a chat program cuts it off.
 
+<p align="center">
+  <a href="docs/screenshots/sheet.png"><img src="docs/screenshots/sheet.png" width="560" alt="Row B exported as a PNG drawing sheet: three 48U racks with patch panels, core switches, GPU servers, hatched reserved space and vertical PDUs in the side slots, a cluster legend and a title block."></a>
+  <br><em>Row B of the example, exported as a PNG</em>
+</p>
+
 **Open** also imports a **CSV inventory**, into a new plan or added to the
 current one. It needs Rack, Position (`U12`, `U12-13` or `Side V1`) and Name or
 Type columns; Floor, Row, Height, Cluster and the other columns of the export
@@ -173,11 +198,13 @@ semicolon and tab separators all work.
 Imported files are checked: devices that overlap or don't fit are skipped, and
 everything that needed fixing is listed after the import.
 
-## Offline
+## Offline and installing
 
 The fonts are part of the app, and a service worker keeps a copy of all files,
 so once the site has been opened it also works without a network. New
-versions are picked up on the next visit while online.
+versions are picked up on the next visit while online. Browsers that install
+web apps (Install or Add to Home Screen in their menu) can install it to run
+in its own window.
 
 ## Project layout
 
@@ -195,6 +222,7 @@ sw.js                service worker for offline use
 manifest.webmanifest, icon.svg   installable web app
 test/                unit tests for model, io, library and renderer
 e2e/                 browser tests (Playwright) and their static server
+docs/                README screenshots and the script that takes them
 ```
 
 `model.js`, `io.js`, `render.js` and `library.js` have no DOM access and run in
@@ -204,8 +232,9 @@ Node as well as in the browser.
 
 ```sh
 npm test             # unit tests: placement, catalogs, import, CSV, drawing (no dependencies)
-npm ci               # once, for the browser tests
+npm ci               # once, for the browser tests and screenshots
 npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
+npm run screenshots  # retake the README screenshots from the example plan
 ```
 
 The unit tests use Node's built-in test runner (Node 18 or later). The browser
@@ -213,24 +242,22 @@ tests in `e2e/` start a small static server and cover dragging, placing and
 spreading, navigation and search, the floor map, the catalog editor, rack
 types and budgets, selecting and moving several devices, reserved space, the
 plan list, share links, CSV and plan file import, printing, exports, offline
-caching and the phone layout. If Chromium is missing, install it with
-`npx playwright install chromium`. The app itself has no dependencies;
-Playwright is only needed to run these tests.
+caching, the panel layout and the phone layout. If Chromium is missing,
+install it with `npx playwright install chromium`. The app itself has no
+dependencies; Playwright is only needed for these tests and the screenshots.
 
 ## Deployment
 
-`.github/workflows/pages.yml` runs the unit and browser tests and publishes the
-site to GitHub Pages on every push to `main`. Nothing is deployed if a test fails. You can also start it by hand from the Actions tab.
+Every push to `main` runs the unit and browser tests and, if they pass,
+publishes the site to [GitHub Pages](https://dennisklein.github.io/rackplanner/)
+(see `.github/workflows/pages.yml`). You can also start a deployment by hand
+from the Actions tab.
 
-It needs a one-time setup in the repository settings:
-
-1. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
-2. **Settings → General → Default branch** should be `main`. The `github-pages`
-   environment only accepts deployments from the default branch unless you add
-   other branches under **Settings → Environments → github-pages**.
-
-GitHub Pages for a private repository needs a paid GitHub plan; on the free plan
-the repository has to be public.
+To deploy a fork of your own, set **Settings → Pages → Build and deployment →
+Source** to **GitHub Actions** once. The `github-pages` environment only takes
+deployments from the default branch, so keep that `main` or allow other
+branches under **Settings → Environments → github-pages**. Pages for a private
+repository needs a paid GitHub plan.
 
 ## License
 
