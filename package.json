@@ -8,7 +8,8 @@
     "start": "npx --yes http-server -p 8080 -c-1 .",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test",
-    "screenshots": "node docs/screenshots.js"
+    "screenshots": "node docs/screenshots.js",
+    "video": "node media/record.js"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1"

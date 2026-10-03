@@ -227,6 +227,7 @@ manifest.webmanifest, icon.svg   installable web app
 test/                unit tests for model, io, library and renderer
 e2e/                 browser tests (Playwright) and their static server
 docs/                README screenshots and the script that takes them
+media/               the intro video's animation page and the script that records it
 ```
 
 `model.js`, `io.js`, `render.js` and `library.js` have no DOM access and run in
@@ -351,6 +352,7 @@ npm test             # unit tests: placement, catalogs, import, CSV, drawing (no
 npm ci               # once, for the browser tests and screenshots
 npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
 npm run screenshots  # retake the README screenshots from the example plan
+npm run video        # record the intro video into media/ (needs ffmpeg)
 ```
 
 The unit tests use Node's built-in test runner (Node 18 or later). The browser

@@ -1,0 +1,410 @@
+<!doctype html>
+<!--
+  Rackplanner intro video: a motion graphics tour of the app, drawn with its
+  own renderer. Open it in a browser to watch it play, add ?t=12.5 to hold
+  one moment, or record it with `npm run video`.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Rackplanner intro</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  :root {
+    --bg: #0d1115;
+    --surface: #151a20;
+    --surface-2: #1b2128;
+    --surface-3: #232a32;
+    --line: #29313a;
+    --line-strong: #3a444f;
+    --ink: #e6ebf0;
+    --ink-2: #a5b0bc;
+    --ink-3: #737f8d;
+    --tape: #f2c230;
+    --tape-edge: #a07a0c;
+    --tape-ink: #1b1f24;
+    --bad: #f06464;
+    --ok: #43c47a;
+    --font-ui: "Barlow", "Segoe UI", system-ui, sans-serif;
+    --font-display: "Barlow Condensed", "Arial Narrow", "Barlow", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  body { font-family: var(--font-ui); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  #stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: var(--bg);
+    transform-origin: 0 0;
+  }
+  .abs { position: absolute; left: 0; top: 0; }
+
+  /* Graph paper backdrop, like the drawing sheet. */
+  #grid {
+    position: absolute;
+    inset: -200px;
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px),
+      linear-gradient(rgb(255 255 255 / 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+    background-size: 200px 200px, 200px 200px, 40px 40px, 40px 40px;
+  }
+  #vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 70% 70% at 50% 45%, transparent 40%, rgb(0 0 0 / 0.55) 100%);
+  }
+
+  /* The brand: icon and wordmark, carried from the intro into the app window. */
+  #brand { display: flex; align-items: center; gap: 14px; transform-origin: 0 0; white-space: nowrap; }
+  #brand svg { width: 40px; height: 40px; display: block; overflow: visible; }
+  #brand .word {
+    font: 600 36px/1 var(--font-display);
+    letter-spacing: 0.05em;
+    color: var(--ink);
+    display: flex;
+  }
+  #brand .word span { display: inline-block; }
+
+  #tagline {
+    width: 1920px;
+    text-align: center;
+    font: 400 40px/1.2 var(--font-ui);
+    color: var(--ink-2);
+  }
+  #tagline b { color: var(--ink); font-weight: 500; }
+  #underline { height: 6px; background: var(--tape); border-radius: 3px; transform-origin: 50% 50%; }
+
+  /* The app window. */
+  #panel {
+    width: 1050px;
+    height: 912px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 16px;
+    box-shadow: 0 40px 120px rgb(0 0 0 / 0.6), 0 4px 16px rgb(0 0 0 / 0.4);
+    overflow: hidden;
+  }
+  .topbar, .navbar {
+    position: absolute;
+    left: 0; right: 0;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px 0 0;
+    font-size: 15px;
+  }
+  .topbar { top: 0; height: 56px; background: var(--surface-2); }
+  .navbar { top: 56px; height: 50px; padding-left: 14px; gap: 10px; }
+  .navbar .spacer { margin-left: auto; }
+  .btn {
+    height: 34px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface);
+    display: flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 500; white-space: nowrap;
+  }
+  .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .btn.icon { width: 34px; padding: 0; justify-content: center; color: var(--ink-2); }
+  .btn.on { background: var(--surface-3); border-color: var(--ink-3); }
+  .tb-search {
+    width: 236px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden;
+  }
+  .tb-search.on { border-color: var(--tape); box-shadow: 0 0 0 2px rgb(242 194 48 / 0.25); }
+  .tb-search svg { width: 16px; height: 16px; flex: none; }
+  .tb-search .typed { font: 500 16px/1 var(--font-mono); color: var(--ink); }
+  .tb-search .caret { width: 2px; height: 18px; background: var(--tape); margin-left: -6px; }
+  .tb-name {
+    margin-left: 0;
+    padding-left: 16px;
+    border-left: 1px solid var(--line-strong);
+    font: 500 17px/1 var(--font-ui);
+    color: var(--ink);
+    margin-right: auto;
+    white-space: nowrap;
+  }
+  .tabs, .seg { display: flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
+  .tabs span, .seg span { padding: 7px 12px; color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+  .tabs span + span, .seg span + span { border-left: 1px solid var(--line-strong); }
+  .tabs span.on, .seg span.on { background: var(--ink); color: var(--surface); }
+  .picker { display: flex; align-items: center; gap: 6px; }
+  .picker .arrow {
+    width: 30px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px;
+    display: grid; place-items: center; color: var(--ink-2); font: 500 16px/1 var(--font-ui);
+  }
+  .picker .row {
+    width: 96px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px;
+    display: flex; align-items: center; justify-content: center; font-weight: 600; overflow: hidden; position: relative;
+  }
+  .picker .row i { position: absolute; font-style: normal; }
+  #sheetArea { position: absolute; left: 0; top: 107px; width: 1048px; height: 803px; overflow: hidden; background: #161b21; }
+  #sheetArea > * { position: absolute; left: 0; top: 0; }
+  #sheetArea svg.sheet { width: 1048px; height: 803px; display: block; }
+
+  /* Floor map, after the app's own. */
+  #floormap { width: 1048px; height: 803px; padding: 26px 34px; }
+  .fm-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
+  .fm-head h3 { margin: 0; font: 600 40px/1 var(--font-display); }
+  .fm-head p { margin: 6px 0 0; color: var(--ink-2); font-size: 17px; }
+  .fm-row {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 16px 22px 14px; margin-bottom: 16px;
+  }
+  .fm-row.current { border-color: var(--tape-edge); box-shadow: 0 0 0 1px var(--tape-edge) inset; }
+  .fm-row-head { display: flex; gap: 18px; align-items: baseline; margin-bottom: 12px; }
+  .fm-row-head b { font: 600 24px/1 var(--font-display); }
+  .fm-row-head span { color: var(--ink-3); font-size: 16px; }
+  .fm-racks { display: flex; gap: 34px; align-items: flex-end; }
+  .fm-rack { width: 128px; position: relative; }
+  .fm-elev { display: block; position: relative; border: 4px solid #48515c; border-radius: 3px; background: #1e242b; }
+  .fm-elev i { position: absolute; left: 0; right: 0; border-bottom: 1px solid rgb(0 0 0 / 0.35); }
+  .fm-elev i.res { background-image: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px); opacity: 0.8; }
+  .fm-meter { display: block; height: 5px; background: #2b333c; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .fm-meter span { display: block; height: 100%; background: #e0a529; border-radius: 3px; }
+  .fm-rack.over .fm-meter span { background: var(--bad); }
+  .fm-name { display: block; margin-top: 6px; font: 600 15px/1 var(--font-mono); }
+  .fm-val { display: block; margin-top: 4px; font: 500 14px/1 var(--font-mono); color: var(--ink-3); }
+  .fm-rack.over .fm-val { color: var(--bad); }
+  .fm-hits {
+    position: absolute; right: -12px; top: -12px; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px;
+    background: var(--tape); color: var(--tape-ink); font: 600 16px/30px var(--font-mono); text-align: center;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.5);
+  }
+  .fm-add { width: 128px; border: 2px dashed var(--line-strong); border-radius: 4px; display: grid; place-items: center; color: var(--ink-3); font-size: 30px; }
+
+  /* Printouts and toast in the "more" scene. */
+  .paper { background: #f8f9fb; box-shadow: 0 30px 80px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.3); transform-origin: 50% 50%; }
+  .paper svg { display: block; width: 100%; height: 100%; }
+  .paper .file {
+    position: absolute; left: 0; top: -38px; padding: 6px 12px; border-radius: 6px; background: var(--tape); color: var(--tape-ink);
+    font: 600 16px/1.2 var(--font-mono); box-shadow: 0 2px 0 var(--tape-edge); white-space: nowrap;
+  }
+  .paper .file.right { left: auto; right: 0; }
+  #toast {
+    padding: 14px 22px; border-radius: 10px; background: var(--ink); color: var(--surface);
+    font: 500 20px/1 var(--font-ui); display: flex; gap: 12px; align-items: center; white-space: nowrap;
+    box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  }
+  #toast svg { width: 22px; height: 22px; }
+
+  /* The catalog dialog: device and rack types. */
+  #scrim { position: absolute; inset: 0; background: rgb(0 0 0 / 0.6); }
+  #catalog {
+    position: absolute; left: 40px; top: 36px; width: 968px; height: 836px; padding: 24px 28px 0;
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.6);
+  }
+  #catalog .tag { font-size: 14px; padding: 6px 10px 5px; }
+  #catalog h3 { margin: 12px 0 6px; font: 600 32px/1 var(--font-display); }
+  #catalog .hint { margin: 0 0 16px; color: var(--ink-2); font-size: 16px; }
+  .cat-body { display: grid; grid-template-columns: 330px 1fr; gap: 26px; margin-top: 18px; position: relative; height: 560px; }
+  .cat-list { position: relative; }
+  .cat-list > div { position: absolute; inset: 0; }
+  .cat-item {
+    display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px;
+  }
+  .cat-item.sel { border-color: var(--ink-3); background: var(--surface-2); }
+  .cat-item .thumb { width: 72px; height: 36px; display: grid; place-items: center; flex: none; }
+  .cat-item .thumb svg { width: 72px; display: block; }
+  .cat-item b { display: block; font: 600 16px/1.2 var(--font-ui); }
+  .cat-item small { display: block; font: 500 13px/1.3 var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+  .cat-item .n { margin-left: auto; min-width: 30px; padding: 3px 7px; border-radius: 5px; background: var(--surface-3); color: var(--ink-2); font: 500 13px/1 var(--font-mono); text-align: center; }
+  .cat-form { position: relative; }
+  .cat-form > div { position: absolute; inset: 0; }
+  .cat-preview {
+    height: 170px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+    display: grid; place-items: center; margin-bottom: 18px; overflow: hidden;
+  }
+  .cat-preview svg { display: block; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .field.span2 { grid-column: span 2; }
+  .field label { display: block; font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
+  .field .in {
+    height: 40px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); padding: 0 12px;
+    display: flex; align-items: center; justify-content: space-between; font-size: 16px; white-space: nowrap;
+  }
+  .field .in.focus { border-color: var(--tape); box-shadow: 0 0 0 3px rgb(242 194 48 / 0.3); }
+  .rack-form { display: grid; grid-template-columns: 1fr 200px; gap: 22px; }
+  .rack-form .cat-preview { height: 520px; margin: 0; align-content: start; padding-top: 10px; }
+  .rack-form .note { margin: 14px 0 0; color: var(--ink-3); font-size: 14px; line-height: 1.4; }
+  .cat-foot {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 72px; padding: 0 28px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .btn.primary { background: var(--tape); color: var(--tape-ink); border-color: var(--tape-edge); font-weight: 600; padding: 0 20px; }
+
+  /* The export menu, outputs and share link. */
+  #menu {
+    width: 340px; padding: 6px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface);
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.6); transform-origin: 100% 0;
+  }
+  #menu .mi { padding: 8px 12px; border-radius: 6px; }
+  #menu .mi.hot { background: var(--surface-3); box-shadow: inset 3px 0 0 var(--tape); }
+  #menu .mi b { display: block; font: 500 16px/1.25 var(--font-ui); }
+  #menu .mi small { display: block; font-size: 13px; color: var(--ink-3); }
+  #menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 6px; }
+  .csv { background: #fbfcfd; color: #18212b; padding: 14px 16px; }
+  .csv table { border-collapse: collapse; font: 500 12.5px/1 var(--font-mono); width: 100%; }
+  .csv th { text-align: left; font: 600 12px/1 var(--font-ui); letter-spacing: 0.04em; color: #4e5a67; background: #e7ebf0; }
+  .csv td, .csv th { padding: 6px 8px; border: 1px solid #d3d9e0; white-space: nowrap; }
+  #link {
+    width: 640px; padding: 20px 22px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface);
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.6);
+  }
+  #link .tag { font-size: 14px; padding: 6px 10px 5px; }
+  #link .url {
+    margin-top: 14px; height: 76px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-2);
+    font: 500 16px/1.4 var(--font-mono); color: var(--ink); word-break: break-all; overflow: hidden;
+  }
+  #link .row { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; color: var(--ink-3); font-size: 15px; }
+
+  /* Left column copy, one block per scene. */
+  .copy { width: 640px; }
+  .tag {
+    display: inline-block; padding: 8px 14px 7px; border-radius: 3px; background: var(--tape); color: var(--tape-ink);
+    font: 600 22px/1 var(--font-mono); letter-spacing: 0.08em; box-shadow: 2px 2px 0 var(--tape-edge);
+  }
+  .copy h2 { margin: 26px 0 0; font: 600 100px/0.98 var(--font-display); letter-spacing: -0.005em; }
+  .copy h2 .line { display: block; overflow: hidden; padding-bottom: 6px; margin-bottom: -6px; }
+  .copy h2 .line span { display: inline-block; }
+  .copy h2 em { font-style: normal; color: var(--tape); }
+  .copy p.sub { margin: 24px 0 0; font: 400 30px/1.3 var(--font-ui); color: var(--ink-2); max-width: 600px; }
+  .extra { margin-top: 40px; }
+
+  .clist .ci {
+    display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 16px; border-radius: 8px; margin-bottom: 6px;
+    font: 500 28px/1 var(--font-ui);
+  }
+  .clist .sw { width: 24px; height: 24px; border-radius: 4px; flex: none; }
+  .clist .n { margin-left: auto; font: 500 24px/1 var(--font-mono); color: var(--ink-3); }
+
+  .card {
+    width: 600px; padding: 26px 28px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface);
+  }
+  .card .top { display: flex; align-items: center; justify-content: space-between; }
+  .card .cap { font: 600 18px/1 var(--font-ui); letter-spacing: 0.14em; color: var(--ink-3); }
+  .card .big { margin-top: 18px; font: 600 84px/1 var(--font-display); white-space: nowrap; }
+  .card .big small { font-size: 46px; color: var(--ink-3); font-weight: 500; }
+  .card .bar { height: 16px; border-radius: 8px; background: #2b333c; margin-top: 18px; overflow: hidden; }
+  .card .bar span { display: block; height: 100%; border-radius: 8px; background: #e0a529; }
+  .card .mini { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 24px; }
+  .card .mini div { font: 500 20px/1 var(--font-mono); color: var(--ink-2); }
+  .card .mini div b { display: block; font: 600 15px/1 var(--font-ui); letter-spacing: 0.12em; color: var(--ink-3); margin-bottom: 10px; }
+  .card .mini .mbar { height: 8px; border-radius: 4px; background: #2b333c; margin-top: 10px; overflow: hidden; }
+  .card .mini .mbar span { display: block; height: 100%; background: #c9d2dc; }
+  .badge {
+    padding: 8px 12px 7px; border-radius: 4px; background: var(--bad); color: #1a0d0d; font: 600 18px/1 var(--font-mono); letter-spacing: 0.06em;
+  }
+
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 640px; }
+  .chip {
+    display: flex; align-items: center; gap: 14px; height: 70px; padding: 0 20px; border: 1px solid var(--line-strong); border-radius: 10px;
+    background: var(--surface); font: 500 25px/1.1 var(--font-ui); white-space: nowrap;
+  }
+  .chip i { width: 20px; height: 20px; border-radius: 4px; flex: none; }
+
+  /* Transition band and the closing page. */
+  .band { height: 1080px; transform-origin: 50% 50%; }
+  #bandY { width: 4200px; background: var(--tape); }
+  #bandB { width: 260px; background: #2f6fdb; }
+  #bandT { width: 160px; background: #0f9d8a; }
+  #outro { width: 1920px; height: 1080px; }
+  #outro .try { width: 1920px; text-align: center; font: 600 92px/1 var(--font-display); }
+  #outro .url {
+    display: inline-flex; align-items: baseline; padding: 22px 34px 20px; border-radius: 6px; background: var(--tape); color: var(--tape-ink);
+    font: 600 54px/1 var(--font-mono); box-shadow: 5px 5px 0 var(--tape-edge); white-space: pre;
+  }
+  #outro .url .scheme { color: rgb(27 31 36 / 0.55); }
+  #outro .url .caret { display: inline-block; width: 5px; height: 50px; background: var(--tape-ink); margin-left: 4px; align-self: center; }
+  #outro .note { width: 1920px; text-align: center; font: 400 30px/1.2 var(--font-ui); color: var(--ink-2); }
+  #outro .note b { color: var(--tape); font-weight: 600; padding: 0 14px; }
+  #strip { display: flex; gap: 26px; align-items: flex-end; }
+  #strip .fm-rack { width: 80px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="grid"></div>
+  <div id="vignette"></div>
+
+  <div id="panel" class="abs">
+    <div class="topbar">
+      <span id="tbBrandSpace"></span>
+      <span class="tb-name">Hall 2 expansion</span>
+      <div class="tb-search" id="tbSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><span class="ph">Search devices, racks, rows</span><span class="typed"></span><span class="caret"></span></div>
+      <span class="btn icon"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></span>
+      <span class="btn icon"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></span>
+      <span class="btn">Plans</span>
+      <span class="btn">Open</span>
+      <span class="btn" id="btnExport"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export<svg viewBox="0 0 24 24" style="width:13px"><path d="M6 9l6 6 6-6"/></svg></span>
+    </div>
+    <div class="navbar">
+      <div class="tabs"><span class="on">Ground floor</span><span>First floor</span></div>
+      <div class="picker"><span class="arrow">‹</span><span class="row"><i id="rowA">Row A</i><i id="rowB">Row B</i></span><span class="arrow">›</span></div>
+      <span class="spacer"></span>
+      <div class="seg"><span id="segElev" class="on">Elevation</span><span id="segMap">Floor map</span></div>
+    </div>
+    <div id="sheetArea">
+      <svg id="sheetA" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+      <svg id="sheetB" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="floormap"></div>
+    </div>
+    <div id="scrim"></div>
+    <div id="catalog">
+      <span class="tag">CATALOG</span>
+      <h3>Device and rack types</h3>
+      <p class="hint">Types belong to this plan and travel with its file. Changes apply right away.</p>
+      <div class="tabs" style="display:inline-flex"><span id="tabDev" class="on">Device types</span><span id="tabRack">Rack types</span></div>
+      <div class="cat-body">
+        <div class="cat-list"><div id="devList"></div><div id="rackList"></div></div>
+        <div class="cat-form"><div id="devForm"></div><div id="rackForm"></div></div>
+      </div>
+      <div class="cat-foot"><span class="btn">+ New type</span><span class="btn primary" id="catDone">Done</span></div>
+    </div>
+  </div>
+  <div id="menu" class="abs"></div>
+  <div id="papers" class="abs"></div>
+  <div id="link" class="abs">
+    <span class="tag">SHARE LINK</span>
+    <div class="url"><span class="typed"></span></div>
+    <div class="row"><span class="size"></span><span class="btn" id="copyLink">Copy link</span></div>
+  </div>
+  <div id="toast" class="abs">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1f9d55" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+    Link copied
+  </div>
+
+  <div id="copies"></div>
+
+  <div id="tagline" class="abs">Plan datacenter racks, <b>right in the browser.</b></div>
+  <div id="underline" class="abs"></div>
+
+  <div id="outro" class="abs">
+    <div id="strip" class="abs"></div>
+    <div class="try abs">Try it now at</div>
+    <div id="urlWrap" class="abs"><span class="url"><span class="scheme"></span><span class="host"></span><span class="caret"></span></span></div>
+    <div class="note abs">Free<b>·</b>Nothing to install<b>·</b>Your plans stay in your browser</div>
+  </div>
+
+  <div id="brand" class="abs">
+    <svg viewBox="0 0 32 32">
+      <rect id="bFrame" x="6" y="2" width="20" height="28" rx="2" fill="#48515c"/>
+      <rect id="bBar1" x="9" y="6" width="14" height="3" fill="#f2c230"/>
+      <rect id="bBar2" x="9" y="11" width="14" height="6" fill="#2f6fdb"/>
+      <rect id="bBar3" x="9" y="19" width="14" height="6" fill="#0f9d8a"/>
+    </svg>
+    <span class="word"></span>
+  </div>
+  <div id="bandT" class="abs band"></div>
+  <div id="bandB" class="abs band"></div>
+  <div id="bandY" class="abs band"></div>
+</div>
+<script src="../js/model.js"></script>
+<script src="../js/io.js"></script>
+<script src="../js/render.js"></script>
+<script src="intro.js"></script>
+</body>
+</html>
