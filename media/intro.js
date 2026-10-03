@@ -1,11 +1,12 @@
 /*
- * Rackplanner intro video: 27 seconds of motion graphics.
+ * Rackplanner intro video: 40 seconds of motion graphics.
  *
- * Every frame is a pure function of the time t in seconds: render(t) poses
- * the whole stage, so frames can be drawn in any order. The racks, devices,
- * CSV and share link come from the app's own code and its example plan.
- * media/record.js steps through the frames and encodes them; opened in a
- * browser, the page plays in real time (?t=12.5 holds one moment).
+ * Every frame is a pure function of time: render(t) poses the whole stage at
+ * time t of the story, so frames can be drawn in any order, and PACE says how
+ * much video each part of the story gets. The racks, devices, CSV and share
+ * link come from the app's own code and its example plan. media/record.js
+ * steps through the frames and encodes them; opened in a browser, the page
+ * plays in real time (?t=12.5 holds the frame 12.5 s into the video).
  */
 (function () {
   'use strict';
@@ -14,7 +15,8 @@
   const R = RP.render;
   const IO = RP.io;
 
-  const DURATION = 27.5;
+  const STORY = 27.5; // the story's own seconds, which everything below is timed in
+  const LENGTH = 40; // seconds of video
   const URL_SCHEME = 'https://';
   const URL_HOST = 'dennisklein.github.io/rackplanner/';
   const DATE = '2026-10-03';
@@ -49,6 +51,39 @@
   const prog = (t, start, dur, e) => (e || ease.out)(clamp((t - start) / dur));
   /** 0 → 1 → 0: in over `fade` from a, out over `fade` from b. */
   const span = (t, a, b, fade) => Math.min(prog(t, a, fade, ease.inOut), 1 - prog(t, b, fade, ease.inOut));
+
+  // -------------------------------------------------------------- pace
+
+  // Seconds of video per second of story, from one moment of the story to
+  // the next. The animations run a little slower than the story, and the
+  // quiet end of each scene is held, so there is time to read. The closing
+  // page holds until the video is LENGTH seconds long.
+  const PACE = [
+    [0, 1.0, 1.1], [1.0, 1.8, 1.8], [1.8, 2.75, 1.1], // the logo, its tagline, into the app window
+    [2.75, 5.9, 1.2], [5.9, 6.25, 3], // devices drop in; Row A full
+    [6.25, 6.75, 1.1], [6.75, 9.35, 1.5], // clusters light up
+    [9.35, 10.0, 1.1], [10.0, 11.85, 1.5], [11.85, 12.3, 1.6], // B03 fills up and goes over budget
+    [12.3, 12.95, 1.1], [12.95, 14.55, 1.3], [14.55, 14.85, 5], // the floor map and its search
+    [14.85, 15.5, 1.1], [15.5, 18.3, 1.35], // the catalog
+    [18.3, 19.1, 1.1], [19.1, 21.9, 1.3], [21.9, 22.0, 10], // export and share
+    [22.0, 23.65, 1.15], [23.65, 23.9, 8], // everything else
+    [23.9, 24.9, 1.1], [24.9, 25.8, 1.15], [25.8, STORY, 0], // the stripes; try it now
+  ];
+  const last = PACE[PACE.length - 1];
+  last[2] = (LENGTH - PACE.slice(0, -1).reduce((v, [a, b, f]) => v + (b - a) * f, 0)) / (last[1] - last[0]);
+
+  /** The moment of the story `v` seconds into the video. */
+  function storyAt(v) {
+    let at = 0;
+    for (const [a, b, f] of PACE) {
+      const d = (b - a) * f;
+      if (v <= at + d) return a + (v - at) / f;
+      at += d;
+    }
+    return STORY;
+  }
+  /** How many seconds into the video moment `t` of the story comes. */
+  const videoAt = (t) => PACE.reduce((v, [a, b, f]) => v + Math.max(0, Math.min(t, b) - a) * f, 0);
 
   // -------------------------------------------------------------- dom
 
@@ -798,7 +833,7 @@
   }
 
   function drawOutro(t) {
-    const zoom = 1 + 0.025 * prog(t, OUTRO, DURATION - OUTRO, ease.sine);
+    const zoom = 1 + 0.025 * prog(t, OUTRO, STORY - OUTRO, ease.sine);
     els.outro.style.transformOrigin = '960px 540px';
     els.outro.style.transform = `scale(${r2(zoom * 1000) / 1000})`;
     const tryK = prog(t, OUTRO + 0.2, 0.6, ease.expo);
@@ -864,9 +899,9 @@
     els.outro.style.visibility = 'visible';
     els.stripW = els.strip.offsetWidth;
 
-    window.DURATION = DURATION;
-    window.POSTER = 1.6; // the title card
-    window.seek = render;
+    window.DURATION = LENGTH;
+    window.POSTER = videoAt(1.6); // the title card
+    window.seek = (v) => render(storyAt(v));
     window.introReady = true;
 
     const params = new URLSearchParams(location.search);
@@ -876,10 +911,10 @@
     const fit = () => (stage.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`);
     addEventListener('resize', fit);
     fit();
-    if (params.has('t')) return render(Number(params.get('t')) || 0);
+    if (params.has('t')) return render(storyAt(Number(params.get('t')) || 0));
     const t0 = performance.now();
     const tick = (now) => {
-      render(((now - t0) / 1000) % DURATION);
+      render(storyAt(((now - t0) / 1000) % LENGTH));
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

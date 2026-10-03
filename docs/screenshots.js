@@ -132,7 +132,7 @@ async function introVideo(browser, colorScheme, name) {
       <div class="play"><svg viewBox="0 0 10 12"><path d="M0 0L10 6 0 12z" fill="#1b1f24"/></svg></div>
       <div>
         <span class="tag">INTRO VIDEO</span>
-        <h1>Rackplanner in <em>27 seconds</em></h1>
+        <h1>Rackplanner in <em>40 seconds</em></h1>
         <p>Place, color-code, budget, search, export and share: a quick tour.</p>
       </div>
     </div>`);

@@ -3,7 +3,7 @@
 <a href="https://dennisklein.github.io/rackplanner/media/">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/intro-video-dark.png">
-    <img src="docs/screenshots/intro-video.png" alt="Watch the intro video: Rackplanner in 27 seconds, a quick tour of placing, color-coding, budgets, search, export and sharing.">
+    <img src="docs/screenshots/intro-video.png" alt="Watch the intro video: Rackplanner in 40 seconds, a quick tour of placing, color-coding, budgets, search, export and sharing.">
   </picture>
 </a>
 
