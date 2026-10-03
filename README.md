@@ -15,7 +15,8 @@ clusters, so the equipment that works together stands out.
 **[Open Rackplanner](https://dennisklein.github.io/rackplanner/)**: it starts
 with an example plan of two floors, which you can explore, keep editing or
 swap for empty racks. It works with a mouse, the keyboard or touch, in a
-light or dark theme.
+light or dark theme. For a tour first, **[watch the 27-second intro
+video](https://dennisklein.github.io/rackplanner/media/)**.
 
 There is no server and no build step: plain HTML, CSS and JavaScript. Plans are
 saved in your browser and never uploaded; they work offline and can be
@@ -227,7 +228,7 @@ manifest.webmanifest, icon.svg   installable web app
 test/                unit tests for model, io, library and renderer
 e2e/                 browser tests (Playwright) and their static server
 docs/                README screenshots and the script that takes them
-media/               the intro video's animation page and the script that records it
+media/               the intro video: its animation, player page and the script that records it
 ```
 
 `model.js`, `io.js`, `render.js` and `library.js` have no DOM access and run in
@@ -352,7 +353,7 @@ npm test             # unit tests: placement, catalogs, import, CSV, drawing (no
 npm ci               # once, for the browser tests and screenshots
 npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
 npm run screenshots  # retake the README screenshots from the example plan
-npm run video        # record the intro video into media/ (needs ffmpeg)
+npm run video        # record the intro video and its poster into media/ (needs ffmpeg)
 ```
 
 The unit tests use Node's built-in test runner (Node 18 or later). The browser
@@ -371,6 +372,12 @@ Every push to `main` runs the unit and browser tests and, if they pass,
 publishes the site to [GitHub Pages](https://dennisklein.github.io/rackplanner/)
 (see `.github/workflows/pages.yml`). You can also start a deployment by hand
 from the Actions tab.
+
+Alongside the tests, a second job records the intro video (`npm run video`) as
+MP4 and WebM, which the deployment publishes with its
+[player page](https://dennisklein.github.io/rackplanner/media/). The recording
+is cached and only made again when the video's sources, the drawing code or
+the fonts change. The rendered files are not kept in git.
 
 To deploy a fork of your own, set **Settings → Pages → Build and deployment →
 Source** to **GitHub Actions** once. The `github-pages` environment only takes

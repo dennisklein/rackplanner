@@ -1,7 +1,9 @@
 // Records the intro video: draws every frame of media/intro.html in Chromium
-// and encodes them with ffmpeg into media/rackplanner-intro.mp4, which is not
-// kept in git. Run with `npm run video`; needs ffmpeg on the PATH.
-// `npm run video -- --still 3,12.5` saves those moments as PNGs instead.
+// and encodes them with ffmpeg into media/rackplanner-intro.mp4 (H.264) and
+// .webm (VP9, for browsers without H.264), plus a poster frame,
+// media/rackplanner-intro.jpg. None of them is kept in git; the Pages
+// workflow records and publishes them. Run with `npm run video`; needs ffmpeg
+// on the PATH. `npm run video -- --still 3,12.5` saves those moments as PNGs.
 'use strict';
 
 const path = require('node:path');
@@ -12,6 +14,8 @@ const PORT = 4181;
 const FPS = 30;
 const SIZE = { width: 1920, height: 1080 };
 const OUT = path.join(__dirname, 'rackplanner-intro.mp4');
+const WEBM = path.join(__dirname, 'rackplanner-intro.webm');
+const POSTER = path.join(__dirname, 'rackplanner-intro.jpg');
 
 /** Writes to a stream, waiting while its buffer is full. */
 function write(stream, data) {
@@ -34,7 +38,8 @@ async function record(page) {
   const ffmpeg = spawn(
     'ffmpeg',
     ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', OUT],
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', OUT,
+      '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-deadline', 'good', '-cpu-used', '4', '-row-mt', '1', '-pix_fmt', 'yuv420p', WEBM],
     { stdio: ['pipe', 'inherit', 'inherit'] }
   );
   const done = new Promise((resolve, reject) => {
@@ -49,6 +54,10 @@ async function record(page) {
   ffmpeg.stdin.end();
   await done;
   console.log(`\r${path.relative(process.cwd(), OUT)}`);
+  console.log(path.relative(process.cwd(), WEBM));
+  await page.evaluate(() => window.seek(window.POSTER));
+  await page.screenshot({ path: POSTER, type: 'jpeg', quality: 85 });
+  console.log(path.relative(process.cwd(), POSTER));
 }
 
 async function still(page, t) {

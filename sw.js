@@ -57,12 +57,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Same-origin GETs inside our scope only; everything else bypasses the worker.
+// Same-origin GETs inside our scope only; everything else bypasses the worker,
+// and so does the intro video under media/: too big to keep, and streamed in ranges.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return;
   if (!req.url.startsWith(self.registration.scope)) return;
+  if (req.url.startsWith(new URL('media/', self.registration.scope).href)) return;
   event.respondWith(networkFirst(event));
 });
 

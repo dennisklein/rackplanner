@@ -865,6 +865,7 @@
     els.stripW = els.strip.offsetWidth;
 
     window.DURATION = DURATION;
+    window.POSTER = 1.6; // the title card
     window.seek = render;
     window.introReady = true;
 

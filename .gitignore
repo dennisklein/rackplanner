@@ -4,4 +4,6 @@ node_modules/
 test-results/
 playwright-report/
 media/*.mp4
+media/*.webm
 media/*.png
+media/*.jpg

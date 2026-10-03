@@ -37,8 +37,47 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # Records the intro video (npm run video) for the site, in parallel with the
+  # tests. It only changes with its sources, the drawing code and the fonts, so
+  # the last recording is reused from the cache while those stay the same.
+  video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            media/rackplanner-intro.mp4
+            media/rackplanner-intro.webm
+            media/rackplanner-intro.jpg
+          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/intro.js', 'media/record.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
+      - name: Install dependencies, Chromium and ffmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Record the intro video
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm run video
+      - uses: actions/upload-artifact@v7
+        with:
+          name: intro-video
+          path: |
+            media/rackplanner-intro.mp4
+            media/rackplanner-intro.webm
+            media/rackplanner-intro.jpg
+          if-no-files-found: error
+          retention-days: 1
+
   deploy:
-    needs: test
+    needs: [test, video]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,8 +91,14 @@ jobs:
       - uses: actions/configure-pages@v6
       - name: Collect the site files
         run: |
-          mkdir _site
+          mkdir -p _site/media
           cp -r index.html css js fonts sw.js manifest.webmanifest icon.svg _site/
+          cp media/index.html _site/media/
+      - name: Add the intro video next to its player page
+        uses: actions/download-artifact@v7
+        with:
+          name: intro-video
+          path: _site/media
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
