@@ -609,8 +609,9 @@ test('a share link opens the plan in another browser', async ({ page, browser })
   await page.fill('#insp-name', 'shared-node');
   await page.click('#btn-export');
   await page.click('[data-export="share"]');
+  // The link is filled in once the plan is compressed, which takes a moment.
+  await expect(page.locator('#share-url')).toHaveValue(/#plan=z[\w-]+$/);
   const url = await page.locator('#share-url').inputValue();
-  expect(url).toMatch(/#plan=z[\w-]+$/);
 
   const other = await browser.newContext();
   const page2 = await other.newPage();
