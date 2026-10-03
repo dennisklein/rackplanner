@@ -37,9 +37,10 @@ jobs:
           path: test-results/
           retention-days: 7
 
-  # Records the intro video (npm run video) for the site, in parallel with the
-  # tests. It only changes with its sources, the drawing code and the fonts, so
-  # the last recording is reused from the cache while those stay the same.
+  # Records the intro video and its soundtrack (npm run video) for the site, in
+  # parallel with the tests. It only changes with its sources, the drawing code
+  # and the fonts, so the last recording is reused from the cache while those
+  # stay the same.
   video:
     runs-on: ubuntu-latest
     steps:
@@ -55,7 +56,7 @@ jobs:
             media/rackplanner-intro.mp4
             media/rackplanner-intro.webm
             media/rackplanner-intro.jpg
-          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/intro.js', 'media/record.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
+          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/*.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
       - name: Install dependencies, Chromium and ffmpeg
         if: steps.cache.outputs.cache-hit != 'true'
         run: |

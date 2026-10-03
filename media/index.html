@@ -104,12 +104,13 @@
   </div>
 
   <footer>
-    The video has no sound. It is recorded from <a href="https://github.com/dennisklein/rackplanner/tree/main/media">media/</a>
+    It starts muted; turn the sound on for its soundtrack, an industrial metal score synthesized in the browser.
+    The video is recorded from <a href="https://github.com/dennisklein/rackplanner/tree/main/media">media/</a>
     with the app's own drawing code and published with every deployment.
   </footer>
 </main>
 <script>
-  // Start playing right away (it is silent), unless the viewer asked for less motion.
+  // Start playing right away, muted as browsers require, unless the viewer asked for less motion.
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
     document.getElementById('intro').play().catch(() => {});
   }

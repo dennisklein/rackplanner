@@ -228,7 +228,7 @@ manifest.webmanifest, icon.svg   installable web app
 test/                unit tests for model, io, library and renderer
 e2e/                 browser tests (Playwright) and their static server
 docs/                README screenshots and the script that takes them
-media/               the intro video: its animation, player page and the script that records it
+media/               the intro video: its animation, soundtrack, player page and the script that records it
 ```
 
 `model.js`, `io.js`, `render.js` and `library.js` have no DOM access and run in
@@ -373,8 +373,9 @@ publishes the site to [GitHub Pages](https://dennisklein.github.io/rackplanner/)
 (see `.github/workflows/pages.yml`). You can also start a deployment by hand
 from the Actions tab.
 
-Alongside the tests, a second job records the intro video (`npm run video`) as
-MP4 and WebM, which the deployment publishes with its
+Alongside the tests, a second job records the intro video (`npm run video`)
+with its soundtrack, synthesized in the browser, as MP4 and WebM, which the
+deployment publishes with its
 [player page](https://dennisklein.github.io/rackplanner/media/). The recording
 is cached and only made again when the video's sources, the drawing code or
 the fonts change. The rendered files are not kept in git.

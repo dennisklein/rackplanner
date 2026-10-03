@@ -669,6 +669,62 @@
     pose(els.toast, r2(PANEL.x + PANEL.w - els.toastW - 30), r2(PANEL.y + PANEL.h - 86 + (1 - tk) * 60));
   }
 
+  // -------------------------------------------------------- soundtrack
+
+  // The band comes in when the app window lands; a bar of chords and groove
+  // every two seconds from there (see soundtrack.js for the rest).
+  const DROP = 2.5;
+  const BARS = [
+    ['D', 'drive'], ['A', 'drive'], ['Bm', 'drive'], ['G', 'drive'], // placing, clusters
+    ['D', 'gallop'], ['A', 'half'], // budgets, overview
+    ['Bm', 'drive'], ['G', 'drive'], // catalog
+    ['D', 'gallop'], ['A', 'gallop'], // share
+    ['G', 'build'], // and more, into the closing page
+  ];
+
+  /** The score: the music's form and a sound effect for each thing that happens on screen. */
+  function score() {
+    const cues = [];
+    const cue = (t, kind, extra) => cues.push(Object.assign({ t, kind }, extra));
+    const racks = M.allRacks(FINAL).map((r) => r.rack.id);
+    for (const d of ALL) {
+      const at = land.get(d.id);
+      if (at !== undefined) cue(at, 'land', { rack: racks.indexOf(d.loc.rack), heavy: rowOf(d.loc.rack) === 'row2' });
+    }
+    cue(OVER_AT, 'over');
+    SPOTLIGHT.forEach(([, at], i) => cue(at, 'spot', { i }));
+    for (const c of COPY) cue(c.in, 'swish');
+    cue(9.4, 'swish');
+    cue(12.4, 'swish');
+    for (let i = 0; i < SEARCH.length; i++) cue(SEARCH_AT + i * 0.13, 'key');
+    floorMap.hits.forEach((_, i) => cue(SEARCH_AT + 0.45 + i * 0.06, 'pop'));
+    for (const [at] of FACE_STEPS.slice(1)) cue(CATALOG + at, 'click');
+    cue(CATALOG + RACK_TAB, 'click');
+    const grow = GROW[3] - GROW[2];
+    for (let i = 0; i < grow; i++) cue(CATALOG + GROW[0] + (GROW[1] * i) / grow, 'count', { i });
+    cue(CATALOG + MORE_SLOTS, 'click');
+    cue(CATALOG + CLOSE - 0.15, 'click');
+    cue(SHARE, 'click');
+    for (const [at] of PICKS) cue(SHARE + at, 'click');
+    for (const p of share.outputs) cue(SHARE + p.at, 'paper');
+    for (let i = 0; i < 12; i++) cue(SHARE + LINK_IN + 0.1 + i * 0.05, 'key', { soft: true });
+    cue(SHARE + COPIED - 0.12, 'click');
+    cue(SHARE + COPIED, 'ding');
+    const more = COPY[COPY.length - 1];
+    more.items.forEach((_, i) => cue(more.in + 0.35 + i * 0.07, 'pop'));
+    const url = URL_SCHEME + URL_HOST;
+    for (let i = 0; i < url.length; i += 3) cue(OUTRO + 0.55 + i * 0.019, 'key', { soft: true });
+    return { duration: DURATION, drop: DROP, bars: BARS, lead: [5, 10], stop: [OVER_AT, 12.5], wipe: WIPE, final: OUTRO + 0.05, cues };
+  }
+
+  /** The soundtrack as a WAV file in base64, for the recorder. */
+  async function soundtrackWav() {
+    const bytes = RP.soundtrack.wav(await RP.soundtrack.render(score()));
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  }
+
   // ------------------------------------------------------ closing page
 
   function buildOutro() {
@@ -867,6 +923,8 @@
     window.DURATION = DURATION;
     window.POSTER = 1.6; // the title card
     window.seek = render;
+    window.soundtrack = soundtrackWav;
+    window.score = score; // for mixing: RP.soundtrack.render(Object.assign(score(), { solo: 'drums' }))
     window.introReady = true;
 
     const params = new URLSearchParams(location.search);
@@ -877,9 +935,24 @@
     addEventListener('resize', fit);
     fit();
     if (params.has('t')) return render(Number(params.get('t')) || 0);
+    // A click starts over with sound; the picture then follows the soundtrack's
+    // clock. The soundtrack takes a few seconds to render, so that starts now.
     const t0 = performance.now();
+    const track = RP.soundtrack.render(score());
+    let audio = null;
+    addEventListener('click', async () => {
+      if (audio) return;
+      audio = { ctx: new AudioContext() };
+      const src = audio.ctx.createBufferSource();
+      src.buffer = await track;
+      src.loop = true;
+      src.connect(audio.ctx.destination);
+      audio.start = audio.ctx.currentTime + 0.05;
+      src.start(audio.start);
+    });
     const tick = (now) => {
-      render(((now - t0) / 1000) % DURATION);
+      const t = audio && audio.start != null ? Math.max(0, audio.ctx.currentTime - audio.start) : (now - t0) / 1000;
+      render(t % DURATION);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

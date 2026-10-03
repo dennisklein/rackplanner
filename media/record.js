@@ -1,11 +1,14 @@
-// Records the intro video: draws every frame of media/intro.html in Chromium
-// and encodes them with ffmpeg into media/rackplanner-intro.mp4 (H.264) and
-// .webm (VP9, for browsers without H.264), plus a poster frame,
+// Records the intro video: draws every frame of media/intro.html in Chromium,
+// renders its soundtrack (media/soundtrack.js) there too, and encodes both
+// with ffmpeg into media/rackplanner-intro.mp4 (H.264, AAC) and .webm (VP9,
+// Opus, for browsers without H.264), plus a poster frame,
 // media/rackplanner-intro.jpg. None of them is kept in git; the Pages
 // workflow records and publishes them. Run with `npm run video`; needs ffmpeg
 // on the PATH. `npm run video -- --still 3,12.5` saves those moments as PNGs.
 'use strict';
 
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { chromium } = require('@playwright/test');
@@ -35,11 +38,15 @@ function write(stream, data) {
 async function record(page) {
   const duration = await page.evaluate(() => window.DURATION);
   const frames = Math.round(duration * FPS);
+  const wav = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rackplanner-')), 'soundtrack.wav');
+  fs.writeFileSync(wav, Buffer.from(await page.evaluate(() => window.soundtrack()), 'base64'));
   const ffmpeg = spawn(
     'ffmpeg',
-    ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', OUT,
-      '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-deadline', 'good', '-cpu-used', '4', '-row-mt', '1', '-pix_fmt', 'yuv420p', WEBM],
+    ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-i', '-', '-i', wav,
+      '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', OUT,
+      '-map', '0:v', '-map', '1:a', '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-deadline', 'good', '-cpu-used', '4', '-row-mt', '1', '-pix_fmt', 'yuv420p',
+      '-c:a', 'libopus', '-b:a', '128k', WEBM],
     { stdio: ['pipe', 'inherit', 'inherit'] }
   );
   const done = new Promise((resolve, reject) => {
@@ -53,6 +60,7 @@ async function record(page) {
   }
   ffmpeg.stdin.end();
   await done;
+  fs.rmSync(path.dirname(wav), { recursive: true, force: true });
   console.log(`\r${path.relative(process.cwd(), OUT)}`);
   console.log(path.relative(process.cwd(), WEBM));
   await page.evaluate(() => window.seek(window.POSTER));
