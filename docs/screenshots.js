@@ -1,6 +1,6 @@
 // Takes the README screenshots from the example plan, and the banner that
 // links to the intro video. Run with `npm run screenshots`, or name some of
-// them: `npm run screenshots -- intro-video`.
+// them: `npm run screenshots -- intro-video intro-video-dark`.
 'use strict';
 
 const path = require('node:path');
@@ -91,47 +91,56 @@ async function sheet(browser) {
 
 /**
  * The banner at the top of the README that links to the intro video, in the
- * app's colors and fonts. It is as wide as the screenshots below it (laid out
- * at 1920 × 560 and scaled down), so the two line up.
+ * app's colors and fonts, light or dark like the screenshot below it. It is
+ * framed like that screenshot too: as wide, with the app's 16 px margin
+ * around a panel with the same corners, so the edges of the two line up.
+ * Laid out at 1920 px wide and scaled down.
  */
-async function introVideo(browser) {
-  const page = await browser.newPage({ viewport: { width: VIEWPORT.width, height: Math.round((VIEWPORT.width * 560) / 1920) } });
+async function introVideo(browser, colorScheme, name) {
+  const width = VIEWPORT.width;
+  const zoom = width / 1920;
+  const dark = colorScheme === 'dark';
+  const page = await browser.newPage({ viewport: { width, height: Math.round(560 * zoom) } });
   // Same origin as the server, so the bundled fonts load.
   await page.goto(`http://127.0.0.1:${PORT}/index.html`);
   await page.setContent(`<!doctype html>
     <base href="http://127.0.0.1:${PORT}/">
     <link rel="stylesheet" href="css/fonts.css">
     <style>
-      html { zoom: ${VIEWPORT.width / 1920}; }
-      body {
-        margin: 0; height: 560px; display: flex; align-items: center; justify-content: center; gap: 72px;
+      html { zoom: ${zoom}; }
+      body { margin: 0; height: 560px; padding: ${16 / zoom}px; box-sizing: border-box; background: ${dark ? '#0d1115' : '#e6eaee'}; }
+      .panel {
+        height: 100%; box-sizing: border-box; border-radius: ${6 / zoom}px; border: ${dark ? `${1 / zoom}px solid #29313a` : '0'};
+        display: flex; align-items: center; justify-content: center; gap: 72px;
         color: #e6ebf0; font-family: Barlow, sans-serif; -webkit-font-smoothing: antialiased;
         background:
-          radial-gradient(ellipse 60% 90% at 50% 50%, transparent 30%, rgb(0 0 0 / 0.5) 100%),
+          radial-gradient(ellipse 60% 90% at 50% 50%, transparent 30%, rgb(0 0 0 / 0.45) 100%),
           linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px) 0 0 / 200px 200px,
           linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px) 0 0 / 200px 200px,
           linear-gradient(rgb(255 255 255 / 0.022) 1px, transparent 1px) 0 0 / 40px 40px,
           linear-gradient(90deg, rgb(255 255 255 / 0.022) 1px, transparent 1px) 0 0 / 40px 40px,
-          #0d1115;
+          ${dark ? '#151a20' : '#0d1115'};
       }
-      .play { width: 230px; height: 230px; border-radius: 50%; background: #f2c230; box-shadow: 10px 10px 0 #a07a0c; display: grid; place-items: center; flex: none; }
-      .play svg { width: 110px; height: 110px; margin-left: 18px; }
+      .play { width: 220px; height: 220px; border-radius: 50%; background: #f2c230; box-shadow: 10px 10px 0 #a07a0c; display: grid; place-items: center; flex: none; }
+      .play svg { width: 104px; height: 104px; margin-left: 18px; }
       .tag { display: inline-block; padding: 10px 16px 9px; border-radius: 4px; background: #f2c230; color: #1b1f24; font: 600 30px/1 "IBM Plex Mono", monospace; letter-spacing: 0.08em; box-shadow: 3px 3px 0 #a07a0c; }
-      h1 { margin: 22px 0 0; font: 600 150px/0.95 "Barlow Condensed", sans-serif; letter-spacing: -0.005em; white-space: nowrap; }
+      h1 { margin: 22px 0 0; font: 600 144px/0.95 "Barlow Condensed", sans-serif; letter-spacing: -0.005em; white-space: nowrap; }
       h1 em { font-style: normal; color: #f2c230; }
-      p { margin: 18px 0 0; font-size: 40px; color: #a5b0bc; }
+      p { margin: 18px 0 0; font-size: 38px; color: #a5b0bc; }
     </style>
-    <div class="play"><svg viewBox="0 0 10 12"><path d="M0 0L10 6 0 12z" fill="#1b1f24"/></svg></div>
-    <div>
-      <span class="tag">INTRO VIDEO</span>
-      <h1>Rackplanner in <em>27 seconds</em></h1>
-      <p>Place, color-code, budget, search, export and share: a quick tour.</p>
+    <div class="panel">
+      <div class="play"><svg viewBox="0 0 10 12"><path d="M0 0L10 6 0 12z" fill="#1b1f24"/></svg></div>
+      <div>
+        <span class="tag">INTRO VIDEO</span>
+        <h1>Rackplanner in <em>27 seconds</em></h1>
+        <p>Place, color-code, budget, search, export and share: a quick tour.</p>
+      </div>
     </div>`);
   await page.evaluate(() =>
-    Promise.all(['600 150px "Barlow Condensed"', '400 40px Barlow', '600 30px "IBM Plex Mono"'].map((f) => document.fonts.load(f, 'Ra27')))
+    Promise.all(['600 144px "Barlow Condensed"', '400 38px Barlow', '600 30px "IBM Plex Mono"'].map((f) => document.fonts.load(f, 'Ra27')))
   );
-  await page.screenshot({ path: path.join(OUT, 'intro-video.png') });
-  console.log('docs/screenshots/intro-video.png');
+  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+  console.log(`docs/screenshots/${name}.png`);
   await page.close();
 }
 
@@ -142,7 +151,8 @@ const SHOTS = {
   'floor-map': floorMap,
   catalog,
   sheet,
-  'intro-video': introVideo,
+  'intro-video': (browser) => introVideo(browser, 'light', 'intro-video'),
+  'intro-video-dark': (browser) => introVideo(browser, 'dark', 'intro-video-dark'),
 };
 
 (async () => {
