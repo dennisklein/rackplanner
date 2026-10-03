@@ -89,15 +89,20 @@ async function sheet(browser) {
   await page.close();
 }
 
-/** The banner at the top of the README that links to the intro video, in the app's colors and fonts. */
+/**
+ * The banner at the top of the README that links to the intro video, in the
+ * app's colors and fonts. It is as wide as the screenshots below it (laid out
+ * at 1920 × 560 and scaled down), so the two line up.
+ */
 async function introVideo(browser) {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 560 } });
+  const page = await browser.newPage({ viewport: { width: VIEWPORT.width, height: Math.round((VIEWPORT.width * 560) / 1920) } });
   // Same origin as the server, so the bundled fonts load.
   await page.goto(`http://127.0.0.1:${PORT}/index.html`);
   await page.setContent(`<!doctype html>
     <base href="http://127.0.0.1:${PORT}/">
     <link rel="stylesheet" href="css/fonts.css">
     <style>
+      html { zoom: ${VIEWPORT.width / 1920}; }
       body {
         margin: 0; height: 560px; display: flex; align-items: center; justify-content: center; gap: 72px;
         color: #e6ebf0; font-family: Barlow, sans-serif; -webkit-font-smoothing: antialiased;
