@@ -374,11 +374,19 @@ publishes the site to [GitHub Pages](https://dennisklein.github.io/rackplanner/)
 from the Actions tab.
 
 Alongside the tests, a second job records the intro video (`npm run video`)
-with its soundtrack, synthesized in the browser, as MP4 and WebM, which the
-deployment publishes with its
+as MP4 and WebM, which the deployment publishes with its
 [player page](https://dennisklein.github.io/rackplanner/media/). The recording
-is cached and only made again when the video's sources, the drawing code or
-the fonts change. The rendered files are not kept in git.
+is cached and only made again when the video's sources, the drawing code, the
+fonts or the music change. The rendered files are not kept in git.
+
+The video's music is a stock track that is not kept in git either: licenses
+like Pixabay's allow using a track in a video but not passing on the file
+itself. Put a download link to it in the repository secret `INTRO_MUSIC_URL`
+(**Settings → Secrets and variables → Actions**), and the job cuts it to the
+picture (`npm run video -- --music track.mp3` does the same locally). The cue
+points in `media/record.js` fit "Industrial" by audioknap; another track needs
+its own. Without the secret, the video gets the soundtrack synthesized by
+`media/soundtrack.js`.
 
 To deploy a fork of your own, set **Settings → Pages → Build and deployment →
 Source** to **GitHub Actions** once. The `github-pages` environment only takes

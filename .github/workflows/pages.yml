@@ -37,10 +37,12 @@ jobs:
           path: test-results/
           retention-days: 7
 
-  # Records the intro video and its soundtrack (npm run video) for the site, in
-  # parallel with the tests. It only changes with its sources, the drawing code
-  # and the fonts, so the last recording is reused from the cache while those
-  # stay the same.
+  # Records the intro video (npm run video) for the site, in parallel with the
+  # tests. Its music is downloaded from the INTRO_MUSIC_URL secret when that
+  # is set (the track is not kept in git); otherwise the video gets the
+  # soundtrack synthesized by media/soundtrack.js. It only changes with its
+  # sources, the drawing code, the fonts and the music, so the last recording
+  # is reused from the cache while those stay the same.
   video:
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +51,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Fingerprint the music link for the cache key
+        id: music
+        env:
+          MUSIC_URL: ${{ secrets.INTRO_MUSIC_URL }}
+        run: echo "key=$(printf %s "$MUSIC_URL" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
       - id: cache
         uses: actions/cache@v6
         with:
@@ -56,7 +63,7 @@ jobs:
             media/rackplanner-intro.mp4
             media/rackplanner-intro.webm
             media/rackplanner-intro.jpg
-          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/*.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
+          key: intro-video-${{ runner.os }}-${{ steps.music.outputs.key }}-${{ hashFiles('media/intro.html', 'media/*.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
       - name: Install dependencies, Chromium and ffmpeg
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -66,7 +73,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Record the intro video
         if: steps.cache.outputs.cache-hit != 'true'
-        run: npm run video
+        env:
+          MUSIC_URL: ${{ secrets.INTRO_MUSIC_URL }}
+        run: |
+          if [ -n "$MUSIC_URL" ]; then
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/music.mp3" "$MUSIC_URL"
+            npm run video -- --music "$RUNNER_TEMP/music.mp3"
+          else
+            npm run video
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: intro-video

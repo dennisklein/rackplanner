@@ -575,9 +575,8 @@
   }
 
   /**
-   * 16-bit PCM WAV of an AudioBuffer, at an RMS level of -16 dBFS (about
-   * -14 LUFS for this mix, the usual level for video on the web), with peaks
-   * kept below -1 dBFS.
+   * 16-bit PCM WAV of an AudioBuffer, at an RMS level of up to -13 dBFS
+   * (about -11 LUFS for this mix), with peaks kept below -1 dBFS.
    */
   function wav(buffer) {
     const channels = [0, 1].map((c) => buffer.getChannelData(c));
@@ -590,7 +589,7 @@
       }
     }
     const rms = Math.sqrt(sum / (2 * buffer.length));
-    const scale = peak > 0 ? Math.min(0.891 / peak, Math.pow(10, -16 / 20) / rms) : 1;
+    const scale = peak > 0 ? Math.min(0.891 / peak, Math.pow(10, -13 / 20) / rms) : 1;
     const n = buffer.length;
     const out = new DataView(new ArrayBuffer(44 + n * 4));
     const text = (o, s) => [...s].forEach((ch, i) => out.setUint8(o + i, ch.charCodeAt(0)));
