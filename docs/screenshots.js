@@ -1,4 +1,6 @@
-// Takes the README screenshots from the example plan. Run with `npm run screenshots`.
+// Takes the README screenshots from the example plan, and the banner that
+// links to the intro video. Run with `npm run screenshots`, or name some of
+// them: `npm run screenshots -- intro-video`.
 'use strict';
 
 const path = require('node:path');
@@ -87,17 +89,65 @@ async function sheet(browser) {
   await page.close();
 }
 
+/** The banner at the top of the README that links to the intro video, in the app's colors and fonts. */
+async function introVideo(browser) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 560 } });
+  // Same origin as the server, so the bundled fonts load.
+  await page.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await page.setContent(`<!doctype html>
+    <base href="http://127.0.0.1:${PORT}/">
+    <link rel="stylesheet" href="css/fonts.css">
+    <style>
+      body {
+        margin: 0; height: 560px; display: flex; align-items: center; justify-content: center; gap: 72px;
+        color: #e6ebf0; font-family: Barlow, sans-serif; -webkit-font-smoothing: antialiased;
+        background:
+          radial-gradient(ellipse 60% 90% at 50% 50%, transparent 30%, rgb(0 0 0 / 0.5) 100%),
+          linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px) 0 0 / 200px 200px,
+          linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px) 0 0 / 200px 200px,
+          linear-gradient(rgb(255 255 255 / 0.022) 1px, transparent 1px) 0 0 / 40px 40px,
+          linear-gradient(90deg, rgb(255 255 255 / 0.022) 1px, transparent 1px) 0 0 / 40px 40px,
+          #0d1115;
+      }
+      .play { width: 230px; height: 230px; border-radius: 50%; background: #f2c230; box-shadow: 10px 10px 0 #a07a0c; display: grid; place-items: center; flex: none; }
+      .play svg { width: 110px; height: 110px; margin-left: 18px; }
+      .tag { display: inline-block; padding: 10px 16px 9px; border-radius: 4px; background: #f2c230; color: #1b1f24; font: 600 30px/1 "IBM Plex Mono", monospace; letter-spacing: 0.08em; box-shadow: 3px 3px 0 #a07a0c; }
+      h1 { margin: 22px 0 0; font: 600 150px/0.95 "Barlow Condensed", sans-serif; letter-spacing: -0.005em; white-space: nowrap; }
+      h1 em { font-style: normal; color: #f2c230; }
+      p { margin: 18px 0 0; font-size: 40px; color: #a5b0bc; }
+    </style>
+    <div class="play"><svg viewBox="0 0 10 12"><path d="M0 0L10 6 0 12z" fill="#1b1f24"/></svg></div>
+    <div>
+      <span class="tag">INTRO VIDEO</span>
+      <h1>Rackplanner in <em>27 seconds</em></h1>
+      <p>Place, color-code, budget, search, export and share: a quick tour.</p>
+    </div>`);
+  await page.evaluate(() =>
+    Promise.all(['600 150px "Barlow Condensed"', '400 40px Barlow', '600 30px "IBM Plex Mono"'].map((f) => document.fonts.load(f, 'Ra27')))
+  );
+  await page.screenshot({ path: path.join(OUT, 'intro-video.png') });
+  console.log('docs/screenshots/intro-video.png');
+  await page.close();
+}
+
+const SHOTS = {
+  elevation: (browser) => elevation(browser, 'light', 'elevation'),
+  'elevation-dark': (browser) => elevation(browser, 'dark', 'elevation-dark'),
+  placing,
+  'floor-map': floorMap,
+  catalog,
+  sheet,
+  'intro-video': introVideo,
+};
+
 (async () => {
+  const only = process.argv.slice(2);
+  for (const name of only) if (!SHOTS[name]) throw new Error(`No screenshot named ${name}; there are ${Object.keys(SHOTS).join(', ')}`);
   const server = spawn(process.execPath, [path.join(__dirname, '..', 'e2e', 'serve.js'), String(PORT)], { stdio: 'inherit' });
   await new Promise((resolve) => setTimeout(resolve, 500));
   const browser = await chromium.launch();
   try {
-    await elevation(browser, 'light', 'elevation');
-    await elevation(browser, 'dark', 'elevation-dark');
-    await placing(browser);
-    await floorMap(browser);
-    await catalog(browser);
-    await sheet(browser);
+    for (const [name, take] of Object.entries(SHOTS)) if (!only.length || only.includes(name)) await take(browser);
   } finally {
     await browser.close();
     server.kill();

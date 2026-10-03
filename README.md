@@ -1,5 +1,7 @@
 # Rackplanner
 
+<a href="https://dennisklein.github.io/rackplanner/media/"><img src="docs/screenshots/intro-video.png" alt="Watch the intro video: Rackplanner in 27 seconds, a quick tour of placing, color-coding, budgets, search, export and sharing."></a>
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/elevation-dark.png">
   <img src="docs/screenshots/elevation.png" alt="Rackplanner showing Row A of the example plan: three racks of switches, compute nodes, storage servers and disk enclosures in cluster colors, the devices and clusters on the left and the selected node's details on the right.">
@@ -15,8 +17,7 @@ clusters, so the equipment that works together stands out.
 **[Open Rackplanner](https://dennisklein.github.io/rackplanner/)**: it starts
 with an example plan of two floors, which you can explore, keep editing or
 swap for empty racks. It works with a mouse, the keyboard or touch, in a
-light or dark theme. For a tour first, **[watch the 27-second intro
-video](https://dennisklein.github.io/rackplanner/media/)**.
+light or dark theme.
 
 There is no server and no build step: plain HTML, CSS and JavaScript. Plans are
 saved in your browser and never uploaded; they work offline and can be
@@ -352,7 +353,7 @@ bottom, and versions 1 and 2 had a single list of racks, which becomes one row.
 npm test             # unit tests: placement, catalogs, import, CSV, drawing (no dependencies)
 npm ci               # once, for the browser tests and screenshots
 npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
-npm run screenshots  # retake the README screenshots from the example plan
+npm run screenshots  # retake the README screenshots and the intro video banner
 npm run video        # record the intro video and its poster into media/ (needs ffmpeg)
 ```
 
