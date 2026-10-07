@@ -564,6 +564,7 @@ test('cables are found by label, devices, ports, network, type and notes', () =>
 test('the fabric finds leaves, cores, groups of nodes and oversubscription', () => {
   const p = M.createExampleProject();
   const names = (list) => list.map((d) => d.name);
+  const id0 = (name) => p.devices.find((d) => d.name === name).id;
   const f = C.fabric(p, 'n-ib');
   assert.deepEqual(names(f.leaves), ['ib-leaf-a01', 'ib-leaf-a02', 'ib-leaf-a03', 'ib-leaf-b02', 'ib-leaf-b03']);
   assert.deepEqual(names(f.cores), ['core-sw-01', 'core-sw-02']);
@@ -584,7 +585,14 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   assert.deepEqual(ratio(f, 'ib-leaf-a01'), { down: 2400, up: 800, ratio: 3 });
   assert.deepEqual(ratio(f, 'ib-leaf-a02'), { down: 2200, up: 800, ratio: 2.75 });
   assert.deepEqual(ratio(f, 'ib-leaf-b02'), { down: 2400, up: 800, ratio: 3 }, 'breakout legs count at their own speed');
-  assert.deepEqual(f.checks, [], 'nothing above 3:1');
+  assert.deepEqual(
+    f.checks,
+    [
+      { level: 'ok', text: 'Every leaf reaches both core switches' },
+      { level: 'ok', devices: ['ex-29', 'ex-30', 'ex-31'], leaves: [id0('ib-leaf-a02'), id0('ib-leaf-a03')], text: 'ceph-01 … 03 hang off 2 leaves' },
+    ],
+    'nothing above 3:1, every leaf up to both cores, Ceph on two leaves'
+  );
   const id = (name) => p.devices.find((d) => d.name === name).id;
   const pair = f.links.find((l) => l.a === id('ib-leaf-a01') && l.b === id('core-sw-01'));
   assert.deepEqual(pair, { a: id('ib-leaf-a01'), b: id('core-sw-01'), count: 2, speedGbps: 200, totalGbps: 400 });
@@ -594,9 +602,12 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   const g = C.fabric(p, 'n-ib');
   assert.deepEqual(ratio(g, 'ib-leaf-a01'), { down: 2400, up: 400, ratio: 6 });
   assert.equal(C.fmtRatio(6), '6:1');
-  assert.deepEqual(g.checks, [{ level: 'warn', device: 'ex-2', text: 'ib-leaf-a01 is oversubscribed 6:1: 2400 Gb/s down, 400 Gb/s up' }]);
+  assert.deepEqual(g.checks[0], { level: 'warn', device: 'ex-2', text: 'ib-leaf-a01 is oversubscribed 6:1: 2400 Gb/s down, 400 Gb/s up' });
+  const warns = (fab) => fab.checks.filter((x) => x.level === 'warn').map((x) => x.text);
+  assert.deepEqual(warns(g), ['ib-leaf-a01 is oversubscribed 6:1: 2400 Gb/s down, 400 Gb/s up', 'ib-leaf-a01 does not reach both core switches'], 'its links to core-sw-02 are gone');
+  assert.deepEqual(g.checks[1].devices, [id('ib-leaf-a01')]);
   C.disconnect(p, p.cables.filter((c) => ['IB-0031', 'IB-0032'].includes(c.label)).map((c) => c.id));
-  assert.deepEqual(C.fabric(p, 'n-ib').checks.map((x) => x.text), ['ib-leaf-a01 has no uplinks']);
+  assert.deepEqual(warns(C.fabric(p, 'n-ib')), ['ib-leaf-a01 has no uplinks', 'ib-leaf-a01 does not reach both core switches']);
   assert.ok(C.isSwitch(p, M.deviceById(p, 'ex-1')));
   assert.ok(!C.isSwitch(p, M.deviceById(p, 'ex-9')));
   const mk = (n, face) => M.addDeviceType(p, { label: `T${n}${face}`, face, ports: [{ name: 'p', first: 1, count: n, connector: 'rj45' }] });
@@ -604,6 +615,42 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   assert.ok(C.isSwitch(p, M.newDevice({ type: mk(12, 'generic').id })), '12 ports');
   assert.ok(C.isSwitch(p, M.newDevice({ type: M.addDeviceType(p, { label: 'Q', face: 'qsfp', ports: [] }).id })), 'a switch drawing without ports');
   assert.equal(C.fabric(p, null).links.length, 0, 'every example cable has a network');
+});
+
+test('the fabric checks that every leaf reaches every core switch, said for one core too', () => {
+  const p = M.createExampleProject();
+  const id = (name) => p.devices.find((d) => d.name === name).id;
+  const core2 = id('core-sw-02');
+  const b03 = id('ib-leaf-b03');
+  // core-sw-02 out of InfiniBand, and core-sw-01 no longer up from ib-leaf-b03: one core left.
+  C.disconnect(
+    p,
+    p.cables
+      .filter((c) => c.network === 'n-ib')
+      .filter((c) => {
+        const ends = M.cableEnds(c).map((x) => x.end.device);
+        return ends.includes(core2) || (ends.includes(b03) && ends.includes(id('core-sw-01')));
+      })
+      .map((c) => c.id)
+  );
+  const f = C.fabric(p, 'n-ib');
+  assert.deepEqual(f.cores.map((d) => d.name), ['core-sw-01']);
+  const reach = f.checks.find((x) => /reach/.test(x.text));
+  assert.equal(reach.level, 'warn');
+  assert.match(reach.text, /^(ib-leaf-\w+, )*ib-leaf-b03 (does|do) not reach the core switch$/);
+  assert.ok(reach.devices.includes(b03));
+  assert.ok(!f.checks.some((x) => /all 1 core/.test(x.text)));
+  // Linked up again from every leaf: the one core is reached.
+  for (const lf of f.leaves) if (reach.devices.includes(lf.id)) {
+    const free = M.expandPorts(M.typeOf(p, lf.type)).map((x) => x.name).find((n) => !C.cableIndex(p).has(`${lf.id}|${n}`));
+    const coreFree = M.expandPorts(M.typeOf(p, M.deviceById(p, id('core-sw-01')).type)).map((x) => x.name).find((n) => !C.cableIndex(p).has(`${id('core-sw-01')}|${n}`));
+    assert.ok(!C.connect(p, { a: { device: lf.id, port: free }, b: { device: id('core-sw-01'), port: coreFree }, network: 'n-ib' }).error);
+  }
+  assert.ok(C.fabric(p, 'n-ib').checks.some((x) => x.level === 'ok' && x.text === 'Every leaf reaches the core switch'));
+  // Nodes on one leaf only have no check; the names of a run are shortened.
+  assert.equal(C.rangeName(['cn-001', 'cn-002', 'cn-012']), 'cn-001 … 012');
+  assert.equal(C.rangeName(['cn-001', 'gpu-008']), 'cn-001 … gpu-008');
+  assert.equal(C.rangeName(['ceph-01']), 'ceph-01');
 });
 
 test('cable types, transceivers and networks are kept in catalogs', () => {
@@ -667,7 +714,8 @@ test('formats', () => {
   assert.equal(C.fmtSpeed(0.1), '100 Mb/s');
   assert.equal(C.fmtSpeed(25), '25 Gb/s');
   assert.equal(C.shortSpeed(400), '400G');
-  assert.equal(C.fmtRatio(2.75), '2.8:1');
+  assert.equal(C.fmtRatio(2.75), '2.75:1');
+  assert.equal(C.fmtRatio(0.1525), '0.15:1');
   assert.equal(C.fmtRatio(null), '–');
 });
 

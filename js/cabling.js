@@ -43,9 +43,9 @@
     if (!g) return '';
     return g < 1 ? `${Math.round(g * 1000)}M` : `${Math.round(g * 100) / 100}G`;
   }
-  /** "6:1", "2.8:1"; '–' without uplinks. */
+  /** "6:1", "2.75:1"; '–' without uplinks. */
   function fmtRatio(r) {
-    return r === null || r === undefined || !Number.isFinite(r) ? '–' : `${Math.round(r * 10) / 10}:1`;
+    return r === null || r === undefined || !Number.isFinite(r) ? '–' : `${Math.round(r * 100) / 100}:1`;
   }
   const connLabel = (id) => (M.connectorById(id) || { label: id }).label;
   const modeLabel = (mode) => (mode === 'smf' ? 'single-mode' : 'multimode');
@@ -940,6 +940,16 @@
 
   // ----------------------------------------------------------------- fabric
 
+  /** "cn-001 … 012" for names that differ in their last number, else "cn-001 … gpu-008". */
+  function rangeName(names) {
+    if (names.length < 2) return names.join('');
+    const first = names[0];
+    const last = names[names.length - 1];
+    const m1 = /^(.*?)(\d+)$/.exec(first);
+    const m2 = /^(.*?)(\d+)$/.exec(last);
+    return m1 && m2 && m1[1] === m2[1] ? `${first} … ${m2[2]}` : `${first} … ${last}`;
+  }
+
   /** Switches: device types with at least 12 ports or a switch drawing. */
   function isSwitch(project, device) {
     const t = device && M.typeOf(project, device.type);
@@ -953,7 +963,11 @@
    * group. Returns { switches, cores, leaves, nodes, groups: [{ devices,
    * leaves, cluster, type, links }], links: [{ a, b, count, speedGbps,
    * totalGbps }], ratios: Map leafId → { down, up, ratio } in Gb/s, checks:
-   * [{ level, device, text }] }; devices in rack order.
+   * [{ level ('warn' or 'ok'), device (the leaf it is about, if one),
+   * devices (the devices it is about, if several), leaves (the leaves of
+   * the nodes it is about), text }]: leaves oversubscribed or without
+   * uplinks, leaves that do not reach every core switch (or that they all
+   * do), nodes on several leaves }; devices in rack order.
    */
   function fabric(project, networkId) {
     const ctx = context(project);
@@ -1005,6 +1019,15 @@
         checks.push({ level: 'warn', device: id, text: `${name} has no uplinks` });
       }
     }
+    // Every leaf up to every core switch.
+    const cores = byOrder([...sw].filter((id) => !leafSet.has(id)));
+    const leaves = byOrder(leafIds.slice());
+    if (cores.length && leaves.length) {
+      const short = leaves.filter((lf) => cores.some((c) => !peers.get(lf.id).has(c.id)));
+      const all = cores.length === 1 ? 'the core switch' : cores.length === 2 ? 'both core switches' : `all ${cores.length} core switches`;
+      if (!short.length) checks.push({ level: 'ok', text: `Every leaf reaches ${all}` });
+      else checks.push({ level: 'warn', devices: short.map((d) => d.id), text: `${short.map((d) => d.name).join(', ')} ${short.length === 1 ? 'does' : 'do'} not reach ${all}` });
+    }
     const groups = new Map();
     for (const node of byOrder(ids.filter((id) => !sw.has(id)))) {
       const leaves = [...peers.get(node.id).keys()].filter((p) => leafSet.has(p)).sort((x, y) => order(x) - order(y));
@@ -1014,10 +1037,16 @@
       g.devices.push(node);
       for (const p of peers.get(node.id).values()) g.links += p.count;
     }
+    // Nodes on more than one leaf.
+    for (const g of groups.values()) {
+      if (g.leaves.length < 2) continue;
+      const names = g.devices.map((d) => d.name);
+      checks.push({ level: 'ok', devices: g.devices.map((d) => d.id), leaves: g.leaves.map((d) => d.id), text: `${rangeName(names)} hang${names.length === 1 ? 's' : ''} off ${g.leaves.length} leaves` });
+    }
     return {
       switches: byOrder([...sw]),
-      cores: byOrder([...sw].filter((id) => !leafSet.has(id))),
-      leaves: byOrder(leafIds.slice()),
+      cores,
+      leaves,
       nodes: byOrder(ids.filter((id) => !sw.has(id))),
       groups: [...groups.values()],
       links: [...pairs.values()].map((p) => ({ a: p.a, b: p.b, count: p.count, speedGbps: Math.min(...p.speeds), totalGbps: p.speeds.reduce((s, g) => s + g, 0) })),
@@ -1129,6 +1158,7 @@
     cableMatcher,
     isSwitch,
     fabric,
+    rangeName,
     portChangeImpact,
     portChangeMoves,
     remapPortsForType: M.remapPorts,

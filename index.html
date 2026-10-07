@@ -196,12 +196,18 @@
       </div>
     </div>
     <div class="viewport">
+      <div class="cab-head" id="cab-head" hidden></div>
       <div class="canvas" id="canvas">
         <svg id="scene" class="scene" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Rack elevation drawing"></svg>
         <div class="floormap" id="floormap" hidden></div>
         <div class="cab-host" id="cab-host" hidden></div>
       </div>
       <div class="armed-hint" id="armed-hint" role="status" hidden></div>
+      <div class="seg cab-float" id="cab-sides" role="group" aria-label="Side of the racks" hidden>
+        <button type="button" data-cab-side="front" aria-pressed="false" title="The racks seen from the front">Front</button>
+        <button type="button" data-cab-side="rear" aria-pressed="true" title="The racks seen from the rear, right to left">Rear</button>
+      </div>
+      <p class="cab-note" id="cab-note" hidden>Line width grows with the number of links. The badge on each leaf is down links to up links, red above 3 : 1; the bar is its ports in use.</p>
       <div class="zoom" id="zoom" role="group" aria-label="Zoom">
         <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
         <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
@@ -386,9 +392,17 @@
     <header class="dlg-head">
       <span class="tape">Print</span>
       <h2 id="print-title">Print or save as PDF</h2>
-      <p class="dlg-sub">Each row prints on its own sheet with the cluster legend and title block. Choose “Save as PDF” in the print dialog for a file.</p>
+      <p class="dlg-sub">Each row prints on its own sheet: its racks with the cluster legend and title block, or its cabling from the front or the rear. Choose “Save as PDF” in the print dialog for a file.</p>
     </header>
     <div class="dlg-body">
+      <div class="field">
+        <span class="label" id="print-drawing-label">Drawing</span>
+        <div class="seg seg-fill" role="radiogroup" aria-labelledby="print-drawing-label">
+          <label><input type="radio" name="print-drawing" value="racks" checked><span>Racks</span></label>
+          <label><input type="radio" name="print-drawing" value="front"><span>Cabling front</span></label>
+          <label><input type="radio" name="print-drawing" value="rear"><span>Cabling rear</span></label>
+        </div>
+      </div>
       <div class="field">
         <span class="label" id="print-scope-label">Sheets</span>
         <div class="radios" id="print-scope" role="radiogroup" aria-labelledby="print-scope-label"></div>

@@ -45,6 +45,102 @@
 .cab-empty h2 { font: 600 20px/1.1 var(--font-display); color: var(--ink); }
 .cab-empty p { font-size: 13.5px; }
 
+/* ------------------------------------------------------------ drawings */
+
+/* The elevation's Front | Rear floats at the top left; the drawing starts below it. */
+.cab-float { position: absolute; z-index: 5; top: 12px; left: 12px; height: 30px; background: var(--surface); box-shadow: var(--shadow-1); }
+.cab-float > button { font-size: 13px; padding: 0 12px; }
+.canvas.has-sides { padding-top: 54px; }
+/* The fabric's header above its drawing, and its note over the drawing's foot. */
+.cab-head { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding: 16px 20px 6px; }
+.cab-head .fm-title { flex: 1 1 320px; }
+.cab-head .fm-title p { max-width: 600px; }
+.cab-head-field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.cab-head-field select { height: 30px; width: auto; min-width: 140px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); font-size: 13px; }
+.cab-note {
+  position: absolute; z-index: 4; left: 12px; bottom: 12px; max-width: calc(100% - 300px); margin: 0;
+  padding: 4px 8px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  font-size: 12.5px; color: var(--ink-3); pointer-events: none;
+}
+#app.is-cabling .scene .dev { cursor: pointer; }
+/* A tap on a port, device or box of the drawing focuses the drawing itself (nothing in it takes focus): no ring for that, only for the keyboard. */
+#app.is-cabling .scene:focus:not(:focus-visible) { outline: none; }
+.scene [data-port], .pm-plate [data-port], .scene .cable, .scene .cable-hit, .scene .exit, .scene .fb-box { cursor: pointer; }
+.scene .exit { outline: none; }
+.scene .exit:hover > rect:first-of-type, .scene .exit:focus-visible > rect:first-of-type { stroke: var(--ink); stroke-width: 1.5; }
+.scene [data-port]:hover > :first-child, .pm-plate [data-port]:hover > :first-child { stroke: var(--ink); stroke-width: 1.2; }
+.scene .fb-box:hover > rect:first-child { stroke: var(--ink-2); }
+/* The legs set of a breakout cable being made, and the line of a drag from a port. */
+.leg-ring { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 2; }
+.cab-band { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 70; pointer-events: none; overflow: visible; }
+.cab-band line { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 6 4; stroke-linecap: round; }
+.cab-band circle { fill: var(--tape); stroke: var(--ink); stroke-width: 1.5; }
+/* The hint while connecting takes the width of its text, up to the stage's. */
+#app.is-cabling .armed-hint { width: max-content; }
+/* Beside the elevation's Front | Rear, centred in the room to its right: never under it. */
+#app.is-cabling .canvas.has-sides ~ .armed-hint { left: 132px; right: 12px; transform: none; margin: 0 auto; width: fit-content; max-width: none; }
+/* A port and its far end, at the pointer. */
+.drag-chip.port-chip::before { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
+.drag-chip.port-chip .mono { opacity: 1; }
+
+/* ------------------------------------------------------------ port map */
+
+.pm-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.pm { padding: 18px 20px 40px; display: flex; flex-direction: column; gap: 14px; }
+.pm-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+.pm-top .fm-title { flex: 1 1 320px; }
+.pm-top .fm-title p { max-width: 560px; }
+.pm-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pm-tools .seg, .cab-head .seg { height: 30px; background: var(--surface); }
+.pm-tools .seg > button { font-size: 13px; padding: 0 10px; }
+.pm-pick { position: relative; display: inline-flex; align-items: center; }
+.pm-pick select {
+  appearance: none; -webkit-appearance: none; height: 30px; width: auto; min-width: 116px; padding: 0 28px 0 30px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.pm-pick select:hover { background: var(--surface-2); }
+.pm-pick > .ic { position: absolute; pointer-events: none; color: var(--ink-2); }
+.pm-pick > .ic:first-child { left: 10px; }
+.pm-pick > .ic:last-child { right: 9px; }
+.pm-legend { display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+.pm-key { display: inline-flex; align-items: center; gap: 6px; }
+.pm-key .sw { width: 12px; height: 10px; }
+.sw.sw-free { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.pm-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3); display: inline-block; margin: 0 3px; }
+.pm-hint { margin-left: auto; color: var(--ink-3); }
+.pm-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 10px 0 4px; }
+.pm-card.is-current { border-color: var(--tape-edge); box-shadow: inset 3px 0 0 var(--tape); }
+/* A device with no cable in the network brought forward. */
+.pm-card.is-faded > .pm-head { opacity: 0.45; }
+.pm-head { display: flex; align-items: center; gap: 4px 10px; padding: 0 14px 4px; }
+.pm-name { flex: none; max-width: 40%; border: 0; padding: 0; background: none; cursor: pointer; color: var(--ink); font: 600 14px/1.2 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pm-meta { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-use { flex: none; display: flex; align-items: center; gap: 8px; font: 500 11.5px/1 var(--font-mono); color: var(--ink-2); white-space: nowrap; }
+.pm-use .fm-meter { width: 56px; }
+.pm-head .btn.sm { flex: none; }
+/* A card too narrow for its type, position and port groups beside the name gives them a line of their own. */
+.pm-card { container-type: inline-size; }
+@container (max-width: 660px) {
+  .pm-head { flex-wrap: wrap; }
+  .pm-meta { flex-basis: 100%; order: 3; }
+  .pm-use { margin-left: auto; }
+}
+.pm-plate-wrap { overflow-x: auto; }
+.pm-plate { display: block; margin: 0 auto; user-select: none; -webkit-user-select: none; }
+.pm-none { display: flex; align-items: center; gap: 12px; padding: 18px; border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--ink-3); font-size: 13px; }
+
+/* ------------------------------------------------------------ inspectors */
+
+/* A lone Delete keeps to the right of the pinned bar: never where Show in elevation was, under the pointer that clicked it. */
+#app.is-cabling .insp-actions > .btn.danger-text:only-child { flex: none; margin-left: auto; }
+.stats dd.is-bad { color: var(--danger); }
+.fb-links td:nth-child(2) { font-family: var(--font-ui); font-size: 12.5px; color: var(--ink-2); }
+.fb-links td.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.fb-peer { border: 0; padding: 0; background: none; cursor: pointer; color: var(--ink); font: 400 12.5px/1.3 var(--font-mono); text-align: left; }
+.fb-peer:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* ------------------------------------------------------------ schedule */
 
 .sc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -252,6 +348,12 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
 }
 @media (max-width: 960px) {
   .ws-switch { order: 2; }
+  .cab-note { display: none; }
+  .pm-hint { margin-left: 0; }
+  .pm-head { flex-wrap: wrap; }
+  .pm-meta { flex-basis: 100%; order: 3; }
+  .pm-use { margin-left: auto; }
+  .stage:has(> .viewport > .canvas[data-cab="ports"]) .pm-scroll { max-height: min(78vh, 720px); }
   /* The page scrolls here: the stage grows with the schedule, whose table keeps a height of its own, and the order list follows it. */
   .stage:has(> .viewport > .canvas[data-cab]) { height: auto; }
   .canvas[data-cab] { overflow: visible; }

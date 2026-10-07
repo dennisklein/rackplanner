@@ -12,6 +12,7 @@
 
   const M = window.RP.model;
   const C = window.RP.cabling;
+  const CR = window.RP.cablingRender;
   const IO = window.RP.io;
   const R = window.RP.render;
   const G = R.geometry;
@@ -355,6 +356,9 @@
     download,
     fileBase,
     keepFocus,
+    measure,
+    applyZoom: () => applyZoom(),
+    fitWidth: () => fitWidth(),
     esc,
     icon,
     plural,
@@ -724,12 +728,17 @@
     if (ui.drag) cancelDrag();
     disarm();
     closeMenus();
-    if (ui.workspace === 'racks') racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view };
+    if (ui.workspace === 'racks') racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view, zoom: ui.zoom };
     ui.workspace = ws;
     prefs.workspace = ws;
     savePrefs();
     cab.cancelPending();
-    if (ws === 'racks') cab.hideBin();
+    if (ws === 'racks') {
+      cab.hideBin();
+      // The Racks sheet comes back at its own zoom: the Cabling drawings have theirs.
+      const z = racksScroll.at ? racksScroll.at.zoom : prefs.zoom;
+      if (z) ui.zoom = clamp(z, 0.1, 3);
+    }
     render();
     if (ws === 'cabling') {
       if (cab.zoomable()) fitWidth();
@@ -1802,7 +1811,8 @@
     const after = el.svg.getBoundingClientRect();
     c.scrollLeft += after.left + sx * nz - ax;
     c.scrollTop += after.top + sy * nz - ay;
-    if (remember !== false) {
+    // The Racks sheet's zoom is remembered; the Cabling drawings open fitted to the stage.
+    if (remember !== false && ui.workspace === 'racks') {
       prefs.zoom = nz;
       savePrefs();
     }
@@ -1815,6 +1825,8 @@
     fitZoom('width', false);
     if (ui.zoom < 0.5) setZoom(0.5, null, false);
     scrollToOrigin();
+    // A Cabling drawing still too wide may show its middle instead (the fabric's switches).
+    if (ui.workspace === 'cabling') cab.afterFit();
   }
 
   function scrollToOrigin() {
@@ -3858,7 +3870,7 @@
 
   // Menu buttons, their menus, and what fills a menu before it opens.
   [
-    ['#btn-export', '#menu-export'],
+    ['#btn-export', '#menu-export', renderExportMenu],
     ['#btn-new', '#menu-new'],
     ['#btn-row', '#menu-row', renderRowMenu],
     ['#cat-new', '#menu-cat-new'],
@@ -3875,6 +3887,17 @@
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.menu-wrap')) closeMenus();
   });
+
+  /** The Export menu says what PNG, SVG and Print give from where it opens: the Racks sheet of the row, or the Cabling drawing shown. */
+  function renderExportMenu() {
+    const cabling = ui.workspace === 'cabling';
+    const drawing = cabling ? cab.drawingName() : null;
+    const what = drawing || (cabling ? 'This row’s Racks sheet' : 'This row');
+    const hint = (kind, text) => ($(`#menu-export [data-export="${kind}"] small`).textContent = text);
+    hint('png', `${what}, for docs, tickets and chat`);
+    hint('svg', `${what}, opens in vector editors`);
+    hint('print', cabling && ui.cabView === 'elevation' ? `One sheet per row, its cabling from the ${prefs.cabSide}` : 'One sheet per row, with title blocks');
+  }
 
   $('#menu-export').addEventListener('click', (e) => {
     const item = e.target.closest('[data-export]');
@@ -3942,11 +3965,20 @@
     return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId) };
   }
 
-  function renderPNG(scale) {
-    const svg = R.exportSVG(project, exportOpts());
+  /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
+  function exportDrawing() {
+    const cabling = ui.workspace === 'cabling' && cab.exportDrawing();
+    if (cabling) return cabling;
+    return { svg: R.exportSVG(project, exportOpts()), file: fileBase(true) };
+  }
+
+  /** A PNG of an SVG drawing, at `scale` where the browser's canvas allows it, else smaller (but not below 1). */
+  function renderPNG(svg, want) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
+        const scale = R.pngScale(img.naturalWidth, img.naturalHeight, want);
+        if (!scale) return reject(new Error('the drawing is too large for a PNG; export it as SVG'));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.naturalWidth * scale);
         canvas.height = Math.round(img.naturalHeight * scale);
@@ -3993,8 +4025,13 @@
       else if (kind === 'csv') download((name = `${fileBase()}.csv`), new Blob(['﻿' + IO.toCSV(project)], { type: 'text/csv;charset=utf-8' }));
       else if (kind === 'cables-csv') download((name = `${fileBase()}-cables.csv`), new Blob(['﻿' + IO.exportCablesCSV(project)], { type: 'text/csv;charset=utf-8' }));
       else if (kind === 'order-csv') download((name = `${fileBase()}-cable-order.csv`), new Blob(['﻿' + IO.exportOrderCSV(project)], { type: 'text/csv;charset=utf-8' }));
-      else if (kind === 'svg') download((name = `${fileBase(true)}.svg`), new Blob([R.exportSVG(project, exportOpts())], { type: 'image/svg+xml' }));
-      else if (kind === 'png') download((name = `${fileBase(true)}.png`), await renderPNG(2));
+      else if (kind === 'svg') {
+        const d = exportDrawing();
+        download((name = `${d.file}.svg`), new Blob([d.svg], { type: 'image/svg+xml' }));
+      } else if (kind === 'png') {
+        const d = exportDrawing();
+        download((name = `${d.file}.png`), await renderPNG(d.svg, 2));
+      }
       toast(`Exported ${name}`);
     } catch (err) {
       toast(`Export failed: ${err.message}`, { warn: true });
@@ -4063,6 +4100,9 @@
       .map(([v, label, sub], i) => `<label class="radio"><input type="radio" name="print-scope" value="${v}"${i === 0 ? ' checked' : ''}><span>${esc(label)} <small>${esc(sub)}</small></span></label>`)
       .join('');
     if (prefs.paper) $('#print-paper').value = prefs.paper;
+    // The drawing shown: the Racks sheet, or the Cabling elevation from its side.
+    const drawing = ui.workspace === 'cabling' && ui.cabView === 'elevation' ? prefs.cabSide : 'racks';
+    $(`input[name="print-drawing"][value="${drawing}"]`).checked = true;
     openDialog($('#dlg-print'));
   }
 
@@ -4071,20 +4111,25 @@
     const scope = $('input[name="print-scope"]:checked').value;
     const paper = $('#print-paper').value;
     const orient = $('input[name="print-orient"]:checked').value;
+    const drawing = $('input[name="print-drawing"]:checked').value;
     prefs.paper = paper;
     savePrefs();
     $('#dlg-print').close('ok');
-    printSheets(scope, paper, orient);
+    printSheets(scope, paper, orient, drawing);
   });
 
-  function printSheets(scope, paper, orient) {
+  /** Prints the rows of `scope`, a sheet each: their racks (`drawing` 'racks') or their cabling seen from the 'front' or the 'rear'. */
+  function printSheets(scope, paper, orient, drawing) {
     const pos = currentRow();
     const all = M.allRows(project);
     const rows = scope === 'row' ? [pos.row.id] : scope === 'floor' ? pos.floor.rows.map((r) => r.id) : all.map((r) => r.row.id);
     const date = todayISO();
     el.printRoot.innerHTML = rows
       .map((rowId) => {
-        const sc = R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId) });
+        const sc =
+          drawing === 'front' || drawing === 'rear'
+            ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure })
+            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId) });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
       })
       .join('');
@@ -4331,9 +4376,10 @@
   ui.theme = detectTheme();
   bootPlan();
   render();
-  // Opened in Cabling, the Racks sheet keeps its zoom for later.
-  if (prefs.zoom && ui.workspace === 'cabling' && !zoomable()) ui.zoom = clamp(prefs.zoom, 0.1, 3);
-  else if (prefs.zoom) {
+  // Opened in Cabling, its drawing fits the stage; the Racks sheet keeps its zoom for later.
+  if (ui.workspace === 'cabling') {
+    if (zoomable()) fitWidth();
+  } else if (prefs.zoom) {
     setZoom(prefs.zoom, null, false);
     scrollToOrigin();
   } else fitWidth();

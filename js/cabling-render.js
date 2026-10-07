@@ -919,8 +919,13 @@
    * row) or below each cabled port, with a dot when it is in another rack.
    * Devices with ports on both sides show both, captioned Front and Rear
    * (the device's own sides). Options: theme, measure, width (default
-   * 760; a card is wider when a faceplate needs it), selected: { deviceId,
-   * port }, pending: { device, port }.
+   * 760; a card is wider when a faceplate needs it), minPitch (px from a
+   * port to the next in its row, default 16, which keeps every number:
+   * a faceplate drawn smaller widens its card), selected: { deviceId,
+   * port } or a list of them (each ringed, its far end in bold), pending:
+   * { device, port }, focusNetwork (a network id; '' for
+   * the cables without one: ports cabled in others fade), highlight: Set
+   * of cable ids (their ports ringed, the other cabled ports fade).
    * Returns [{ deviceId, width, height, body }] (devices without ports
    * get a short note).
    */
@@ -933,8 +938,24 @@
     const ctx = C.context(project);
     const idx = C.cableIndex(project);
     const nets = networkInfo(project, ctx, T);
+    const minPitch = Math.max(1, o.minPitch || 16);
+    const focus = o.focusNetwork === undefined || o.focusNetwork === null ? null : o.focusNetwork;
+    const lit = o.highlight instanceof Set ? o.highlight : new Set(o.highlight || []);
+    const ids = [].concat(deviceIds || []);
+    const selected = [].concat(o.selected || []).filter(Boolean);
+    // Matches fade the other cabled ports only where some port shown is one.
+    const anyLit =
+      lit.size > 0 &&
+      ids.some((id) => {
+        const d = ctx.devices.get(id);
+        const type = d && M.typeOf(project, d.type);
+        return !!type && M.expandPorts(type).some((p) => {
+          const hit = idx.get(`${id}|${p.name}`);
+          return hit && lit.has(hit.cable.id);
+        });
+      });
     const out = [];
-    for (const id of [].concat(deviceIds || [])) {
+    for (const id of ids) {
       const d = ctx.devices.get(id);
       const type = d && M.typeOf(project, d.type);
       if (!type) continue;
@@ -944,12 +965,12 @@
         out.push({ deviceId: id, width: minWidth, height: 40, body: text(16, 24, `${d.name} has no ports`, F.legend, T.ink3) });
         continue;
       }
-      // A faceplate too long for the card at the smallest scale widens it.
-      const width = Math.max(minWidth, ...sides.map((sd) => Math.ceil(plateExtent(type, sd) + PLATE_PAD)));
+      // A faceplate whose ports would be closer than minPitch at the card's width widens it.
+      const width = Math.max(minWidth, ...sides.map((sd) => Math.ceil(plateExtent(type, sd) * plateScale(type, sd, minPitch) + PLATE_PAD)));
       let body = '';
       let y = 0;
       for (const sd of sides) {
-        const fp = faceplate(project, ctx, idx, nets, d, type, sd, { T, t, measure, width, caption: sides.length > 1, selected: o.selected, pending: o.pending });
+        const fp = faceplate(project, ctx, idx, nets, d, type, sd, { T, t, measure, width, caption: sides.length > 1, selected, pending: o.pending, focus, lit, anyLit });
         body += `<g transform="translate(0 ${r1(y)})">${fp.body}</g>`;
         y += fp.height;
       }
@@ -970,6 +991,15 @@
     const layout = plateLayout(type, sd);
     return Math.max(...layout.map((p) => p.x + p.w)) - Math.min(...layout.map((p) => p.x));
   }
+  /** The smallest scale (1 to 3.1) at which ports in a row are `pitch` px apart or more. */
+  function plateScale(type, sd, pitch) {
+    const layout = plateLayout(type, sd);
+    let least = Infinity;
+    for (const a of layout) {
+      for (const b of layout) if (b.x > a.x && b.y < a.y + a.h && a.y < b.y + b.h) least = Math.min(least, b.x - a.x);
+    }
+    return Number.isFinite(least) ? Math.max(1, Math.min(3.1, pitch / least)) : 1;
+  }
 
   function faceplate(project, ctx, idx, nets, d, type, sd, o) {
     const { T, t, measure, width } = o;
@@ -988,7 +1018,7 @@
     let s = '';
     if (o.caption) s += text(16, 14, sd === 'front' ? 'FRONT' : 'REAR', F.cap, T.ink3, ' letter-spacing="1.2"');
     s += `<rect x="${r1(ox + minX * S - 18)}" y="${r1(plateY)}" width="${r1(extent * S + 36)}" height="${r1(plateH)}" rx="4" fill="${R.mix(T.faceBase, T.unassigned, 0.08)}" stroke="${T.ink3}" data-dev="${esc(d.id)}"/>`;
-    const sel = o.selected && o.selected.deviceId === d.id ? o.selected.port : null;
+    const sel = new Set(o.selected.filter((x) => x.deviceId === d.id).map((x) => x.port));
     const pend = o.pending && o.pending.device === d.id ? o.pending.port : null;
     const lbl = F.small;
     let ports = '';
@@ -999,16 +1029,24 @@
     const labels = tileLabels(type, layout, (label, i) => measure(label, nf.css) <= Ps[i].w - 2);
     layout.forEach((p, i) => {
       const hit = idx.get(`${d.id}|${p.name}`);
-      const color = hit ? nets.get(netKey(ctx, hit.cable)).color : null;
+      const net = hit ? netKey(ctx, hit.cable) : null;
+      const color = hit ? nets.get(net).color : null;
       const P = Ps[i];
       const shown = R.fitText(labels[i], nf, P.w - 2, measure);
+      // Emphasis as in the elevation: other networks than the one in focus fade, as do cables the search does not match.
+      const isLit = !!hit && o.lit.has(hit.cable.id);
+      let op = 1;
+      if (hit && !sel.has(p.name) && o.focus !== null && net !== o.focus) op = 0.2;
+      else if (hit && !sel.has(p.name) && o.anyLit && !isLit) op = 0.35;
+      const fade = op < 1 ? ` opacity="${op}"` : '';
       ports +=
-        `<g class="port" data-port="${esc(`${d.id}|${p.name}`)}">` +
+        `<g class="port" data-port="${esc(`${d.id}|${p.name}`)}"${fade}>` +
         R.portShape(P, color ? R.mix(color, T.faceBase, 0.1) : null, t) +
         text(P.x + P.w / 2, P.y + P.h / 2 + 3, shown, nf, color ? '#ffffff' : T.ink3, ' text-anchor="middle"') +
         hits[i] +
         `</g>`;
-      if (p.name === sel) marks += `<rect x="${r1(P.x - 3)}" y="${r1(P.y - 3)}" width="${r1(P.w + 6)}" height="${r1(P.h + 6)}" rx="3" fill="none" stroke="${T.handle}" stroke-width="2.5" pointer-events="none"/>`;
+      if (sel.has(p.name)) marks += `<rect x="${r1(P.x - 3)}" y="${r1(P.y - 3)}" width="${r1(P.w + 6)}" height="${r1(P.h + 6)}" rx="3" fill="none" stroke="${T.handle}" stroke-width="2.5" pointer-events="none"/>`;
+      else if (isLit && o.anyLit) marks += `<rect class="lit-ring" x="${r1(P.x - 2.5)}" y="${r1(P.y - 2.5)}" width="${r1(P.w + 5)}" height="${r1(P.h + 5)}" rx="3" fill="none" stroke="${T.ink}" stroke-width="1.5" pointer-events="none"/>`;
       if (p.name === pend) {
         marks += `<rect x="${r1(P.x - 3)}" y="${r1(P.y - 3)}" width="${r1(P.w + 6)}" height="${r1(P.h + 6)}" rx="3" fill="none" stroke="${T.select}" stroke-width="2" stroke-dasharray="3 2" pointer-events="none"/>`;
         marks += `<rect x="${r1(P.x - 6)}" y="${r1(P.y - 6)}" width="${r1(P.w + 12)}" height="${r1(P.h + 12)}" rx="4" fill="none" stroke="${T.handle}" stroke-width="1.5" pointer-events="none"/>`;
@@ -1021,14 +1059,15 @@
       const up = p.exit === 'up';
       const y1 = up ? P.y - 3 : P.y + P.h + 3;
       const y2 = up ? plateY - 6 - 4 : plateY + plateH + 10;
-      marks += `<path d="M${r1(cx)} ${r1(y1)}V${r1(y2)}" stroke="${color}" stroke-width="1.4"/>`;
+      let farMarks = `<path d="M${r1(cx)} ${r1(y1)}V${r1(y2)}" stroke="${color}" stroke-width="1.4"/>`;
       const tx = up ? y2 - 3 : y2 + 3;
-      const strong = p.name === sel;
-      marks += `<text transform="translate(${r1(cx + 3.4)} ${r1(tx)}) rotate(-90)" font-family="${lbl.family}" font-size="${lbl.size}" font-weight="${strong ? 700 : lbl.weight}" fill="${strong ? T.ink : T.ink2}"${up ? '' : ' text-anchor="end"'}>${esc(label)}</text>`;
+      const strong = sel.has(p.name) || (isLit && o.anyLit);
+      farMarks += `<text transform="translate(${r1(cx + 3.4)} ${r1(tx)}) rotate(-90)" font-family="${lbl.family}" font-size="${lbl.size}" font-weight="${strong ? 700 : lbl.weight}" fill="${strong ? T.ink : T.ink2}"${up ? '' : ' text-anchor="end"'}>${esc(label)}</text>`;
       if (other) {
         const dy = up ? tx - measure(label, lbl.css) - DOT_GAP : tx + measure(label, lbl.css) + DOT_GAP;
-        marks += `<circle cx="${r1(cx)}" cy="${r1(dy)}" r="2.2" fill="${T.ink3}"/>`;
+        farMarks += `<circle cx="${r1(cx)}" cy="${r1(dy)}" r="2.2" fill="${T.ink3}"/>`;
       }
+      marks += fade ? `<g${fade}>${farMarks}</g>` : farMarks;
     });
     s += ports + marks;
     return { body: s, height: plateY + plateH + LBL + 10 };
@@ -1063,8 +1102,11 @@
    * leaf and one per link of a node group. Nodes with the same leaves,
    * cluster and type are one box unless `grouped` is false. Options: theme,
    * measure, width (default 1000; grows to fit), grouped, selected (device
-   * ids: a Set, a list or { ids }). Returns { width, height, body, groups:
-   * [[device ids]] (data-group indexes them), cores, leaves }.
+   * ids: a Set, a list or { ids }), highlight (device ids, as selected:
+   * outlined unless selected), fabric (cabling.fabric of this network,
+   * when the caller has it already). Returns { width, height, body, groups:
+   * [[device ids]] (data-group indexes them), cores, leaves, switchBox:
+   * { x, y, w, h } around the switches, or null }.
    */
   function fabric(project, networkId, opts) {
     const o = opts || {};
@@ -1072,12 +1114,15 @@
     const T = R.THEMES[t];
     const measure = o.measure || R.approxMeasure;
     const grouped = o.grouped !== false;
-    const fab = C.fabric(project, networkId || null);
+    const fab = o.fabric || C.fabric(project, networkId || null);
     const ctx = C.context(project);
     const idx = C.cableIndex(project);
     const net = networkId ? M.networkById(project, networkId) : null;
     const color = net ? net.color : T.unassigned;
     const sel = selectedIds(o.selected);
+    const lit = selectedIds(o.highlight);
+    /** A box's emphasis: true when selected, 'lit' when highlighted. */
+    const mark = (ids) => (ids.some((id) => sel.has(id)) ? true : ids.some((id) => lit.has(id)) ? 'lit' : false);
     const BW = 128;
     const BH = 58;
     const PITCH = BW + 16;
@@ -1099,7 +1144,7 @@
     let s = sheetDefs(T, t) + paper(W, height, T, t);
     if (!tiers.length) {
       s += text(W / 2, height / 2, `No cables in ${net ? net.name : 'this network'}`, F.legend, T.ink3, ' text-anchor="middle"');
-      return { width: W, height, body: s, groups: [], cores: [], leaves: [] };
+      return { width: W, height, body: s, groups: [], cores: [], leaves: [], switchBox: null };
     }
     // Places: each tier spread over the width, at most `max` apart.
     const pos = new Map();
@@ -1223,7 +1268,7 @@
       const cl = cluster ? M.clusterById(project, cluster) : null;
       return (
         `<g class="fb-box" ${attrs}>` +
-        `<rect x="${r1(x)}" y="${r1(y)}" width="${BW}" height="${BH}" rx="5" fill="${T.faceBase}" stroke="${strong ? T.select : T.border}" stroke-width="${strong ? 2 : 1}"/>` +
+        `<rect x="${r1(x)}" y="${r1(y)}" width="${BW}" height="${BH}" rx="5" fill="${T.faceBase}" stroke="${strong === 'lit' ? T.handle : strong ? T.select : T.border}" stroke-width="${strong ? 2 : 1}"/>` +
         `<rect x="${r1(x)}" y="${r1(y)}" width="5" height="${BH}" rx="2" fill="${cl ? cl.color : T.unassigned}"/>` +
         text(x + 13, y + 18, R.fitText(title, F.box, titleMax || BW - 20, measure), F.box, T.ink) +
         text(x + 13, y + 33, R.fitText(sub, F.note, BW - 20, measure), F.note, T.ink3) +
@@ -1241,7 +1286,7 @@
     };
     for (const c of fab.cores) {
       const q = pos.get(c.id);
-      s += box(q.x, q.y, c.cluster, c.name, where(c), meter(q.x, q.y, used(c), total(c)), sel.has(c.id), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"`);
+      s += box(q.x, q.y, c.cluster, c.name, where(c), meter(q.x, q.y, used(c), total(c)), mark([c.id]), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"`);
     }
     for (const l of fab.leaves) {
       const q = pos.get(l.id);
@@ -1252,7 +1297,7 @@
       const badge =
         `<rect x="${r1(q.x + BW - 7 - bw)}" y="${r1(q.y + 22)}" width="${r1(bw)}" height="16" rx="3" fill="${warn ? T.bad : T.barTrack}"/>` +
         text(q.x + BW - 7 - bw / 2, q.y + 33.5, ratio, F.label, warn ? '#ffffff' : T.ink, ' text-anchor="middle"');
-      s += box(q.x, q.y, l.cluster, l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, sel.has(l.id), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"`);
+      s += box(q.x, q.y, l.cluster, l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, mark([l.id]), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"`);
     }
     groups.forEach((g, gi) => {
       const p = gpos[gi];
@@ -1263,10 +1308,18 @@
       const sub = g.devices.length > 1 ? `${g.devices.length} × ${type ? type.label : g.type}` : where(g.devices[0]);
       const third = cl ? text(p.x + 13, p.y + 49, R.fitText(cl.name, F.head, BW - 20, measure), F.head, R.mix(cl.color, T.ink, 0.25)) : '';
       const attrs = `data-group="${gi}"${ids.length === 1 ? ` data-dev="${esc(ids[0])}"` : ''}`;
-      s += box(p.x, p.y, g.cluster, rangeName(names), sub, third, touches(ids), attrs);
+      s += box(p.x, p.y, g.cluster, rangeName(names), sub, third, mark(ids), attrs);
     });
     s += pills;
-    return { width: W, height, body: s, groups: groups.map((g) => g.devices.map((d) => d.id)), cores: fab.cores.map((d) => d.id), leaves: fab.leaves.map((d) => d.id) };
+    const sw = [...pos.values()];
+    const switchBox = sw.length
+      ? (() => {
+          const x = Math.min(...sw.map((q) => q.x));
+          const y = Math.min(...sw.map((q) => q.y));
+          return { x, y, w: Math.max(...sw.map((q) => q.x)) + BW - x, h: Math.max(...sw.map((q) => q.y)) + BH - y };
+        })()
+      : null;
+    return { width: W, height, body: s, groups: groups.map((g) => g.devices.map((d) => d.id)), cores: fab.cores.map((d) => d.id), leaves: fab.leaves.map((d) => d.id), switchBox };
   }
 
   // --------------------------------------------------------------- export

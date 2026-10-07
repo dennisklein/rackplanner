@@ -1176,6 +1176,19 @@
     );
   }
 
+  // Canvas limits browsers share: a side of 32767 px and 16384² px in all.
+  const CANVAS_SIDE = 32767;
+  const CANVAS_AREA = 16384 * 16384;
+  /**
+   * The scale to raster a drawing of w × h px at for a PNG: `want` (2 by
+   * default, for sharp text), less where the canvas would be larger than
+   * browsers allow; null when even 1 is too large (export an SVG instead).
+   */
+  function pngScale(w, h, want) {
+    const s = Math.min(want || 2, CANVAS_SIDE / w, CANVAS_SIDE / h, Math.sqrt(CANVAS_AREA / (w * h)));
+    return s >= 1 ? Math.floor(s * 1000) / 1000 : null;
+  }
+
   return {
     geometry: { U, BAY_W, RACK_W, RAIL, FRAME, GAP, MX, SLOT_W, SLOT_H, HEADER, ADD_W, EAR, LABEL_X, DETAIL_X },
     esc,
@@ -1203,6 +1216,7 @@
     renderPreview,
     locateDrop,
     exportSVG,
+    pngScale,
     withoutWebFonts,
   };
 });

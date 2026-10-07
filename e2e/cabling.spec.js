@@ -7,6 +7,12 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 
 test.beforeEach(async ({ page }) => {
+  // These tests are about the schedule: the Cabling workspace opens on it, as it does once it was shown last.
+  await page.addInitScript(() => {
+    const key = 'rackplanner.prefs.v1';
+    const prefs = JSON.parse(localStorage.getItem(key) || '{}');
+    if (!prefs.cabView) localStorage.setItem(key, JSON.stringify(Object.assign(prefs, { cabView: 'schedule' })));
+  });
   await page.goto('/index.html');
   await expect(page.locator('.scene .dev')).toHaveCount(37);
 });

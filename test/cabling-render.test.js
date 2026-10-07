@@ -239,6 +239,13 @@ test('the port map draws faceplates with what each port connects to', () => {
   assert.ok(card.body.includes('font-weight="700"'), 'the selected port names its far end in bold');
   assert.equal(count(card.body, `stroke="${R.THEMES.light.handle}" stroke-width="2.5"`), 1, 'the selected port is ringed');
   assert.equal(count(card.body, '<circle'), 4, 'a dot for each far end in another rack (the core switches)');
+  // Several ports selected (the ends of the cables selected): each ringed, the ends at other devices ignored.
+  const [two] = CR.portMap(p, [leaf.id], {
+    selected: [{ deviceId: byName(p, 'cn-004').id, port: 'ib0' }, { deviceId: leaf.id, port: 'p4' }, { deviceId: leaf.id, port: 'p5' }],
+  });
+  assert.equal(count(two.body, `stroke="${R.THEMES.light.handle}" stroke-width="2.5"`), 2, 'both selected ports of the leaf are ringed');
+  assert.equal(count(two.body, 'font-weight="700"'), 2, 'and both far ends are bold');
+  assert.equal(count(CR.portMap(p, [leaf.id], { selected: [] })[0].body, 'stroke-width="2.5"'), 0);
   // Breakout heads name both far devices; a device with ports on both sides shows both.
   const b02 = byName(p, 'ib-leaf-b02');
   assert.ok(CR.portMap(p, [b02.id], {})[0].body.includes('core-sw-01/02'));
@@ -525,6 +532,87 @@ test('the port map widens for long faceplates and keeps its dots on the card', (
     assert.ok(dots.length >= 1);
     for (const cy of dots) assert.ok(cy >= 2.2 && cy <= c.height - 2.2, `dot at ${cy} in a card ${c.height} high`);
   }
+});
+
+test('the port map keeps every port numbered on a narrow card, with more room for a finger', () => {
+  const p = M.createExampleProject();
+  const sw = byName(p, 'sw-mgmt-a01');
+  const tiles = (card) => [...card.body.matchAll(/<g class="port" data-port="[^"]+">.*?<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  /** The least distance from a port to the next in its row. */
+  const pitch = (card) => {
+    const shapes = portGroups(card.body).map((g) => g.shape);
+    let least = Infinity;
+    for (const a of shapes) for (const b of shapes) if (b.x > a.x && b.y < a.y + a.h && a.y < b.y + b.h) least = Math.min(least, b.x - a.x);
+    return least;
+  };
+  const measure = (t, css) => t.length * (parseFloat(/([\d.]+)px/.exec(css)[1]) * 0.6);
+  // A card drawn for a phone (300 px) widens till its 52 ports are numbered; the page scrolls it sideways.
+  const [narrow] = CR.portMap(p, [sw.id], { width: 300, measure });
+  assert.ok(narrow.width > 300);
+  assert.ok(pitch(narrow) >= 15.9, `ports ${pitch(narrow)} apart`);
+  const labels = tiles(narrow);
+  assert.equal(labels.length, 52);
+  assert.ok(!labels.some((x) => x.includes('…')), labels.join(' '));
+  assert.ok(labels.includes('52'));
+  // A wide card is not made wider.
+  assert.equal(CR.portMap(p, [sw.id], { width: 900, measure })[0].width, 900);
+  // For a finger: a wider pitch, up to the largest scale.
+  const [touch] = CR.portMap(p, [sw.id], { width: 300, measure, minPitch: 28 });
+  assert.ok(touch.width > narrow.width);
+  assert.ok(pitch(touch) >= 24.7, `ports ${pitch(touch)} apart`);
+  const leaf = byName(p, 'ib-leaf-a01');
+  assert.ok(pitch(CR.portMap(p, [leaf.id], { width: 300, measure, minPitch: 28 })[0]) >= 27.9);
+});
+
+test('the port map brings the network in focus and the cables searched for forward', () => {
+  const p = M.createExampleProject();
+  const ids = ['sw-mgmt-a01', 'sw-bmc-a01', 'ib-leaf-a01'].map((n) => byName(p, n).id);
+  const idx = C.cableIndex(p);
+  /** Each port: { key, net (null when free), faded opacity or null }. */
+  const ports = (cards) =>
+    cards.flatMap((card) =>
+      [...card.body.matchAll(/<g class="port" data-port="([^"]+)"( opacity="([\d.]+)")?>/g)].map((m) => {
+        const hit = idx.get(m[1]);
+        return { key: m[1], cable: hit ? hit.cable.id : null, net: hit ? hit.cable.network || '' : null, op: m[3] ? +m[3] : null };
+      })
+    );
+  const plain = ports(CR.portMap(p, ids, {}));
+  assert.ok(plain.every((x) => x.op === null), 'nothing fades without a focus or a search');
+  // Management in focus: ports cabled in other networks fade; free ones and its own stay.
+  const focused = ports(CR.portMap(p, ids, { focusNetwork: 'n-mgmt' }));
+  assert.ok(focused.some((x) => x.net === 'n-mgmt') && focused.some((x) => x.net && x.net !== 'n-mgmt'));
+  for (const x of focused) assert.equal(x.op, x.net !== null && x.net !== 'n-mgmt' ? 0.2 : null, x.key);
+  // A search match: its port ringed, the other cabled ports fade.
+  const hit = idx.get(`${ids[2]}|p4`).cable.id;
+  const cards = CR.portMap(p, ids, { highlight: new Set([hit]) });
+  assert.equal(cards.reduce((n, c) => n + count(c.body, 'class="lit-ring"'), 0), 1);
+  for (const x of ports(cards)) assert.equal(x.op, x.cable && x.cable !== hit ? 0.35 : null, x.key);
+  // A match on none of the ports shown fades nothing.
+  const elsewhere = p.cables.find((c) => !M.cableEnds(c).some((e) => ids.includes(e.end.device))).id;
+  assert.ok(ports(CR.portMap(p, ids, { highlight: new Set([elsewhere]) })).every((x) => x.op === null));
+});
+
+test('the fabric takes the graph it is given, outlines the devices searched for and says where its switches are', () => {
+  const p = M.createExampleProject();
+  const graph = C.fabric(p, 'n-ib');
+  const out = CR.fabric(p, 'n-ib', { grouped: false });
+  assert.equal(CR.fabric(p, 'n-ib', { grouped: false, fabric: graph }).body, out.body);
+  // The switches' box holds every leaf and core box; with every node drawn they sit over the middle of the sheet.
+  const b = out.switchBox;
+  let boxes = 0;
+  for (const m of out.body.matchAll(/<g class="fb-box" data-dev="[^"]+" data-(?:leaf|core)="[^"]+"><rect x="([\d.]+)" y="([\d.]+)" width="(\d+)" height="(\d+)"/g)) {
+    assert.ok(+m[1] >= b.x - 0.05 && +m[1] + +m[3] <= b.x + b.w + 0.05 && +m[2] >= b.y - 0.05 && +m[2] + +m[4] <= b.y + b.h + 0.05);
+    boxes++;
+  }
+  assert.equal(boxes, 7, '5 leaves and 2 cores');
+  assert.ok(b.x > 1000 && b.x + b.w < out.width - 1000, 'the switches are far from the left edge');
+  assert.equal(CR.fabric(p, 'n-sas', {}).switchBox, null, 'no switches');
+  // Highlighted devices are outlined, unless selected.
+  const leaf = byName(p, 'ib-leaf-a02').id;
+  const node = byName(p, 'cn-004').id;
+  const lit = CR.fabric(p, 'n-ib', { grouped: false, highlight: [leaf, node], selected: [node] });
+  assert.equal(count(lit.body, `stroke="${R.THEMES.light.handle}" stroke-width="2"`), 1);
+  assert.equal(count(lit.body, `stroke="${R.THEMES.light.select}" stroke-width="2"`), 1);
 });
 
 /** The far-end labels of an elevation: { x, y, w, h, label, i } in drawing order, and the leaders before them. */

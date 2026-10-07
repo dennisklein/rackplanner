@@ -262,3 +262,18 @@ test('previews draw either side of a device type', () => {
   assert.ok(R.renderPreview(sw, 'dark', null, 'sw', measure6, null, 'front').body.includes(R.THEMES.dark.portHole), 'the front with its ports');
   assert.ok(R.renderPreview(M.RESERVED, 'light', null, 'later', measure6, 3, 'rear').body.includes('RESERVED · 3U'));
 });
+
+test('PNG exports raster at twice the size where the browser canvas allows it, smaller where not', () => {
+  assert.equal(R.pngScale(6100, 1400), 2, 'a Racks sheet');
+  assert.equal(R.pngScale(800, 600, 3), 3);
+  // A fabric of every node, 71520 px wide: no canvas holds even 1×.
+  assert.equal(R.pngScale(71520, 590), null);
+  // Wider than half the limit: as large as fits.
+  const s = R.pngScale(21120, 590);
+  assert.ok(s >= 1 && s < 2);
+  assert.ok(21120 * s <= 32767);
+  // Large both ways: the area limits it.
+  const a = R.pngScale(12000, 12000);
+  assert.ok(a >= 1 && 12000 * a * 12000 * a <= 16384 * 16384);
+  assert.equal(R.pngScale(40000, 100), null);
+});

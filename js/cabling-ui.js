@@ -41,7 +41,9 @@
    * openDialog(dlg), showError(sel, msg), confirmDialog(o), reportWarnings(
    * title, sub, list), renderSwatches(container, name, value, onChange),
    * openCatalog(tab); download(name, blob), fileBase(rowScoped);
-   * setWorkspace(ws); keepFocus(container, fn); esc, icon, plural.
+   * setWorkspace(ws); keepFocus(container, fn); measure(text, font) for
+   * the drawings, applyZoom() and fitWidth() of the stage's svg; esc,
+   * icon, plural.
    */
   function create(ctx) {
     const { ui, prefs, el, esc, icon, plural, toast } = ctx;
@@ -64,7 +66,7 @@
       focusNetwork: null, // network id, NONE for the cables without one, or null
       hoverNetwork: null,
       cabType: 'auto', // cable type armed for new cables: 'auto' or a cable type id
-      pending: null, // the first port of a connection being made: { device, port }
+      pending: null, // the first port of a connection being made, and the legs set of a breakout cable: { device, port, legs: [{ device, port }] }
     });
     if (!SCOPES.includes(prefs.cabScope)) prefs.cabScope = 'row';
     if (!GROUPS.some(([k]) => k === prefs.cabGroup)) prefs.cabGroup = 'route';
@@ -106,6 +108,8 @@
         cache.index = null;
         cache.byId = null;
         cache.typeCounts = null;
+        cache.busiest = undefined;
+        cache.fabrics = null;
       }
       return cache;
     }
@@ -209,8 +213,13 @@
       if (!valid(ui.focusNetwork)) ui.focusNetwork = null;
       if (!valid(ui.hoverNetwork)) ui.hoverNetwork = null;
       if (ui.cabType !== 'auto' && !M.cableTypeById(p, ui.cabType)) ui.cabType = 'auto';
-      const pd = ui.pending && deviceById(ui.pending.device);
-      if (ui.pending && (!pd || !portsOf(pd).has(ui.pending.port) || cableIndex().has(`${pd.id}|${ui.pending.port}`))) ui.pending = null;
+      // A connection being made keeps the ports that are still there and free.
+      const freePort = (e) => {
+        const d = deviceById(e.device);
+        return !!d && portsOf(d).has(e.port) && !cableIndex().has(`${d.id}|${e.port}`);
+      };
+      if (ui.pending && !freePort(ui.pending)) ui.pending = null;
+      if (ui.pending && ui.pending.legs.some((e) => !freePort(e))) ui.pending = Object.assign({}, ui.pending, { legs: ui.pending.legs.filter(freePort) });
       if (sched.anchor && !cableById(sched.anchor.id)) sched.anchor = null;
       for (const k of sched.hidden) if (k !== NONE && !netOf(k)) sched.hidden.delete(k);
     }
@@ -218,6 +227,8 @@
     /** Forgets the state of the plan that was open: for another plan, or a plan replaced whole. */
     function reset() {
       Object.assign(ui, { cabSel: null, focusNetwork: null, hoverNetwork: null, cabType: 'auto', pending: null });
+      fab.network = null;
+      pm.rack = null;
       sched.filter = '';
       sched.hidden.clear();
       sched.collapsed.clear();
@@ -246,57 +257,919 @@
     }
     /** Draws what the network in focus changes: the schedule and the panel, and the inspector of several cables, which lists them in the schedule's order. */
     function renderAfterFocus() {
-      ctx.render(selCableIds().length > 1 ? {} : { inspector: false });
+      const was = fab.shown;
+      ctx.render(selCableIds().length > 1 || ui.cabView === 'fabric' ? {} : { inspector: false });
+      // The fabric follows the network in focus: another network is another drawing, which opens fitted, as the view does.
+      if (ui.workspace === 'cabling' && ui.cabView === 'fabric' && fab.shown !== was) ctx.fitWidth();
     }
 
     // ------------------------------------------------------------ views
 
-    function placeholder(id, label, iconId) {
-      return {
-        id,
-        kind: 'html',
-        render(box) {
-          if (box.dataset.view === id) return;
-          box.dataset.view = id;
-          box.innerHTML =
-            `<div class="cab-empty">${icon(iconId)}<h2>${esc(label)}</h2>` +
-            `<p>This view is not drawn yet. The schedule lists every cable with its ends, type, length and checks.</p>` +
-            `<button type="button" class="btn" data-cab-view="schedule">${icon('table')}Open the schedule</button></div>`;
-        },
-      };
-    }
-
     /** The views of the stage by id: `kind` 'svg' draws into el.svg (zoom and pan apply), 'html' into the host next to it. */
     const VIEWS = {
-      elevation: placeholder('elevation', 'Elevation', 'rack'),
-      ports: placeholder('ports', 'Port map', 'ports'),
+      elevation: { id: 'elevation', kind: 'svg', render: renderElevation },
+      ports: { id: 'ports', kind: 'html', render: renderPortMap },
       schedule: { id: 'schedule', kind: 'html', render: renderSchedule },
-      fabric: placeholder('fabric', 'Fabric', 'fabric'),
+      fabric: { id: 'fabric', kind: 'svg', render: renderFabric },
     };
-    if (!VIEWS[prefs.cabView]) prefs.cabView = 'schedule';
+    if (!VIEWS[prefs.cabView]) prefs.cabView = 'elevation';
+    if (prefs.cabSide !== 'front') prefs.cabSide = 'rear';
+    if (prefs.cabPortsOf !== 'all') prefs.cabPortsOf = 'switches';
+    if (typeof prefs.cabGrouped !== 'boolean') prefs.cabGrouped = true;
     ui.cabView = prefs.cabView;
     const view = () => VIEWS[ui.cabView] || VIEWS.schedule;
     /** Whether the stage shows a drawing that zooms (an svg view). */
     const zoomable = () => view().kind === 'svg';
 
-    function setView(id) {
+    /** Shows another view; a drawing that zooms opens fitted to the stage's width, the port map at the rack of the device selected. */
+    function setView(id, opts) {
       if (!VIEWS[id] || id === ui.cabView) return;
       ui.cabView = id;
       prefs.cabView = id;
       ctx.savePrefs();
       ui.pending = null;
+      if (id === 'ports') pm.rack = startRack();
       ctx.render();
+      if (zoomable() && !(opts && opts.keepZoom)) ctx.fitWidth();
     }
     $('#cab-toggle').addEventListener('click', (e) => {
       const b = e.target.closest('[data-cab-view]');
       if (b) setView(b.dataset.cabView);
     });
 
+    // ------------------------------------------------------------ drawings: what they show
+
+    const CR = window.RP.cablingRender;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    /** "dev|port" (data-port) to { device, port }; port names may hold "|", device ids do not. */
+    const splitKey = (key) => {
+      const i = key.indexOf('|');
+      return { device: key.slice(0, i), port: key.slice(i + 1) };
+    };
+    const keyOf = (e) => `${e.device}|${e.port}`;
+    const armedType = () => (ui.cabType === 'auto' ? null : M.cableTypeById(project(), ui.cabType));
+
+    /** Ids of the cables with an end at any of the devices `ids`. */
+    function cablesOfDevices(ids) {
+      const set = new Set(ids);
+      return project().cables.filter((c) => M.cableEnds(c).some((x) => set.has(x.end.device))).map((c) => c.id);
+    }
+    /** The selection as the drawings take it (cabling-render's selectedCables). */
+    function drawnSelection() {
+      const s = ui.cabSel;
+      if (!s) return null;
+      if (s.kind === 'cables') return { kind: 'cables', ids: s.ids };
+      if (s.kind === 'port') return { kind: 'port', deviceId: s.device, port: s.port };
+      return s.ids.length === 1 ? { kind: 'device', id: s.ids[0] } : { kind: 'cables', ids: cablesOfDevices(s.ids) };
+    }
+    /** The network the drawings bring forward: the one hovered or in focus; '' for the cables without one. */
+    function drawnFocus() {
+      const f = ui.hoverNetwork || ui.focusNetwork;
+      return f ? (f === NONE ? '' : f) : null;
+    }
+    let searchMatcher = { project: null, query: null, ids: null };
+    /** Ids of the cables that the search box matches, or null without a search. */
+    function searchHits() {
+      const q = (ui.query || '').trim();
+      if (!q) return null;
+      const p = project();
+      if (searchMatcher.project !== p || searchMatcher.query !== q) {
+        const match = C.cableMatcher(p, q, fresh().ctx);
+        searchMatcher = { project: p, query: q, ids: match ? new Set(p.cables.filter(match).map((c) => c.id)) : null };
+      }
+      return searchMatcher.ids;
+    }
+
+    /** Draws a drawing into the stage's svg, at the zoom it has. */
+    function setScene(out, label) {
+      ui.sceneW = out.width;
+      ui.sceneH = out.height;
+      el.svg.setAttribute('viewBox', `0 0 ${out.width} ${out.height}`);
+      el.svg.setAttribute('aria-label', label);
+      el.svg.innerHTML = out.body;
+      ctx.applyZoom();
+    }
+
+    /** Rings the legs of a breakout cable being made, which the drawings do not know of. */
+    function markLegs(root) {
+      const pd = ui.pending;
+      if (!pd || !pd.legs.length || !root) return;
+      for (const leg of pd.legs) {
+        const g = root.querySelector(`[data-port="${CSS.escape(keyOf(leg))}"]`);
+        const shape = g && g.firstElementChild;
+        if (!shape || !shape.getBBox) continue;
+        let b;
+        try {
+          b = shape.getBBox();
+        } catch (err) {
+          continue;
+        }
+        const r = document.createElementNS(SVG_NS, 'rect');
+        const at = { x: b.x - 3, y: b.y - 3, width: b.width + 6, height: b.height + 6, rx: 2.5, class: 'leg-ring', 'pointer-events': 'none' };
+        for (const [k, v] of Object.entries(at)) r.setAttribute(k, typeof v === 'number' ? Math.round(v * 10) / 10 : v);
+        g.parentNode.appendChild(r);
+      }
+    }
+
+    /** Scrolls the stage so that the box `b` of the drawing (in its units) is in view, in the middle when it was not. */
+    function revealBox(b) {
+      if (!b) return;
+      const c = el.canvas;
+      const s = el.svg.getBoundingClientRect();
+      const r = c.getBoundingClientRect();
+      const z = ui.zoom;
+      const x1 = s.left + b.x * z;
+      const y1 = s.top + b.y * z;
+      const x2 = x1 + Math.max(1, b.w) * z;
+      const y2 = y1 + Math.max(1, b.h) * z;
+      const m = 40;
+      if (x1 < r.left + m || x2 > r.right - m) c.scrollLeft += (x1 + x2) / 2 - (r.left + r.right) / 2;
+      if (y1 < r.top + m || y2 > r.bottom - m) c.scrollTop += Math.min((y1 + y2) / 2 - (r.top + r.bottom) / 2, y1 - r.top - m);
+    }
+
+    // ------------------------------------------------------------ elevation
+
+    /** The elevation drawn last: its layout (boxes of devices, ports and cables), row and side. */
+    const elev = { layout: null, rowId: null, side: null };
+
+    function renderElevation() {
+      const pos = ctx.currentRow();
+      const out = CR.elevation(project(), {
+        rowId: pos.row.id,
+        side: prefs.cabSide,
+        theme: ui.theme,
+        measure: ctx.measure,
+        interactive: true,
+        selected: drawnSelection(),
+        focusNetwork: drawnFocus(),
+        pending: ui.pending,
+        highlight: searchHits(),
+      });
+      Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
+      setScene(out, `Cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
+      markLegs(el.svg);
+    }
+
+    function setSide(side) {
+      if (side === prefs.cabSide || (side !== 'front' && side !== 'rear')) return;
+      prefs.cabSide = side;
+      ctx.savePrefs();
+      // The inspector too: whether it offers Show in elevation depends on the side drawn.
+      ctx.render();
+      renderSides();
+    }
+    const sidesEl = $('#cab-sides');
+    function renderSides() {
+      for (const b of $$('[data-cab-side]', sidesEl)) b.setAttribute('aria-pressed', String(b.dataset.cabSide === prefs.cabSide));
+    }
+    sidesEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cab-side]');
+      if (b) setSide(b.dataset.cabSide);
+    });
+
+    /**
+     * "Show in elevation": the elevation of the row and side where a cable
+     * (an end in the row shown, else its head) or a device is seen, scrolled
+     * to it.
+     */
+    function showInElevation(o) {
+      const p = project();
+      const k = fresh();
+      let deviceId = null;
+      let side = prefs.cabSide;
+      if (o.cable) {
+        const c = cableById(o.cable);
+        if (!c) return;
+        const ends = M.cableEnds(c).map((x) => x.end).filter((e) => deviceById(e.device));
+        const here = ends.find((e) => k.ctx.racks.get(deviceById(e.device).loc.rack).row.id === ui.rowId) || ends[0];
+        if (!here) return;
+        deviceId = here.device;
+        side = C.portFace(p, here, k.ctx) || side;
+      } else {
+        const d = deviceById(o.device);
+        if (!d) return;
+        deviceId = d.id;
+        // The side where most of its ports are seen.
+        const faces = { front: 0, rear: 0 };
+        for (const name of portsOf(d).keys()) faces[C.portFace(p, { device: d.id, port: name }, k.ctx) || 'rear']++;
+        if (faces.front !== faces.rear) side = faces.front > faces.rear ? 'front' : 'rear';
+      }
+      const d = deviceById(deviceId);
+      const row = k.ctx.racks.get(d.loc.rack).row.id;
+      const entering = ui.cabView !== 'elevation';
+      if (row !== ui.rowId) ctx.setRow(row, { render: false });
+      prefs.cabSide = side;
+      ui.cabView = 'elevation';
+      prefs.cabView = 'elevation';
+      ctx.savePrefs();
+      // Opening the elevation stops a connection being made, as another view does; within it, as another row does not.
+      if (entering) ui.pending = null;
+      ctx.render();
+      if (entering) ctx.fitWidth();
+      const L = elev.layout;
+      revealBox(L && (o.cable ? L.cables.get(o.cable) : L.devices.get(deviceId)));
+    }
+
+    // ------------------------------------------------------------ port map
+
+    /** The port map's rack (an id), and the width it was drawn for. */
+    const pm = { rack: null, shown: null, width: 0 };
+    /** Whether the pointer is a finger: ports then need more room. */
+    const coarse = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
+    /** The rack the port map starts at: the selected device's (its row is shown), else the first of the row shown. */
+    function startRack() {
+      const s = ui.cabSel;
+      let id = null;
+      if (s && s.kind === 'port') id = s.device;
+      else if (s && s.kind === 'devices') id = s.ids[0];
+      else if (s && s.kind === 'cables') {
+        const c = cableById(s.ids[0]);
+        const ends = c ? M.cableEnds(c).map((x) => x.end.device).filter(deviceById) : [];
+        const here = ends.find((dev) => fresh().ctx.racks.get(deviceById(dev).loc.rack).row.id === ui.rowId);
+        id = here || ends[0] || null;
+      }
+      const d = id && deviceById(id);
+      if (d) {
+        followDevice(d.id);
+        return d.loc.rack;
+      }
+      const row = ctx.currentRow().row;
+      return row.racks.length ? row.racks[0].id : null;
+    }
+    /** The port map's rack, in the row shown: the first of the row when the row changed. */
+    function pmRack() {
+      const p = project();
+      const pos = pm.rack && M.locateRack(p, pm.rack);
+      if (pos && pos.row.id === ui.rowId) return pos;
+      const row = ctx.currentRow().row;
+      pm.rack = row.racks.length ? row.racks[0].id : null;
+      return pm.rack ? M.locateRack(p, pm.rack) : null;
+    }
+    /** Shows another rack in the port map, and its row in the nav. */
+    function setRack(id) {
+      const pos = M.locateRack(project(), id);
+      if (!pos) return;
+      pm.rack = id;
+      if (pos.row.id !== ui.rowId) ctx.setRow(pos.row.id, { render: false });
+      ctx.render();
+    }
+
+    /** "swp1–48 · 48 × RJ45 1G, swp49–52 · 4 × SFP+ 10G, bmc · RJ45 1G": a device's port groups as its type has them. */
+    function portSummary(d) {
+      const byGroup = new Map();
+      for (const pt of portsOf(d).values()) {
+        if (!byGroup.has(pt.group)) byGroup.set(pt.group, []);
+        byGroup.get(pt.group).push(pt);
+      }
+      const type = M.typeOf(project(), d.type);
+      return [...byGroup]
+        .map(([gi, list]) => {
+          const g = type.ports[gi];
+          const first = list[0].name;
+          const last = list[list.length - 1].name;
+          const range = list.length < 2 ? first : g && last.startsWith(g.name) && first.startsWith(g.name) ? `${first}–${last.slice(g.name.length)}` : `${first}–${last}`;
+          return `${range} · ${list.length > 1 ? `${list.length} × ` : ''}${portSpec(list[0])}`;
+        })
+        .join(', ');
+    }
+
+    function portCard(d, plate, current, faded) {
+      const type = M.typeOf(project(), d.type);
+      const cl = M.clusterById(project(), d.cluster);
+      const ports = portsOf(d);
+      const idx = cableIndex();
+      let used = 0;
+      for (const name of ports.keys()) if (idx.has(`${d.id}|${name}`)) used++;
+      const w = where(d);
+      const meta = [type.label, `${w.at}${d.loc.kind === 'side' ? ' (side slot)' : ''}`, ports.size ? portSummary(d) : 'no ports'].join(' · ');
+      return (
+        `<section class="pm-card${current ? ' is-current' : ''}${faded ? ' is-faded' : ''}" data-pm-dev="${esc(d.id)}">` +
+        `<header class="pm-head"><span class="sw" style="--c:${cl ? cl.color : 'var(--unassigned)'}"></span>` +
+        `<button type="button" class="pm-name" data-cab-select-device="${esc(d.id)}" title="Select ${esc(d.name)}">${esc(d.name)}</button>` +
+        `<span class="pm-meta" title="${esc(meta)}">${esc(meta)}</span>` +
+        (ports.size ? `<span class="pm-use" title="${esc(`${used} of ${plural(ports.size, 'port')} cabled`)}"><span class="fm-meter"><span style="width:${((used / ports.size) * 100).toFixed(1)}%"></span></span>${used} of ${ports.size}</span>` : '') +
+        `<button type="button" class="btn sm" data-pm-series="${esc(d.id)}"${ports.size ? '' : ' disabled'} title="Connect many devices to the ports of ${esc(d.name)}">${icon('swap', 'ic-sm')}Connect series…</button></header>` +
+        `<div class="pm-plate-wrap"><svg class="pm-plate" viewBox="0 0 ${plate.width} ${plate.height}" width="${plate.width}" height="${plate.height}" role="group" aria-label="${esc(`Ports of ${d.name}`)}">${plate.body}</svg></div></section>`
+      );
+    }
+
+    function renderPortMap(box) {
+      if (box.dataset.view !== 'ports') {
+        box.dataset.view = 'ports';
+        box.innerHTML = `<div class="pm-scroll" id="pm-scroll"><div class="pm" id="pm"></div></div>`;
+        pm.shown = null;
+      }
+      const p = project();
+      const scroll = $('#pm-scroll');
+      const pos = pmRack();
+      pm.width = scroll.clientWidth;
+      if (!pos) {
+        $('#pm').innerHTML = `<div class="cab-empty">${icon('ports')}<h2>No racks</h2><p>${esc(ctx.currentRow().row.name)} has no racks. Add racks to it in the Racks workspace.</p></div>`;
+        return;
+      }
+      const rack = pos.rack;
+      const all = prefs.cabPortsOf === 'all';
+      const devs = M.sortedDevices(p, rack.id).filter((d) => d.type !== M.RESERVED.id && (all ? true : C.isSwitch(p, d)));
+      // The port selected, the ends of the cables selected and the devices selected, in this rack: every end drawn is ringed.
+      const s = ui.cabSel;
+      const current = new Set();
+      const selected = [];
+      if (s && s.kind === 'port') {
+        current.add(s.device);
+        selected.push({ deviceId: s.device, port: s.port });
+      } else if (s && s.kind === 'devices') s.ids.forEach((id) => current.add(id));
+      else if (s && s.kind === 'cables') {
+        for (const id of s.ids) {
+          const c = cableById(id);
+          if (!c) continue;
+          for (const x of M.cableEnds(c)) {
+            const d = deviceById(x.end.device);
+            if (!d || d.loc.rack !== rack.id) continue;
+            current.add(d.id);
+            selected.push({ deviceId: d.id, port: x.end.port });
+          }
+        }
+      }
+      if (ui.pending) current.add(ui.pending.device);
+      const width = Math.max(520, pm.width - 42);
+      const focus = drawnFocus();
+      const plates = new Map(
+        CR.portMap(
+          p,
+          devs.map((d) => d.id),
+          // Ports far enough apart for their numbers, and for a finger on a touch screen; the card scrolls sideways when they need it.
+          { theme: ui.theme, measure: ctx.measure, width, minPitch: coarse() ? 28 : 16, selected, pending: ui.pending, focusNetwork: focus, highlight: searchHits() }
+        ).map((x) => [x.deviceId, x])
+      );
+      // A device with no cable in the network brought forward fades too.
+      const idx = cableIndex();
+      const faded = (d) =>
+        focus !== null && ![...portsOf(d).keys()].some((name) => {
+          const hit = idx.get(`${d.id}|${name}`);
+          return hit && (netKey(hit.cable) === NONE ? '' : hit.cable.network) === focus;
+        });
+
+      const racks = M.allRacks(p);
+      const at = racks.findIndex((r) => r.rack.id === rack.id);
+      let options = '';
+      let group = null;
+      for (const r of racks) {
+        if (r.row !== group) {
+          if (group) options += '</optgroup>';
+          group = r.row;
+          options += `<optgroup label="${esc(`${r.floor.name} · ${r.row.name}`)}">`;
+        }
+        options += `<option value="${esc(r.rack.id)}"${r.rack.id === rack.id ? ' selected' : ''}>${esc(r.rack.name)}</option>`;
+      }
+      options += '</optgroup>';
+      const nets = new Set();
+      for (const d of devs) for (const name of portsOf(d).keys()) {
+        const hit = idx.get(`${d.id}|${name}`);
+        if (hit) nets.add(netKey(hit.cable));
+      }
+      const legend = p.networks
+        .filter((n) => nets.has(n.id))
+        .map((n) => [n.name, n.color])
+        .concat(nets.has(NONE) ? [['No network', 'var(--unassigned)']] : [])
+        .map(([name, color]) => `<span class="pm-key"><span class="sw" style="--c:${color}"></span>${esc(name)}</span>`)
+        .join('');
+      const what = all ? 'devices' : 'switches';
+      const html =
+        `<div class="pm-top"><div class="fm-title"><h2>${esc(`${rack.name} · ${what}`)}</h2>` +
+        `<p>${esc(`${pos.floor.name} · ${pos.row.name}. Above and below each port: the device at the other end; a dot marks one in another rack.`)}</p></div>` +
+        `<div class="pm-tools"><div class="seg" role="group" aria-label="Devices shown">` +
+        `<button type="button" data-pm-filter="switches" aria-pressed="${!all}">Switches</button><button type="button" data-pm-filter="all" aria-pressed="${all}">All devices</button></div>` +
+        `<div class="row-nav pm-racks"><button class="btn icon sm" type="button" data-pm-step="-1" title="Previous rack" aria-label="Previous rack"${at <= 0 ? ' disabled' : ''}>${icon('left')}</button>` +
+        `<label class="pm-pick">${icon('rack', 'ic-sm')}<span class="sr-only">Rack</span><select data-pm-rack id="pm-rack">${options}</select>${icon('chevron', 'ic-sm')}</label>` +
+        `<button class="btn icon sm" type="button" data-pm-step="1" title="Next rack" aria-label="Next rack"${at >= racks.length - 1 ? ' disabled' : ''}>${icon('right')}</button></div></div></div>` +
+        `<div class="pm-legend">${legend}<span class="pm-key"><span class="sw sw-free"></span>Free</span><span class="pm-key"><i class="pm-dot"></i>Other rack</span>` +
+        `<span class="pm-hint">Click a free port, then another; or drag from one to the other.</span></div>` +
+        (devs.length
+          ? devs.map((d) => portCard(d, plates.get(d.id), current.has(d.id), faded(d))).join('')
+          : `<div class="pm-none"><p>${esc(all ? `${rack.name} holds no devices.` : `${rack.name} holds no switches.`)}</p>${all ? '' : `<button type="button" class="btn sm" data-pm-filter="all">Show all devices</button>`}</div>`);
+      // A faceplate wider than its card keeps where it was scrolled to, in the same rack.
+      const sideways = new Map();
+      if (pm.shown === rack.id) for (const w of $$('.pm-card[data-pm-dev] .pm-plate-wrap', $('#pm'))) if (w.scrollLeft) sideways.set(w.closest('.pm-card').dataset.pmDev, w.scrollLeft);
+      ctx.keepFocus($('#pm'), () => ($('#pm').innerHTML = html));
+      for (const [id, left] of sideways) {
+        const w = $(`.pm-card[data-pm-dev="${CSS.escape(id)}"] .pm-plate-wrap`, $('#pm'));
+        if (w) w.scrollLeft = left;
+      }
+      markLegs($('#pm'));
+      // Another rack opens at its top.
+      if (pm.shown !== rack.id) {
+        scroll.scrollTop = 0;
+        pm.shown = rack.id;
+      }
+    }
+
+    /** The cables at the ports the port map shows. */
+    function portMapCables() {
+      const idx = cableIndex();
+      const out = [];
+      for (const card of $$('.pm-card[data-pm-dev]', host)) {
+        const d = deviceById(card.dataset.pmDev);
+        if (d) for (const name of portsOf(d).keys()) {
+          const hit = idx.get(`${d.id}|${name}`);
+          if (hit) out.push(hit.cable.id);
+        }
+      }
+      return out;
+    }
+
+    host.addEventListener('click', (e) => {
+      if (ui.cabView !== 'ports') return;
+      const t = e.target;
+      const f = t.closest('[data-pm-filter]');
+      if (f) {
+        prefs.cabPortsOf = f.dataset.pmFilter;
+        ctx.savePrefs();
+        return ctx.renderStage();
+      }
+      const step = t.closest('[data-pm-step]');
+      if (step) {
+        const racks = M.allRacks(project());
+        const at = racks.findIndex((r) => r.rack.id === pm.rack) + Number(step.dataset.pmStep);
+        if (at >= 0 && at < racks.length) setRack(racks[at].rack.id);
+        return;
+      }
+      const series = t.closest('[data-pm-series]');
+      if (series) return openConnect({ series: true, to: series.dataset.pmSeries });
+      const dev = t.closest('.pm-name[data-cab-select-device]');
+      if (dev) return selectDevices([dev.dataset.cabSelectDevice]);
+    });
+    host.addEventListener('change', (e) => {
+      if (e.target.id === 'pm-rack') setRack(e.target.value);
+    });
+    // The port map draws again for a new width, once a frame.
+    let pmFrame = 0;
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => {
+        if (pmFrame || ui.workspace !== 'cabling' || ui.cabView !== 'ports') return;
+        pmFrame = requestAnimationFrame(() => {
+          pmFrame = 0;
+          const s = $('#pm-scroll');
+          if (s && Math.abs(s.clientWidth - pm.width) > 1 && ui.workspace === 'cabling' && ui.cabView === 'ports') ctx.renderStage();
+        });
+      }).observe(host);
+    }
+
+    // ------------------------------------------------------------ fabric
+
+    /** The network picked for the fabric (null until one is picked: then the one in focus, else the busiest between switches), the one drawn last, its node groups as drawn and the box around its switches. */
+    const fab = { network: null, shown: null, groups: [], switchBox: null };
+
+    /** Networks with cables, by id (NONE for the cables without one), in the plan's order. */
+    function fabricNetworks() {
+      const p = project();
+      const used = new Set(p.cables.map(netKey));
+      const list = p.networks.filter((n) => used.has(n.id)).map((n) => n.id);
+      if (used.has(NONE)) list.push(NONE);
+      return list;
+    }
+    /** The network the fabric shows. */
+    function fabricNetwork() {
+      const list = fabricNetworks();
+      if (fab.network && list.includes(fab.network)) return fab.network;
+      if (ui.focusNetwork && list.includes(ui.focusNetwork)) return ui.focusNetwork;
+      const k = fresh();
+      if (k.busiest === undefined) {
+        // The network with the most links between two switches, else the most cables.
+        const p = project();
+        const sw = new Map();
+        const all = new Map();
+        const isSw = (id) => {
+          const d = deviceById(id);
+          return !!d && C.isSwitch(p, d);
+        };
+        for (const c of p.cables) {
+          const n = netKey(c);
+          all.set(n, (all.get(n) || 0) + 1);
+          if (M.cableEnds(c).every((x) => isSw(x.end.device))) sw.set(n, (sw.get(n) || 0) + 1);
+        }
+        const best = (m) => list.reduce((a, id) => ((m.get(id) || 0) > (m.get(a) || 0) ? id : a), list[0]);
+        k.busiest = list.length ? (sw.size ? best(sw) : best(all)) : null;
+      }
+      return k.busiest;
+    }
+    /** C.fabric of a network (NONE: the cables without one), once per plan. */
+    function fabricOf(net) {
+      const k = fresh();
+      if (!k.fabrics) k.fabrics = new Map();
+      if (!k.fabrics.has(net)) k.fabrics.set(net, C.fabric(project(), net === NONE ? null : net));
+      return k.fabrics.get(net);
+    }
+
+    /** Devices at the ends of cables. */
+    function endDevices(ids) {
+      const out = new Set();
+      for (const id of ids) {
+        const c = cableById(id);
+        if (c) for (const x of M.cableEnds(c)) out.add(x.end.device);
+      }
+      return [...out];
+    }
+
+    function renderFabric() {
+      const p = project();
+      const net = fabricNetwork();
+      const s = ui.cabSel;
+      // Devices stand for cables here: the ends of the cables selected or matched by the search.
+      const selected = s && s.kind === 'devices' ? s.ids : s && s.kind === 'port' ? [s.device] : s && s.kind === 'cables' ? endDevices(s.ids) : [];
+      const hits = searchHits();
+      const out = CR.fabric(p, net === NONE ? null : net, {
+        theme: ui.theme,
+        measure: ctx.measure,
+        grouped: prefs.cabGrouped,
+        selected,
+        highlight: hits ? endDevices(hits) : null,
+        fabric: net ? fabricOf(net) : undefined,
+      });
+      fab.shown = net;
+      fab.groups = out.groups;
+      fab.switchBox = out.switchBox;
+      setScene(out, `${net ? netName(net === NONE ? null : net) : 'No'} fabric`);
+      renderFabricBar(net);
+    }
+    /**
+     * After the fabric is fitted to the stage's width: a fabric still wider
+     * than the stage (every device drawn) is scrolled to its switches,
+     * which sit over the middle of the node tier.
+     */
+    function afterFit() {
+      if (ui.cabView !== 'fabric' || !fab.switchBox || el.canvas.scrollWidth <= el.canvas.clientWidth + 1) return;
+      revealBox(fab.switchBox);
+    }
+
+    const barEl = $('#cab-head');
+    const noteEl = $('#cab-note');
+    function renderFabricBar(net) {
+      const list = fabricNetworks();
+      const name = net ? netName(net === NONE ? null : net) : 'No network';
+      let sub;
+      if (!net) sub = 'No cables yet: connect ports in the elevation, the port map or the schedule.';
+      else {
+        const f = fabricOf(net);
+        const links = f.links.reduce((a, l) => a + l.count, 0);
+        sub =
+          `${plural(links, 'link')} between ${listAnd([plural(f.cores.length, 'core switch', 'core switches'), plural(f.leaves.length, 'leaf', 'leaves'), plural(f.nodes.length, 'node')])}. ` +
+          (prefs.cabGrouped ? 'Nodes with the same links and cluster are drawn as one box.' : 'Every node is drawn as a box of its own.');
+      }
+      const opts = list.map((id) => `<option value="${esc(id)}"${id === net ? ' selected' : ''}>${esc(id === NONE ? 'No network' : netName(id))}</option>`).join('');
+      const html =
+        `<div class="fm-title"><h2>${esc(`${name} fabric · whole plan`)}</h2><p>${esc(sub)}</p></div>` +
+        `<div class="pm-tools"><label class="cab-head-field"><span>Network</span><select data-fb-net id="fb-net"${list.length ? '' : ' disabled'}>${opts}</select></label>` +
+        `<div class="seg" role="group" aria-label="Nodes"><button type="button" data-fb-grouped="1" aria-pressed="${prefs.cabGrouped}">Grouped</button>` +
+        `<button type="button" data-fb-grouped="0" aria-pressed="${!prefs.cabGrouped}">Every device</button></div></div>`;
+      if (barEl.dataset.html !== html) {
+        ctx.keepFocus(barEl, () => (barEl.innerHTML = html));
+        barEl.dataset.html = html;
+      }
+    }
+    const listAnd = (parts) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+    barEl.addEventListener('change', (e) => {
+      if (e.target.id !== 'fb-net') return;
+      fab.network = e.target.value;
+      ctx.render();
+      // Another network is another drawing: it opens fitted, as the view does.
+      ctx.fitWidth();
+    });
+    barEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-fb-grouped]');
+      if (!b) return;
+      const on = b.dataset.fbGrouped === '1';
+      if (on === prefs.cabGrouped) return;
+      prefs.cabGrouped = on;
+      ctx.savePrefs();
+      ctx.renderStage();
+      ctx.fitWidth();
+    });
+
+    // ------------------------------------------------------------ drawings: pointer
+
+    /*
+     * One gesture at a time on the drawings: a press on a port (a click, or
+     * a drag from a free port to another, with a line to the pointer), or a
+     * press on anything else (a click on it; with a mouse on a zooming
+     * drawing, a drag pans it).
+     */
+    const press = { cur: null };
+    const band = document.createElementNS(SVG_NS, 'svg');
+    band.setAttribute('class', 'cab-band');
+    band.setAttribute('aria-hidden', 'true');
+    band.innerHTML = '<line/><circle r="4"/>';
+    band.style.display = 'none';
+    document.body.appendChild(band);
+
+    function pressTarget(t) {
+      const exit = t.closest('.exit[data-row]');
+      if (exit) return { kind: 'exit', row: exit.dataset.row };
+      const cable = t.closest('[data-cable]');
+      if (cable) return { kind: 'cable', id: cable.dataset.cable };
+      const group = t.closest('[data-group]');
+      if (group) return { kind: 'group', index: Number(group.dataset.group) };
+      const dev = t.closest('[data-dev]') || t.closest('[data-pm-dev]');
+      if (dev) return { kind: 'device', id: dev.dataset.dev || dev.dataset.pmDev };
+      return { kind: 'bg' };
+    }
+
+    function onPointerDown(e) {
+      if (ui.workspace !== 'cabling' || e.button !== 0) return;
+      const t = e.target;
+      const inSvg = el.svg.contains(t);
+      if (inSvg ? !zoomable() : ui.cabView !== 'ports' || !t.closest('.pm')) return;
+      if (!inSvg && t.closest('button, select, label, input, a')) return;
+      hideChip();
+      // A mouse press below keeps the browser from moving focus (no text
+      // selection, no focus ring on the drawing), so focus leaves the control
+      // it was on here: the search closes its results as it does in Racks,
+      // and Delete, Enter and Esc reach the drawing's keys.
+      const a = document.activeElement;
+      if (a && a !== document.body && !a.contains(t) && a.blur) a.blur();
+      const base = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, type: e.pointerType, add: e.shiftKey || e.ctrlKey || e.metaKey };
+      const portEl = t.closest('[data-port]');
+      if (portEl) {
+        if (e.pointerType === 'mouse') e.preventDefault();
+        press.cur = Object.assign(base, { kind: 'port', key: portEl.dataset.port, root: inSvg ? el.svg : host, el: portEl, free: !cableIndex().has(portEl.dataset.port), drag: false });
+        return;
+      }
+      const target = pressTarget(t);
+      if (inSvg && e.pointerType === 'mouse') {
+        e.preventDefault();
+        press.cur = Object.assign(base, { kind: 'pan', target, sl: el.canvas.scrollLeft, st: el.canvas.scrollTop, moved: false });
+      } else press.cur = Object.assign(base, { kind: 'tap', target });
+    }
+    el.svg.addEventListener('pointerdown', onPointerDown);
+    host.addEventListener('pointerdown', onPointerDown);
+
+    window.addEventListener('pointermove', (e) => {
+      const pr = press.cur;
+      if (!pr || e.pointerId !== pr.pointerId) return;
+      const dx = e.clientX - pr.x;
+      const dy = e.clientY - pr.y;
+      if (pr.kind === 'pan') {
+        if (!pr.moved && Math.hypot(dx, dy) < 4) return;
+        pr.moved = true;
+        el.canvas.classList.add('is-panning');
+        el.canvas.scrollLeft = pr.sl - dx;
+        el.canvas.scrollTop = pr.st - dy;
+      } else if (pr.kind === 'port' && pr.free && pr.type !== 'touch') {
+        if (!pr.drag && Math.hypot(dx, dy) < 5) return;
+        pr.drag = true;
+        drawBand(pr, e);
+      }
+    });
+    window.addEventListener('pointerup', (e) => {
+      const pr = press.cur;
+      if (!pr || e.pointerId !== pr.pointerId) return;
+      press.cur = null;
+      const far = Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 10;
+      if (pr.kind === 'pan') {
+        el.canvas.classList.remove('is-panning');
+        if (!pr.moved) clickTarget(pr.target, pr.add);
+      } else if (pr.kind === 'port') {
+        if (pr.drag) {
+          band.style.display = 'none';
+          const at = document.elementFromPoint(e.clientX, e.clientY);
+          const to = at && at.closest && at.closest('[data-port]');
+          if (to && to.dataset.port !== pr.key) dragConnect(pr.key, to.dataset.port);
+        } else if (!far) clickPort(pr.key, pr.add);
+      } else if (!far) clickTarget(pr.target, pr.add);
+    });
+    window.addEventListener('pointercancel', (e) => {
+      const pr = press.cur;
+      if (pr && e.pointerId === pr.pointerId) cancelPress();
+    });
+    /** Forgets the press on a drawing, so that its release does nothing; true when it was a drag (from a port, or a pan) under way. */
+    function cancelPress() {
+      const pr = press.cur;
+      if (!pr) return false;
+      press.cur = null;
+      band.style.display = 'none';
+      el.canvas.classList.remove('is-panning');
+      return !!(pr.drag || pr.moved);
+    }
+
+    /** The rubber band from the port pressed to the pointer. */
+    function drawBand(pr, e) {
+      // The drawing may have been drawn again since the press (an edit left by it commits): the port is found again by its key.
+      if (!pr.el.isConnected) pr.el = pr.root.querySelector(`[data-port="${CSS.escape(pr.key)}"]`) || pr.el;
+      if (!pr.el.isConnected) return;
+      const r = (pr.el.firstElementChild || pr.el).getBoundingClientRect();
+      const [line, dot] = band.children;
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      line.setAttribute('x1', x);
+      line.setAttribute('y1', y);
+      line.setAttribute('x2', e.clientX);
+      line.setAttribute('y2', e.clientY);
+      dot.setAttribute('cx', x);
+      dot.setAttribute('cy', y);
+      band.style.display = '';
+    }
+
+    /** A click on something of a drawing other than a port; `add` (Shift, Ctrl or ⌘) adds a cable or a device to the selection. */
+    function clickTarget(t, add) {
+      if (!t) return;
+      if (t.kind === 'exit') {
+        const pos = M.locateRow(project(), t.row);
+        if (!pos) return;
+        ctx.setRow(t.row);
+        toast(`${pos.floor.name} · ${pos.row.name}`);
+      } else if (t.kind === 'cable') {
+        const ids = selCableIds();
+        if (add) selectCables(ids.includes(t.id) ? ids.filter((x) => x !== t.id) : ids.concat([t.id]));
+        else selectCables([t.id]);
+      } else if (t.kind === 'group') {
+        if (fab.groups[t.index]) selectDevices(fab.groups[t.index]);
+      } else if (t.kind === 'device') {
+        const s = ui.cabSel;
+        const ids = s && s.kind === 'devices' ? s.ids : [];
+        if (add) selectDevices(ids.includes(t.id) ? ids.filter((x) => x !== t.id) : ids.concat([t.id]));
+        else selectDevices([t.id]);
+      } else clearSelection();
+    }
+
+    /**
+     * A click on a port. While a connection is being made it is the other
+     * end (or the next leg of a breakout cable); the pending port again
+     * stops. Otherwise a cabled port selects its cable (Shift adds it) and a
+     * free one starts a connection.
+     */
+    function clickPort(key, add) {
+      const end = splitKey(key);
+      const d = deviceById(end.device);
+      if (!d || !portsOf(d).has(end.port)) return;
+      const pd = ui.pending;
+      if (pd) {
+        if (keyOf(pd) === key) return cancelPending();
+        if (pd.legs.some((x) => keyOf(x) === key)) return;
+        return connectTo(end);
+      }
+      const hit = cableIndex().get(key);
+      if (hit) {
+        const ids = selCableIds();
+        const id = hit.cable.id;
+        if (add) return selectCables(ids.includes(id) ? ids.filter((x) => x !== id) : ids.concat([id]));
+        return selectCables([id]);
+      }
+      ui.pending = { device: end.device, port: end.port, legs: [] };
+      ui.cabSel = { kind: 'port', device: end.device, port: end.port };
+      ctx.render();
+    }
+
+    /**
+     * A drag from a free port to another: the first starts the connection
+     * (unless it is the one pending), the second ends it. A drag is one
+     * gesture: a connection refused leaves the one pending before it, if
+     * any, as it was.
+     */
+    function dragConnect(fromKey, toKey) {
+      const to = splitKey(toKey);
+      const d = deviceById(to.device);
+      if (!d || !portsOf(d).has(to.port)) return;
+      const before = ui.pending;
+      if (!before || keyOf(before) !== fromKey) {
+        const from = splitKey(fromKey);
+        ui.pending = { device: from.device, port: from.port, legs: [] };
+      } else if (before.legs.some((x) => keyOf(x) === toKey)) return;
+      if (connectTo(to)) return;
+      ui.pending = before;
+      ctx.render({ inspector: false });
+    }
+
+    /** The second end of the connection being made; with a breakout cable armed, its next leg, and the cable once every leg is set. True unless it was refused. */
+    function connectTo(end) {
+      const pd = ui.pending;
+      const t = armedType();
+      const network = defaultNetwork();
+      if (t && t.legs > 1) {
+        const legs = pd.legs.concat([{ device: end.device, port: end.port }]);
+        const b = legs.concat(new Array(t.legs - legs.length).fill(null));
+        const err = C.checkConnect(project(), { a: { device: pd.device, port: pd.port }, b, type: t.id, network });
+        if (err) {
+          toast(err, { warn: true });
+          return false;
+        }
+        if (legs.length < t.legs) {
+          pd.legs = legs;
+          ctx.render({ inspector: false });
+          return true;
+        }
+        return finishConnect(legs);
+      }
+      return finishConnect([{ device: end.device, port: end.port }]);
+    }
+
+    /** Connects the port pending to `legs` (one end, or the legs of a breakout cable, the others left unplugged); false when it was refused. */
+    function finishConnect(legs) {
+      const pd = ui.pending;
+      const t = armedType();
+      const breakout = t && t.legs > 1;
+      const props = {
+        a: { device: pd.device, port: pd.port },
+        b: breakout ? legs.concat(new Array(t.legs - legs.length).fill(null)) : legs[0],
+        type: t ? t.id : null,
+        network: defaultNetwork(),
+      };
+      let made = null;
+      const err = change(
+        (p) => {
+          const r = C.connect(p, props);
+          made = r.cable || null;
+          return r.error;
+        },
+        { inspector: false }
+      );
+      if (err) {
+        toast(err, { warn: true });
+        ctx.render();
+        return false;
+      }
+      ui.pending = null;
+      ui.cabSel = { kind: 'cables', ids: [made.id] };
+      ctx.render();
+      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}`, { action: 'Undo', onAction: ctx.undo });
+      return true;
+    }
+
+    /** What Enter activates when it has focus, rather than the drawing's keys. */
+    const ACTIVATES = 'button, a[href], summary, [role="button"]';
+
+    /** Enter or Esc with legs of a breakout cable set: connects it with those. True when it did. */
+    function finishLegs() {
+      const pd = ui.pending;
+      const t = armedType();
+      if (!pd || !pd.legs.length || !t || t.legs <= 1) return false;
+      finishConnect(pd.legs);
+      return true;
+    }
+
+    // Exits of the elevation are buttons for the keyboard too.
+    el.svg.addEventListener('keydown', (e) => {
+      if (ui.workspace !== 'cabling' || (e.key !== 'Enter' && e.key !== ' ')) return;
+      const exit = e.target.closest && e.target.closest('.exit[data-row]');
+      if (!exit) return;
+      e.preventDefault();
+      clickTarget({ kind: 'exit', row: exit.dataset.row });
+    });
+
+    // ------------------------------------------------------------ drawings: hover
+
+    /** "cn-004 ib0 · QSFP56 200G → ib-leaf-a01 p4": a port and what it connects to. */
+    function portChipText(key) {
+      const end = splitKey(key);
+      const d = deviceById(end.device);
+      const pt = d && portsOf(d).get(end.port);
+      if (!pt) return null;
+      const hit = cableIndex().get(key);
+      const head = `${d.name} ${pt.name} · ${portSpec(pt)}`;
+      if (!hit) return { text: `${head} · free`, color: null };
+      const far = hit.role === 'a' ? M.legsOf(hit.cable).filter(Boolean) : [hit.cable.a];
+      return { text: `${head} → ${far.map(endText).join(', ') || '–'}`, color: netColor(hit.cable.network) };
+    }
+    let chipKey = null;
+    function hideChip() {
+      if (chipKey === null) return;
+      chipKey = null;
+      el.chip.hidden = true;
+    }
+    function onHover(e) {
+      if (ui.workspace !== 'cabling' || e.pointerType !== 'mouse' || press.cur) return hideChip();
+      const portEl = e.target.closest && e.target.closest('[data-port]');
+      if (!portEl) return hideChip();
+      const key = portEl.dataset.port;
+      if (key !== chipKey) {
+        const info = portChipText(key);
+        if (!info) return hideChip();
+        chipKey = key;
+        el.chip.className = 'drag-chip port-chip';
+        el.chip.style.setProperty('--c', info.color || 'var(--surface-3)');
+        el.chip.innerHTML = `<span class="mono">${esc(info.text)}</span>`;
+        el.chip.hidden = false;
+      }
+      const x = Math.min(e.clientX + 14, window.innerWidth - el.chip.offsetWidth - 8);
+      const y = Math.min(e.clientY + 18, window.innerHeight - el.chip.offsetHeight - 8);
+      el.chip.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
+    }
+    el.svg.addEventListener('pointermove', onHover);
+    host.addEventListener('pointermove', onHover);
+    el.svg.addEventListener('pointerleave', hideChip);
+    host.addEventListener('pointerleave', hideChip);
+
     function renderStage() {
       if (typing.hold) return;
       const v = view();
       el.floormap.hidden = true;
       el.canvas.classList.remove('is-map');
+      hideChip();
+      // Over the drawings: the elevation's Front | Rear, the fabric's header and its note.
+      sidesEl.hidden = v.id !== 'elevation';
+      barEl.hidden = v.id !== 'fabric';
+      noteEl.hidden = v.id !== 'fabric';
+      el.canvas.classList.toggle('has-sides', v.id === 'elevation');
+      if (v.id === 'elevation') renderSides();
       if (v.kind === 'svg') {
         host.hidden = true;
         delete el.canvas.dataset.cab;
@@ -315,6 +1188,11 @@
     function hideStage() {
       host.hidden = true;
       delete el.canvas.dataset.cab;
+      sidesEl.hidden = true;
+      barEl.hidden = true;
+      noteEl.hidden = true;
+      el.canvas.classList.remove('has-sides');
+      hideChip();
     }
 
     function renderNav() {
@@ -325,14 +1203,22 @@
 
     function renderChrome() {
       el.notice.hidden = true;
-      if (ui.pending) {
-        const d = deviceById(ui.pending.device);
-        const t = ui.cabType === 'auto' ? null : M.cableTypeById(project(), ui.cabType);
-        el.armedHint.innerHTML =
-          `<span>Click a second port to connect <strong>${esc(`${d.name} ${ui.pending.port}`)}</strong>${t ? ` with ${esc(t.name)}` : ''}</span><kbd>Esc</kbd>` +
-          `<button type="button" data-cab-cancel aria-label="Stop connecting">${icon('x', 'ic-sm')}</button>`;
+      const pd = ui.pending;
+      if (pd) {
+        const d = deviceById(pd.device);
+        const t = armedType();
+        const from = `<strong>${esc(`${d.name} ${pd.port}`)}</strong>`;
+        const with_ = `<strong>${esc(t ? t.name : 'Auto')}</strong>`;
+        let msg;
+        if (t && t.legs > 1) {
+          const n = pd.legs.length;
+          msg = n
+            ? `Click leg ${n + 1} of ${t.legs} of ${with_} from ${from}; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`
+            : `Click the first of ${t.legs} legs to connect ${from} with ${with_}, <kbd>Esc</kbd> to cancel`;
+        } else msg = `Click a second port to connect ${from} with ${with_}, <kbd>Esc</kbd> to cancel`;
+        el.armedHint.innerHTML = `<span>${msg}</span><button type="button" data-cab-cancel aria-label="Stop connecting" title="Stop connecting">${icon('x', 'ic-sm')}</button>`;
       }
-      el.armedHint.hidden = !ui.pending;
+      el.armedHint.hidden = !pd;
     }
     el.armedHint.addEventListener('click', (e) => {
       if (e.target.closest('[data-cab-cancel]')) cancelPending();
@@ -1133,9 +2019,14 @@
     $('#cab-types').addEventListener('click', (e) => {
       const card = e.target.closest('[data-cab-type]');
       if (!card) return;
-      ui.cabType = card.dataset.cabType;
-      ctx.render({ inspector: false });
+      armType(card.dataset.cabType);
     });
+    /** Arms a cable type for new cables; legs set for a breakout cable start again. */
+    function armType(id) {
+      ui.cabType = id;
+      if (ui.pending) ui.pending = Object.assign({}, ui.pending, { legs: [] });
+      ctx.render({ inspector: false });
+    }
     // Arrow keys move between the cable types like a radio group.
     $('#cab-types').addEventListener('keydown', (e) => {
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
@@ -1144,8 +2035,7 @@
       if (i < 0) return;
       e.preventDefault();
       const next = cards[(i + (e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1) + cards.length) % cards.length];
-      ui.cabType = next.dataset.cabType;
-      ctx.render({ inspector: false });
+      armType(next.dataset.cabType);
       const again = $(`[data-cab-type="${CSS.escape(ui.cabType)}"]`);
       if (again) again.focus();
     });
@@ -1159,23 +2049,27 @@
       if (e.target.closest('.cl-main')) {
         ui.focusNetwork = ui.focusNetwork === id ? null : id;
         ui.hoverNetwork = null;
+        // The fabric follows the network put in focus.
+        fab.network = null;
         renderAfterFocus();
       }
     });
-    // Hovering a network highlights its cables in the drawings; the schedule only follows a click.
+    // Hovering a network highlights its cables in the elevation and the port map; the schedule only follows a click.
     $('#networks').addEventListener('pointerover', (e) => {
       if (e.pointerType === 'touch') return;
       const rowEl = e.target.closest('.cl-row');
       const id = rowEl ? rowEl.dataset.network : null;
       if (id === ui.hoverNetwork) return;
       ui.hoverNetwork = id;
-      if (zoomable()) ctx.renderStage();
+      if (showsHover()) ctx.renderStage();
     });
     $('#networks').addEventListener('pointerleave', () => {
       if (!ui.hoverNetwork) return;
       ui.hoverNetwork = null;
-      if (zoomable()) ctx.renderStage();
+      if (showsHover()) ctx.renderStage();
     });
+    /** Whether the view shown brings the network hovered forward: the elevation and the port map (the fabric shows one network, the schedule follows clicks). */
+    const showsHover = () => ui.cabView === 'elevation' || ui.cabView === 'ports';
     $('#btn-add-network').addEventListener('click', () => openNetworkDialog(null));
 
     /** The network new cables get: the one in focus, else the one used last. */
@@ -1266,7 +2160,7 @@
     }
 
     function inspectorKey() {
-      return JSON.stringify(ui.cabSel || null);
+      return JSON.stringify([ui.cabSel || null, ui.cabView]);
     }
 
     function renderInspector() {
@@ -1276,12 +2170,24 @@
         if (list.length === 1) cableInspector(list[0]);
         else cablesInspector(list);
       } else if (s && s.kind === 'devices') {
-        if (s.ids.length === 1) deviceInspector(deviceById(s.ids[0]));
+        const d = s.ids.length === 1 ? deviceById(s.ids[0]) : null;
+        const net = d && ui.cabView === 'fabric' ? fabricNetwork() : null;
+        if (net && fabricOf(net).switches.some((x) => x.id === d.id)) fabricInspector(d, net);
+        else if (d) deviceInspector(d);
         else devicesInspector(s.ids.map(deviceById).filter(Boolean));
       } else if (s && s.kind === 'port') portInspector(deviceById(s.device), s.port);
       else overviewInspector();
     }
 
+    /** Whether the elevation shown draws a cable (on the side shown) or a device (in the row shown). */
+    function drawnInElevation(kind, id) {
+      const L = ui.cabView === 'elevation' && elev.layout;
+      if (!L || elev.rowId !== ui.rowId || elev.side !== prefs.cabSide) return false;
+      return kind === 'cable' ? L.cables.has(id) : L.devices.has(id);
+    }
+    /** "Show in elevation" for a cable or a device, unless the elevation shown already draws it. */
+    const showButton = (kind, id) =>
+      drawnInElevation(kind, id) ? '' : `<button type="button" class="btn" data-cab-show-${kind}="${esc(id)}" title="The row and side of the racks where it is seen, scrolled to it">${icon('rack')}Show in elevation</button>`;
     const swatch = (color) => `<span class="sw sw-net" style="--c:${color}"></span>`;
     const checkItem = (x) => `<li>${issueIcon(x.level)}<span>${esc(x.text)}</span></li>`;
     function checksSection(d) {
@@ -1429,7 +2335,7 @@
         endsSection(c, d) +
         cableFields(c, d, false) +
         checksSection(d) +
-        `<div class="insp-actions is-pinned"><button type="button" class="btn danger-text" id="cab-del" title="Delete (Del)">${icon('trash')}Delete</button></div>`;
+        `<div class="insp-actions is-pinned">${showButton('cable', c.id)}<button type="button" class="btn danger-text" id="cab-del" title="Delete (Del)">${icon('trash')}Delete</button></div>`;
       bindCable(c);
       $('#cab-del').addEventListener('click', () => deleteCables([c.id]));
     }
@@ -1697,7 +2603,7 @@
           ? `<ul class="port-list">${shown.map((pt) => portRow(d, pt, idx)).join('')}</ul>${ports.length > shown.length ? `<p class="sec-hint">and ${ports.length - shown.length} more ports</p>` : ''}`
           : `<p class="empty-note">${esc(type.label)} has no ports. Give its type ports in the catalog.</p>`) +
         `</section>` +
-        `<div class="insp-actions is-pinned"><button type="button" class="btn" id="cab-dev-series"${ports.length ? '' : ' disabled'}>${icon('swap')}Connect series…</button>` +
+        `<div class="insp-actions is-pinned">${showButton('device', d.id)}<button type="button" class="btn" id="cab-dev-series"${ports.length ? '' : ' disabled'}>${icon('swap')}Connect series…</button>` +
         `<button type="button" class="btn danger-text" id="cab-dev-unplug"${cables.length ? '' : ' disabled'}>${icon('unplug')}Unplug all</button></div>`;
       const id = d.id;
       $$('input[name="cab-mount"]', el.inspector).forEach((r) => r.addEventListener('change', () => ctx.commit((p2) => void (M.deviceById(p2, id).reversed = r.value === 'back'))));
@@ -1713,6 +2619,87 @@
       // From a switch the series ends at it; from anything else it starts there.
       $('#cab-dev-series').addEventListener('click', () => openConnect(C.isSwitch(p, d) ? { series: true, to: id } : { series: true, from: [id] }));
       $('#cab-dev-unplug').addEventListener('click', () => unplugDevice(d));
+    }
+
+    const rangeName = C.rangeName;
+    /** "11 × 200G", or "3 · 600G" for links of different speeds. */
+    function linksText(links) {
+      const n = links.reduce((a, l) => a + l.count, 0);
+      const speeds = new Set(links.map((l) => l.speedGbps));
+      const total = links.reduce((a, l) => a + l.totalGbps, 0);
+      if (speeds.size === 1 && [...speeds][0]) return { n, per: `× ${C.shortSpeed([...speeds][0])}` };
+      return { n, per: total ? `· ${C.shortSpeed(total)}` : '' };
+    }
+    /** "2.2 Tb/s", "400 Gb/s". */
+    const bandwidth = (g) => (g >= 1000 ? `${Math.round(g / 100) / 10} <small>Tb/s</small>` : `${Math.round(g * 10) / 10} <small>Gb/s</small>`);
+
+    /**
+     * A switch of the fabric shown: its links down and up, the bandwidth and
+     * oversubscription of a leaf, its links by peer, and the fabric's checks.
+     */
+    function fabricInspector(d, net) {
+      const p = project();
+      const f = fabricOf(net);
+      const leafIds = new Set(f.leaves.map((x) => x.id));
+      const swIds = new Set(f.switches.map((x) => x.id));
+      const leaf = leafIds.has(d.id);
+      const name = net === NONE ? 'No network' : netName(net);
+      const mine = f.links.filter((l) => l.a === d.id || l.b === d.id).map((l) => Object.assign({ peer: l.a === d.id ? l.b : l.a }, l));
+      // Up from a leaf: other switches; down from a core: the leaves (and nodes); between cores: across.
+      const dir = (peer) => (leaf ? (swIds.has(peer) ? 'up' : 'down') : leafIds.has(peer) || !swIds.has(peer) ? 'down' : 'across');
+      const down = mine.filter((l) => dir(l.peer) === 'down');
+      const up = mine.filter((l) => dir(l.peer) !== 'down');
+      const dt = linksText(down);
+      const ut = linksText(up);
+      const ratio = leaf ? f.ratios.get(d.id) : null;
+      const over = ratio && ratio.ratio !== null && ratio.ratio > C.OVERSUBSCRIBED;
+      // Links by peer: a switch each, nodes by their group.
+      const rows = [];
+      for (const l of mine.filter((x) => swIds.has(x.peer))) {
+        const peer = deviceById(l.peer);
+        const t = linksText([l]);
+        rows.push(`<tr><td><button type="button" class="fb-peer" data-cab-select-device="${esc(peer.id)}">${esc(peer.name)}</button></td><td>${dir(l.peer)}</td><td>${t.n} ${esc(t.per)}</td></tr>`);
+      }
+      for (const g of f.groups) {
+        const ls = mine.filter((l) => g.devices.some((x) => x.id === l.peer));
+        if (!ls.length) continue;
+        const names = g.devices.filter((x) => ls.some((l) => l.peer === x.id)).map((x) => x.name);
+        const t = linksText(ls);
+        rows.push(`<tr><td class="mono">${esc(rangeName(names))}</td><td>down</td><td>${t.n} ${esc(t.per)}</td></tr>`);
+      }
+      // The fabric's checks, this switch's first; nodes on several leaves on those leaves only.
+      const checks = f.checks
+        .filter((x) => !x.leaves || x.leaves.includes(d.id))
+        .sort((a, b) => (b.device === d.id) - (a.device === d.id))
+        .map((x) => ({ level: x.level, text: x.text }));
+      const idx = cableIndex();
+      const ports = [...portsOf(d).keys()];
+      const inNet = ports.filter((n) => {
+        const hit = idx.get(`${d.id}|${n}`);
+        return hit && netKey(hit.cable) === net;
+      }).length;
+      const free = ports.filter((n) => !idx.has(`${d.id}|${n}`)).length;
+      checks.push({ level: 'info', text: `${plural(free, 'free port')} on ${d.name}${free ? ' for growth' : ''}` });
+      const checkIcon = (level) => (level === 'ok' ? icon('check', 'ic-sm is-ok') : issueIcon(level));
+      const w = where(d);
+      el.inspector.innerHTML =
+        `<div class="insp-head"><div class="kicker">${swatch(netColor(net === NONE ? null : net))}${leaf ? 'Leaf' : 'Core'} switch · ${esc(name)}</div>` +
+        `<div class="name-input name-static">${esc(d.name)}</div>` +
+        `<div class="insp-where">${esc(w.short)}</div>` +
+        `<div class="insp-sub">${esc(`${w.pos.floor.name} · ${w.pos.row.name} · ${inNet} of ${plural(ports.length, 'port')} in this network`)}</div></div>` +
+        `<section class="insp-sec"><dl class="stats">` +
+        `<div><dt>Down</dt><dd>${dt.n} <small>${esc(dt.per)}</small></dd></div><div><dt>${leaf ? 'Up' : 'Across'}</dt><dd>${ut.n} <small>${esc(ut.per)}</small></dd></div>` +
+        `<div><dt>Bandwidth down</dt><dd>${bandwidth(down.reduce((a, l) => a + l.totalGbps, 0))}</dd></div>` +
+        (leaf
+          ? `<div><dt>Oversubscription</dt><dd${over ? ' class="is-bad"' : ''}>${ratio && ratio.ratio !== null ? `${esc(C.fmtRatio(ratio.ratio).replace(/:1$/, ''))} <small>: 1</small>` : '– <small>no uplinks</small>'}</dd></div>`
+          : `<div><dt>Leaves</dt><dd>${down.filter((l) => leafIds.has(l.peer)).length}</dd></div>`) +
+        `</dl></section>` +
+        `<section class="insp-sec"><h3>Links</h3>` +
+        (rows.length ? `<table class="type-table fb-links"><thead><tr><th>To</th><th>Dir.</th><th>Links</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : `<p class="empty-note">No links in ${esc(name)}.</p>`) +
+        `</section>` +
+        `<section class="insp-sec"><h3>Fabric checks</h3><ul class="check-list">${checks.map((x) => `<li>${checkIcon(x.level)}<span>${esc(x.text)}</span></li>`).join('')}</ul></section>` +
+        `<div class="insp-actions is-pinned">${showButton('device', d.id)}<button type="button" class="btn" id="cab-fb-series">${icon('swap')}Connect series…</button></div>`;
+      $('#cab-fb-series').addEventListener('click', () => openConnect({ series: true, to: d.id }));
     }
 
     function devicesInspector(devs) {
@@ -1781,7 +2768,7 @@
           endsSection(c, info) +
           cableFields(c, info, true) +
           checksSection(info) +
-          `<div class="insp-actions is-pinned">${back}<button type="button" class="btn danger-text" id="cab-del" title="${hit.role === 'b' && Array.isArray(c.b) ? 'Unplug this leg of the breakout cable (Del)' : 'Unplug the cable (Del)'}">${icon('unplug')}Unplug</button></div>`;
+          `<div class="insp-actions is-pinned">${ui.cabView === 'elevation' ? back : showButton('cable', c.id)}<button type="button" class="btn danger-text" id="cab-del" title="${hit.role === 'b' && Array.isArray(c.b) ? 'Unplug this leg of the breakout cable (Del)' : 'Unplug the cable (Del)'}">${icon('unplug')}Unplug</button></div>`;
         bindCable(c);
         $('#cab-del').addEventListener('click', () => unplugPort(d.id, portName));
         return;
@@ -1846,6 +2833,12 @@
       });
     }
 
+    const OVERVIEW_NOTES = {
+      elevation: 'Click a device or a port to see its cables. Drag from a port to another port to connect them.',
+      ports: 'Click a port to see its cable. Click a free port and then another, or drag from one to the other, to connect them.',
+      schedule: 'Select a cable in the schedule, or search for a device or a cable. Shift-click selects a range of cables.',
+      fabric: 'Click a switch to see its links and oversubscription, or a box of nodes to list them.',
+    };
     /** Nothing selected: the cabling of the row shown. */
     function overviewInspector() {
       const p = project();
@@ -1884,7 +2877,7 @@
       const floor = pos.floor;
       el.inspector.innerHTML =
         `<div class="insp-head"><div class="kicker">Cabling · ${esc(pos.row.name)}</div>` +
-        `<p class="insp-note">Select a cable in the schedule, or search for a device or a cable. Shift-click selects a range of cables.</p></div>` +
+        `<p class="insp-note">${esc(OVERVIEW_NOTES[ui.cabView] || OVERVIEW_NOTES.schedule)}</p></div>` +
         `<section class="insp-sec"><dl class="stats"><div><dt>Cables</dt><dd>${cables.length}</dd></div><div><dt>To other rows</dt><dd>${toOther}</dd></div>` +
         `<div><dt>Networks</dt><dd>${[...nets].filter((n) => n !== NONE).length}</dd></div><div><dt>To check</dt><dd>${bad.length}</dd></div></dl></section>` +
         (bad.length ? `<section class="insp-sec"><h3>To check</h3><ul class="check-list">${issues}</ul>${bad.length > 6 ? `<p class="sec-hint">and ${bad.length - 6} more</p>` : ''}</section>` : '') +
@@ -1894,11 +2887,14 @@
         `</div><p class="sec-hint">From one row of ${esc(floor.name)} to the next. Racks set their way up to the tray and their slack.</p></section>` +
         `<section class="insp-sec keys-sec"><h3>Shortcuts</h3><dl class="keys">` +
         `<dt><kbd>C</kbd></dt><dd>Racks or Cabling</dd>` +
-        `<dt><kbd>Shift</kbd> + click</dt><dd>Select a range of cables</dd>` +
-        `<dt><kbd>Ctrl</kbd> + click</dt><dd>Add or remove a cable</dd>` +
-        `<dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>Select the cables shown</dd>` +
+        // The schedule selects ranges of its rows; the drawings add or remove what is clicked.
+        (ui.cabView === 'schedule'
+          ? `<dt><kbd>Shift</kbd> + click</dt><dd>Select a range of cables</dd><dt><kbd>Ctrl</kbd> + click</dt><dd>Add or remove a cable</dd>`
+          : `<dt><kbd>Shift</kbd> or <kbd>Ctrl</kbd> + click</dt><dd>Add or remove a cable</dd>`) +
+        (ui.cabView === 'fabric' ? '' : `<dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>Select the cables shown</dd>`) +
         `<dt><kbd>Del</kbd></dt><dd>Delete the selected cables</dd>` +
         `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
+        (zoomable() ? `<dt><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> <kbd>1</kbd></dt><dd>Zoom in, out, to fit, to 100%</dd>` : '') +
         `<dt><kbd>Esc</kbd></dt><dd>Cancel, deselect, show all networks</dd>` +
         `</dl></section>`;
       const pitch = $('#cab-pitch');
@@ -1915,6 +2911,8 @@
     el.inspector.addEventListener('click', (e) => {
       if (ui.workspace !== 'cabling') return;
       const t = e.target;
+      const show = t.closest('[data-cab-show-cable], [data-cab-show-device]');
+      if (show) return showInElevation(show.dataset.cabShowCable ? { cable: show.dataset.cabShowCable } : { device: show.dataset.cabShowDevice });
       const cable = t.closest('[data-cab-cable]');
       if (cable) return selectCables([cable.dataset.cabCable], { reveal: true });
       const dev = t.closest('[data-cab-select-device]');
@@ -2315,6 +3313,18 @@
       const rowBox = t && t.closest && t.closest('.sched tbody input[type="checkbox"], #sc-all');
       if (k.formControl && !rowBox) return false;
       const key = k.key;
+      // Esc stops a press on a drawing first, so that its release does nothing: a drag from a port connects nothing, a pan stops where it is.
+      if (key === 'Escape' && cancelPress()) {
+        e.preventDefault();
+        return true;
+      }
+      // On a focused button or link, Enter keeps activating it.
+      const activates = key === 'Enter' && !!(t && t.closest && t.closest(ACTIVATES));
+      // Enter or Esc with legs of a breakout cable set connects it with those.
+      if ((key === 'Enter' || key === 'Escape') && !k.mod && !activates && finishLegs()) {
+        e.preventDefault();
+        return true;
+      }
       if ((key === 'Delete' || key === 'Backspace') && !k.mod) {
         const ids = selCableIds();
         const s = ui.cabSel;
@@ -2337,10 +3347,12 @@
       if (k.mod && k.letter === 'a' && !e.altKey) {
         e.preventDefault();
         if (ui.cabView === 'schedule') selectCables(sched.visible);
+        else if (ui.cabView === 'elevation' && elev.layout) selectCables([...elev.layout.cables.keys()]);
+        else if (ui.cabView === 'ports') selectCables(portMapCables());
         return true;
       }
       if ((key === 'Enter' || key === 'F2') && !k.mod && !rowBox && selCableIds().length === 1) {
-        if (key === 'Enter' && t.closest && t.closest('button, a[href], summary')) return false;
+        if (activates) return false;
         e.preventDefault();
         const input = $('#cab-label');
         if (input) {
@@ -2378,8 +3390,13 @@
       if (it.kind === 'cable') {
         const c = cableById(it.id);
         if (!c) return;
+        // The elevation shows it where it is seen; the other views in the schedule.
+        if (ui.cabView === 'elevation') {
+          ui.cabSel = { kind: 'cables', ids: [c.id] };
+          return showInElevation({ cable: c.id });
+        }
         followDevice(c.a.device);
-        if (ui.cabView !== 'schedule' && !zoomable()) setView('schedule');
+        if (ui.cabView !== 'schedule') setView('schedule');
         sched.hidden.clear();
         sched.filter = '';
         showCable(c);
@@ -2387,12 +3404,18 @@
         ctx.render();
         revealCable(c.id);
       } else if (it.kind === 'device') {
-        followDevice(it.id);
-        ui.cabSel = { kind: 'devices', ids: [it.id] };
+        const d = deviceById(it.id);
+        if (!d) return;
+        ui.cabSel = { kind: 'devices', ids: [d.id] };
+        if (ui.cabView === 'elevation') return showInElevation({ device: d.id });
+        followDevice(d.id);
+        if (ui.cabView === 'ports') pm.rack = d.loc.rack;
         ctx.render();
       } else if (it.kind === 'rack') {
         const pos = M.locateRack(p, it.id);
-        if (pos) ctx.setRow(pos.row.id);
+        if (!pos) return;
+        pm.rack = it.id;
+        ctx.setRow(pos.row.id);
       } else if (it.kind === 'row') ctx.setRow(it.id);
       else if (it.kind === 'floor') {
         const floor = M.floorById(p, it.id);
@@ -2421,6 +3444,36 @@
       if (ui.workspace !== 'cabling') ctx.setWorkspace('cabling');
       toast(`Added ${plural(result.added, 'cable')} from the CSV`, { action: 'Undo', onAction: ctx.undo });
       ctx.reportWarnings(`Added ${plural(result.added, 'cable')}`, sub, result.warnings);
+      return null;
+    }
+
+    /**
+     * The drawing of the view shown, as a standalone SVG (light theme) for
+     * the Export menu: { svg, file } (file without extension), or null in
+     * a view that has none.
+     */
+    function exportDrawing() {
+      const p = project();
+      if (ui.cabView === 'elevation') {
+        const side = prefs.cabSide;
+        return { svg: CR.exportSVG('elevation', p, { rowId: ctx.currentRow().row.id, side, measure: ctx.measure }), file: `${ctx.fileBase(true)}-cabling-${side}`.slice(0, 120) };
+      }
+      if (ui.cabView === 'fabric') {
+        const net = fabricNetwork();
+        const name = net === NONE || !net ? 'no-network' : M.slug(netName(net)) || 'network';
+        return { svg: CR.exportSVG('fabric', p, { networkId: net === NONE ? null : net, grouped: prefs.cabGrouped, measure: ctx.measure }), file: `${ctx.fileBase()}-${name}-fabric`.slice(0, 120) };
+      }
+      return null;
+    }
+
+    /** What exportDrawing gives, for the Export menu: "This row’s cabling from the rear", "The InfiniBand fabric of the whole plan", or null where it gives none (the Racks sheet is exported). */
+    function drawingName() {
+      if (ui.cabView === 'elevation') return `This row’s cabling from the ${prefs.cabSide}`;
+      if (ui.cabView === 'fabric') {
+        const net = fabricNetwork();
+        if (!net) return 'The fabric of the whole plan';
+        return net === NONE ? 'The fabric of the cables without a network' : `The ${netName(net)} fabric of the whole plan`;
+      }
       return null;
     }
 
@@ -2453,6 +3506,10 @@
       importCablesText,
       openConnect,
       openNetworkDialog,
+      exportDrawing,
+      drawingName,
+      showInElevation,
+      afterFit,
     };
   }
 
