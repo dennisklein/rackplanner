@@ -51,7 +51,7 @@ test('version 2 plans become one row and keep up to 16 racks', () => {
   const racks = (n) => Array.from({ length: n }, (_, i) => ({ id: `rack-${i}`, name: `R${i}` }));
   const dev = (rack) => ({ type: 'compute-node', name: `n-${rack}`, loc: { rack, kind: 'u', at: 1 } });
   const one = IO.normalizeProject({ version: 2, racks: racks(1), devices: [dev('rack-0')] });
-  assert.deepEqual(one.project.floors, [{ id: 'f1', name: 'Floor 1', rows: [{ id: 'row1', name: 'Row A', racks: [{ id: 'r1', name: 'R0', type: 'rack-47' }] }] }]);
+  assert.deepEqual(one.project.floors, [{ id: 'f1', name: 'Floor 1', rowPitchM: 3, rows: [{ id: 'row1', name: 'Row A', racks: [{ id: 'r1', name: 'R0', type: 'rack-47', trayM: null, slackM: null }] }] }]);
   assert.equal(one.project.devices.length, 1);
   assert.deepEqual(one.project.deviceTypes, M.DEFAULT_DEVICE_TYPES, 'the standard catalog');
   const many = IO.normalizeProject({ racks: racks(20), devices: [dev('rack-15'), dev('rack-17')] });
@@ -99,11 +99,11 @@ test('version 1 plans, counted from the bottom, keep their layout', () => {
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, []);
   assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
-  assert.equal(p.version, 3);
-  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 3 is kept');
+  assert.equal(p.version, 4);
+  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 4 is kept');
 });
 
-test('version 3 plans keep floors, rows, catalogs, fields and reserved space', () => {
+test('plans keep floors, rows, catalogs, fields, reserved space and cabling', () => {
   const ex = M.createExampleProject();
   M.deviceById(ex, 'ex-9').serial = 'SN-1';
   M.deviceById(ex, 'ex-9').powerW = 820;
@@ -143,7 +143,7 @@ test('version 3 plans are checked against their limits and catalogs', () => {
   assert.equal(p.floors[0].rows[0].racks.length, 16);
   assert.notEqual(p.floors[1].id, 'a', 'duplicate floor ids are replaced');
   assert.equal(p.floors[1].name, 'F0', 'the empty floor is skipped');
-  assert.deepEqual(M.rackTypeById(p, 'huge'), { id: 'huge', name: 'Huge', units: 60, sideSlots: 4, powerW: 0, weightKg: 0 });
+  assert.deepEqual(M.rackTypeById(p, 'huge'), { id: 'huge', name: 'Huge', units: 60, sideSlots: 4, powerW: 0, weightKg: 0, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
   assert.deepEqual(p.deviceTypes.map((t) => [t.id, t.height, t.face, t.powerW]), [['blade', 10, 'generic', 0], ['compute-node', 2, 'compute', 700]]);
   assert.deepEqual(p.devices.map((d) => [d.name, d.loc.at, d.height]), [['bl-1', 51, undefined], ['cn-1', 1, undefined], ['later', 1, 7]]);
   for (const w of [
@@ -215,6 +215,7 @@ test('a CSV export imports back into an equal plan', () => {
   assert.deepEqual(warnings, [
     'Added the device type Patch panel (1U) to the catalog.',
     'Added the device type PDU (1U) to the catalog.',
+    'Added the device type 32-port 400G switch (1U) to the catalog.',
     'Added the device type GPU server (4U) to the catalog.',
   ], 'a CSV has no catalog, so custom types come back as generic ones');
   assert.equal(added, ex.devices.length);
@@ -281,4 +282,185 @@ test('share links pack and unpack a plan', async () => {
   await assert.rejects(IO.decodeShare(''), /readable/);
   const plain = 'j' + Buffer.from(IO.serialize(ex, { compact: true })).toString('base64url');
   assert.equal((await IO.decodeShare(plain)).name, ex.name);
+});
+
+// ------------------------------------------------------------------ cabling
+
+const C = require('../js/cabling.js');
+
+test('version 4 files keep ports, lengths, networks, catalogs and cables, a device and a cable to a line', () => {
+  const ex = M.createExampleProject();
+  M.deviceById(ex, 'ex-9').slackM = 0.5;
+  ex.floors[0].rows[0].racks[0].trayM = 0.8;
+  ex.cables[0].a.transceiver = 'sfp-10g-sr'; // not used by a copper cable, but kept
+  const json = IO.serialize(ex);
+  const raw = JSON.parse(json);
+  assert.equal(raw.version, 4);
+  assert.deepEqual(Object.keys(raw), ['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'floors', 'clusters', 'networks', 'devices', 'cables', 'meta']);
+  assert.deepEqual(raw.devices.find((d) => d.id === 'ex-1').reversed, true);
+  assert.ok(!('reversed' in raw.devices.find((d) => d.id === 'ex-9')), 'only devices mounted back to front say so');
+  const lines = json.split('\n');
+  assert.equal(lines.filter((l) => l.startsWith('    {"id":"cb-')).length, 147);
+  assert.equal(lines.filter((l) => l.startsWith('    {"id":"ex-')).length, 65);
+  assert.ok(lines.length < 1000, `${lines.length} lines`);
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p, ex);
+  assert.ok(M.isPristineExample(IO.normalizeProject(JSON.parse(IO.serialize(M.createExampleProject(), { compact: true }))).project), 'key order survives too');
+});
+
+test('files before version 4 get the standard ports and lengths, and the standard catalogs', () => {
+  const raw = {
+    version: 3,
+    deviceTypes: [
+      { id: 'compute-node', label: 'My node', height: 2, face: 'compute', powerW: 500 },
+      { id: 'switch-rj45', label: 'Switch', height: 1, face: 'rj45', ports: [] },
+      { id: 'blade', label: 'Blade', height: 10 },
+    ],
+    rackTypes: [{ id: 'rack-48', name: '48U', units: 48 }, { id: 'odd', name: 'Odd', units: 42 }],
+    floors: [{ id: 'f1', name: 'Hall', rows: [{ id: 'row1', name: 'Row A', racks: [{ id: 'r1', type: 'rack-48' }] }] }],
+    clusters: [],
+    devices: [{ id: 'a', type: 'compute-node', name: 'cn-1', loc: { rack: 'r1', kind: 'u', at: 1 } }],
+  };
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  const std = (id) => M.DEFAULT_DEVICE_TYPES.find((t) => t.id === id);
+  assert.deepEqual(M.typeOf(p, 'compute-node').ports, std('compute-node').ports);
+  assert.equal(M.typeOf(p, 'compute-node').slackM, 0.3);
+  assert.equal(M.typeOf(p, 'compute-node').label, 'My node', 'the rest is the file’s');
+  assert.deepEqual(M.typeOf(p, 'switch-rj45').ports, [], 'ports the file has are kept, even none');
+  assert.deepEqual(M.typeOf(p, 'blade').ports, []);
+  assert.deepEqual([M.rackTypeById(p, 'rack-48').widthMm, M.rackTypeById(p, 'odd').widthMm], [800, 600]);
+  assert.deepEqual(p.cableTypes, M.DEFAULT_CABLE_TYPES);
+  assert.deepEqual(p.transceivers, M.DEFAULT_TRANSCEIVERS);
+  assert.deepEqual([p.networks, p.cables, p.floors[0].rowPitchM, p.floors[0].rows[0].racks[0].trayM, p.devices[0].reversed], [[], [], 3, null, false]);
+
+  // From version 4 on, a missing list of ports means none.
+  const v4 = IO.normalizeProject(Object.assign({}, raw, { version: 4 })).project;
+  assert.deepEqual(M.typeOf(v4, 'compute-node').ports, []);
+  assert.deepEqual(IO.normalizeProject(Object.assign({}, raw, { version: 4, cableTypes: [] })).project.cableTypes, [], 'an empty catalog stays empty');
+});
+
+test('cables that would break the plan’s rules are skipped with a warning', () => {
+  const ex = M.createExampleProject();
+  const raw = JSON.parse(IO.serialize(ex));
+  raw.networks.push({ id: '__new', name: 'Sneaky', color: 'nope' }, { name: 'No id' });
+  raw.devices.push({ id: 'ex-9', type: 'switch-rj45', name: 'twin', loc: { rack: 'r8', kind: 'u', at: 40 } }, { id: 77, type: 'switch-rj45', name: 'numbered', loc: { rack: 'r8', kind: 'u', at: 41 } });
+  const extra = [
+    { id: 'k1', label: 'K-1', network: '__new', a: { device: 77, port: 'swp1' }, b: { device: 'ex-59', port: 'swp3' } },
+    { id: 'k2', label: 'K-2', network: 'gone', a: { device: 77, port: 'swp2' }, b: { device: 'ex-59', port: 'swp4' } },
+    { id: 'k3', label: 'K-3', a: { device: 'ex-9', port: 'eth0' }, b: { device: 'ex-59', port: 'swp5' } },
+    { id: 'k4', label: 'K-4', type: 'nope', a: { device: 77, port: 'swp3' }, b: { device: 'ex-59', port: 'swp6' } },
+    { id: 'k5', label: 'K-5', a: { device: 77, port: 'swp4', transceiver: 'nope' }, b: { device: 'ex-59', port: 'swp7' } },
+    { id: 'k6', label: 'K-6', a: { device: 'ghost', port: 'swp5' }, b: { device: 'ex-59', port: 'swp8' } },
+    { id: 'k7', label: 'K-7', a: { device: 77, port: 'swp99' }, b: { device: 'ex-59', port: 'swp9' } },
+    { id: 'k8', label: 'K-8', type: 'dac-osfp-2x', a: { device: 'ex-50', port: 'p20' }, b: [{ device: 'ex-39', port: 'p20' }] },
+    { id: 'k9', label: 'K-9', type: 'dac-osfp-2x', a: { device: 'ex-50', port: 'p21' }, b: { device: 'ex-39', port: 'p21' } },
+    { id: 'k1', a: { device: 77, port: 'swp6' }, b: { device: 'ex-59', port: 'swp10' } },
+    'junk',
+  ];
+  raw.cables = raw.cables.concat(extra);
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, [
+    'Skipped network No id: it has no id.',
+    'Cable K-2 refers to unknown network “gone” and has none.',
+    'Skipped cable K-3: cn-001 eth0 already has cable MGT-0001.',
+    'Skipped cable K-4: unknown cable type “nope”.',
+    'Skipped cable K-5: unknown transceiver “nope”.',
+    'Skipped cable K-6: device “ghost” is not in the plan.',
+    'Skipped cable K-7: numbered has no port swp99.',
+    'Skipped cable K-8: OSFP to 2 × QSFP56 DAC has 2 legs, not 1.',
+    'Skipped cable K-9: OSFP to 2 × QSFP56 DAC is a breakout cable: give it its legs.',
+  ]);
+  assert.equal(p.cables.length, 147 + 3);
+  const k1 = p.cables.find((c) => c.id === 'k1');
+  assert.ok(!k1.network.startsWith('__'), 'reserved ids are replaced');
+  assert.equal(M.networkById(p, k1.network).name, 'Sneaky');
+  assert.equal(M.deviceById(p, k1.a.device).name, 'numbered', 'numeric ids are strings');
+  assert.equal(p.cables.find((c) => c.id === 'k2').network, null);
+  const last = p.cables[p.cables.length - 1];
+  assert.notEqual(last.id, 'k1', 'cable ids used twice are replaced');
+  assert.equal(last.label, '', 'labels are not invented on reading');
+  const twin = p.devices.find((d) => d.name === 'twin');
+  assert.notEqual(twin.id, 'ex-9');
+  assert.ok(!p.cables.some((c) => M.cableEnds(c).some((x) => x.end.device === twin.id)), 'cables find the first device with an id');
+  assert.equal(M.pruneCables(p), 0);
+});
+
+test('a cable schedule exports one line per cable and leg and reads back into a plan', () => {
+  const ex = M.createExampleProject();
+  const csv = IO.exportCablesCSV(ex);
+  const lines = csv.trim().split('\r\n');
+  assert.equal(lines[0], IO.CABLE_CSV_COLUMNS.join(','));
+  assert.equal(lines[0], 'Label,Network,Cable type,Length (m),Length,Leg,A floor,A row,A rack,A position,A device,A port,A transceiver,B floor,B row,B rack,B position,B device,B port,B transceiver,Speed,Checks,Notes');
+  assert.equal(lines.length, 1 + 147 + 16, 'a line for every leg of the sixteen breakouts');
+  assert.equal(lines[1], 'MGT-0001,Management,Cat6a patch cord (auto),1,estimated,,Ground floor,Row A,Rack A01,U4-5,cn-001,eth0,,Ground floor,Row A,Rack A01,U1,sw-mgmt-a01,swp1,,1 Gb/s,,');
+  const leg = lines.filter((l) => l.startsWith('IB-0043,'));
+  assert.deepEqual(leg.map((l) => l.split(',').slice(5, 6).concat(l.split(',').slice(17, 19))), [['1/2', 'gpu-srv-01', 'ib0'], ['2/2', 'gpu-srv-01', 'ib1']]);
+  assert.ok(lines.some((l) => l.startsWith('IB-0026,InfiniBand,QSFP56 DAC,,estimated,') && l.includes(',Too long,')));
+  assert.ok(lines.some((l) => l.startsWith('MGT-0041,Management,LC duplex OM4,45,set,') && l.includes('SFP+ 10G SR (auto)') && l.endsWith(',Riser to the ground floor')));
+  assert.ok(IO.isCablesCSV(csv));
+  assert.ok(!IO.isCablesCSV(IO.toCSV(ex)));
+
+  // Into the same layout and devices without cables or networks.
+  const p = M.copyLayout(ex);
+  p.devices = M.clone(ex.devices);
+  const { added, warnings } = IO.importCablesCSV(p, csv);
+  assert.deepEqual(warnings, []);
+  assert.equal(added, 147);
+  const strip = (q) =>
+    q.cables.map((c) => {
+      const net = M.networkById(q, c.network);
+      return Object.assign(M.clone(c), { id: '', network: net && net.name });
+    });
+  assert.deepEqual(strip(p), strip(ex), 'picked types and transceivers stay picked, set lengths stay set');
+  assert.deepEqual(p.networks.map((n) => n.name), ['Management', 'BMC', 'InfiniBand', 'Storage 25G', 'SAS'], 'networks are created by name, in the order they come');
+
+  // Again: every port is taken now.
+  const again = IO.importCablesCSV(p, csv);
+  assert.equal(again.added, 0);
+  assert.equal(again.warnings[0], 'Skipped cable MGT-0001: cn-001 eth0 already has cable MGT-0001.');
+});
+
+test('a hand-made cable schedule adds what it can', () => {
+  const p = M.createExampleProject();
+  p.cables = [];
+  const csv = [
+    'From;From port;To;To port;Type;Label;Length (m);Leg',
+    'cn-001;eth0;sw-mgmt-a01;swp1;;;;',
+    'cn-002;eth0;sw-mgmt-a01;swp2;Cat6a patch cord;;3;',
+    'cn-003;eth0;nobody;swp3;;;;',
+    'cn-004;eth0;sw-mgmt-a01;swp4;Mystery cable;;;',
+    'ib-leaf-b02;p1;gpu-srv-01;ib1;OSFP to 2 × QSFP56 DAC;X-1;;2/2',
+    'cn-005;ib0;ib-leaf-a01;p5;mpo-om4;;;',
+  ].join('\n');
+  assert.ok(IO.isCablesCSV(csv));
+  const { added, warnings } = IO.importCablesCSV(p, csv);
+  assert.equal(added, 4);
+  assert.deepEqual(warnings, ['Skipped line 4: there is no device nobody.', 'Skipped line 5: unknown cable type “Mystery cable”.']);
+  assert.deepEqual(p.cables.map((c) => [c.label, c.type, c.lengthM]), [['C-0001', null, null], ['C-0002', 'cat6a', 3], ['X-1', 'dac-osfp-2x', null], ['C-0003', 'mpo-om4', null]]);
+  assert.deepEqual(p.cables[2].b.map((e) => e && e.port), [null, 'ib1'], 'a leg keeps its place');
+  assert.throws(() => IO.importCablesCSV(p, 'A device,B device\nx,y'), /A port/);
+  assert.throws(() => IO.importCablesCSV(p, 'A device,A port,B device,B port'), /no cables/);
+});
+
+test('the order list exports as CSV', () => {
+  const ex = M.createExampleProject();
+  const lines = IO.exportOrderCSV(ex).trim().split('\r\n');
+  assert.equal(lines[0], 'Item,Kind,Length (m),Count,Total (m)');
+  assert.equal(lines[1], 'Cat6a patch cord,Cable,1,12,12');
+  assert.ok(lines.includes('MPO-12 OM4,"Cable, made to length",4.9,4,19.6'));
+  assert.deepEqual(lines.slice(-2), ['SFP+ 10G SR,Transceiver,,8,', 'QSFP56 200G SR4,Transceiver,,24,']);
+  const sas = IO.exportOrderCSV(ex, ex.cables.filter((c) => c.network === 'n-sas')).trim().split('\r\n');
+  assert.deepEqual(sas, ['Item,Kind,Length (m),Count,Total (m)', 'Mini-SAS HD cable,Cable,2,12,24']);
+  assert.equal(C.billOfMaterials(ex).unresolved, 1);
+});
+
+test('a device CSV import into a plan keeps its cables', () => {
+  const ex = M.createExampleProject();
+  const csv = 'Rack,Position,Type,Name\nRack A01,U40,Compute node,cn-099\n';
+  const { project: p, added } = IO.importCSV(csv, ex);
+  assert.equal(added, 1);
+  assert.equal(p.cables.length, 147);
+  assert.deepEqual(p.networks, ex.networks);
 });

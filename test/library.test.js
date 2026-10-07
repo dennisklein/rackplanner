@@ -59,9 +59,12 @@ test('a plan saved by the single-plan version moves into the library', () => {
 });
 
 test('a full store refuses the save instead of losing the index', () => {
-  const store = memoryStore(4000);
+  const store = memoryStore(12000);
   const lib = Library.create(store);
   const small = M.createEmptyProject(1);
+  // An empty plan fits the store with room to spare; the example does not.
+  assert.ok(IO.serialize(small, { compact: true }).length < 6000);
+  assert.ok(IO.serialize(M.createExampleProject(), { compact: true }).length > 12000);
   const id = lib.add(small);
   assert.ok(id);
   assert.equal(lib.add(M.createExampleProject()), null, 'too big for the store');

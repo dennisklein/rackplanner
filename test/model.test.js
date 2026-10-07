@@ -16,19 +16,20 @@ function project(devices) {
 
 test('a new plan has one floor with one row of three 47U racks and the standard catalog', () => {
   const p = M.createEmptyProject();
-  assert.equal(p.version, 3);
+  assert.equal(p.version, 4);
   assert.deepEqual(p.floors, [
     {
       id: 'f1',
       name: 'Floor 1',
+      rowPitchM: 3,
       rows: [
         {
           id: 'row1',
           name: 'Row A',
           racks: [
-            { id: 'r1', name: 'Rack A01', type: 'rack-47' },
-            { id: 'r2', name: 'Rack A02', type: 'rack-47' },
-            { id: 'r3', name: 'Rack A03', type: 'rack-47' },
+            { id: 'r1', name: 'Rack A01', type: 'rack-47', trayM: null, slackM: null },
+            { id: 'r2', name: 'Rack A02', type: 'rack-47', trayM: null, slackM: null },
+            { id: 'r3', name: 'Rack A03', type: 'rack-47', trayM: null, slackM: null },
           ],
         },
       ],
@@ -467,4 +468,280 @@ test('layoutProblem finds devices that don’t fit', () => {
   const p = project([['compute-node', 'r1', 'u', 1, 'a'], ['compute-node', 'r1', 'u', 2, 'b']]);
   assert.match(M.layoutProblem(p), /b would overlap a in Rack A01/);
   assert.equal(M.layoutProblem(p, new Set(['r2'])), null);
+});
+
+// ------------------------------------------------------------------ cabling
+
+const C = require('../js/cabling.js');
+const ends = (p, c) => M.cableEnds(c).map((x) => `${M.deviceById(p, x.end.device).name} ${x.end.port}`);
+const labelsOf = (p) => p.cables.map((c) => c.label);
+
+test('port groups are written as patterns and read back', () => {
+  const groups = [
+    { name: 'swp', first: 1, count: 48, connector: 'rj45' },
+    { name: 'Ethernet1/', first: 1, count: 32, connector: 'qsfp28' },
+    { name: '', first: 1, count: 24, connector: 'rj45' },
+    { name: 'bmc', connector: 'rj45' },
+    { name: 'eth', first: 7, connector: 'sfp+' },
+  ].map(M.cleanPortGroup);
+  assert.deepEqual(groups.map(M.portPattern), ['swp[1-48]', 'Ethernet1/[1-32]', '[1-24]', 'bmc', 'eth[7]']);
+  for (const g of groups) assert.deepEqual(M.parsePortPattern(M.portPattern(g)), g.count ? { name: g.name, first: g.first, count: g.count } : { name: g.name });
+  assert.deepEqual(M.parsePortPattern(' ib[0 – 3] '), { name: 'ib', first: 0, count: 4 });
+  for (const bad of ['', 'swp[4-1]', '[x]', 'a[1-2]b', 'a|b', '[1-2000]', 'x[1-2]]']) assert.equal(M.parsePortPattern(bad), null, bad);
+
+  assert.deepEqual(groups[3], { name: 'bmc', connector: 'rj45', speedGbps: 1, side: 'rear' }, 'a single port has no first or count');
+  assert.deepEqual(groups[4], { name: 'eth', first: 7, count: 1, connector: 'sfp+', speedGbps: 10, side: 'rear' }, 'speed defaults to the connector’s');
+  assert.deepEqual(M.groupNames({ name: 'p', count: 3 }), ['p1', 'p2', 'p3'], 'count without first counts from 1');
+  assert.equal(M.cleanPortGroup({ name: 'x', connector: 'toslink' }), null, 'unknown connector');
+  assert.equal(M.cleanPortGroup({ name: '', connector: 'rj45' }), null, 'a single port needs a name');
+  assert.equal(M.cleanPortGroup({ name: 'a|b[1]', connector: 'rj45', side: 'front' }).name, 'ab1', 'characters used by keys and patterns are dropped');
+});
+
+test('device types expand their ports and drop groups that clash or overflow', () => {
+  const t = M.cleanDeviceType({
+    label: 'Switch',
+    ports: [
+      { name: 'swp', first: 1, count: 4, connector: 'rj45', side: 'front' },
+      { name: 'swp', first: 4, count: 2, connector: 'sfp+' }, // swp4 again
+      { name: 'swp5', connector: 'sfp+' },
+      { name: 'big', first: 1, count: 1024, connector: 'rj45' }, // past 1024 ports
+      { name: 'mgmt0', connector: 'rj45', speedGbps: 0.1 },
+    ],
+    slackM: 99,
+  });
+  assert.deepEqual(t.ports.map(M.portPattern), ['swp[1-4]', 'swp5', 'mgmt0']);
+  assert.equal(t.slackM, 10);
+  assert.deepEqual(M.expandPorts(t).map((p) => [p.name, p.group, p.index, p.connector, p.side]), [
+    ['swp1', 0, 0, 'rj45', 'front'],
+    ['swp2', 0, 1, 'rj45', 'front'],
+    ['swp3', 0, 2, 'rj45', 'front'],
+    ['swp4', 0, 3, 'rj45', 'front'],
+    ['swp5', 1, 0, 'sfp+', 'rear'],
+    ['mgmt0', 2, 0, 'rj45', 'rear'],
+  ]);
+  const many = M.cleanDeviceType({ ports: Array.from({ length: 40 }, (_, i) => ({ name: `p${i}x`, connector: 'rj45' })) });
+  assert.equal(many.ports.length, 32, 'at most 32 groups');
+  assert.deepEqual(M.expandPorts(M.RESERVED), []);
+  assert.equal(M.expandPorts(M.typeOf(M.createEmptyProject(), 'switch-rj45')).length, 52);
+  assert.deepEqual(M.TYPE_TEMPLATES.map((x) => M.expandPorts(x).length), [3, 8, 0, 1, 1, 0, 0]);
+});
+
+test('connectors decide which plugs fit which ports', () => {
+  assert.ok(M.plugFits('qsfp56', 'qsfp56'));
+  assert.ok(M.plugFits('qsfp28', 'qsfp56'), 'same family');
+  assert.ok(M.plugFits('sfp28', 'sfp+'));
+  assert.ok(M.plugFits('qsfp56', 'qsfp-dd'), 'QSFP-DD cages take QSFP plugs');
+  assert.ok(!M.plugFits('qsfp-dd', 'qsfp56'), 'but not the other way round');
+  assert.ok(!M.plugFits('sfp28', 'qsfp56'));
+  assert.ok(!M.plugFits('rj45', 'nope'));
+  assert.deepEqual(M.CONNECTORS.filter((c) => c.cage).map((c) => c.id), ['sfp', 'sfp+', 'sfp28', 'sfp56', 'qsfp+', 'qsfp28', 'qsfp56', 'qsfp112', 'qsfp-dd', 'osfp']);
+});
+
+test('racks, floors and devices carry their length settings', () => {
+  const p = M.createEmptyProject();
+  assert.deepEqual(M.rackTypeById(p, 'rack-48'), { id: 'rack-48', name: '48U high-density rack', units: 48, sideSlots: 2, powerW: 20000, weightKg: 1500, widthMm: 800, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
+  assert.deepEqual([M.rackTrayM(p, 'r1'), M.rackSlackM(p, 'r1')], [0.5, 0.25], 'the rack type’s');
+  Object.assign(M.rackById(p, 'r1'), { trayM: 1.2, slackM: 0 });
+  assert.deepEqual([M.rackTrayM(p, 'r1'), M.rackSlackM(p, 'r1')], [1.2, 0], 'the rack’s own');
+  assert.deepEqual(M.cleanRackType({ widthMm: 50, depthMm: 5000, trayM: -1, slackM: 'x' }), Object.assign(M.cleanRackType({}), { widthMm: 300, depthMm: 1600, trayM: 0 }));
+  assert.equal(M.insertFloor(p).rowPitchM, 3);
+  const d = M.newDevice({ type: 'compute-node' });
+  assert.deepEqual([d.reversed, d.slackM, M.deviceSlackM(p, d)], [false, null, 0.3]);
+  d.slackM = 1;
+  assert.equal(M.deviceSlackM(p, d), 1);
+  assert.equal(M.deviceSlackM(p, M.newDevice({ type: 'reserved' })), 0);
+  const copy = M.duplicateRack(p, 'r1');
+  assert.deepEqual([copy.trayM, copy.slackM], [1.2, 0], 'a copied rack keeps its settings');
+  p.floors[0].rowPitchM = 2.5;
+  assert.equal(M.duplicateFloor(p, 'f1').rowPitchM, 2.5, 'so does a copied floor');
+});
+
+test('the example is cabled without a refused state and with exactly the intended checks', () => {
+  const p = M.createExampleProject();
+  assert.equal(p.cables.length, 147);
+  assert.deepEqual(p.networks.map((n) => n.name), ['Management', 'BMC', 'InfiniBand', 'Storage 25G', 'SAS']);
+  assert.equal(new Set(p.cables.map((c) => c.id)).size, 147);
+  assert.equal(new Set(labelsOf(p)).size, 147);
+  const ctx = M.cableContext(Object.assign({}, p, { cables: [] }));
+  for (const c of p.cables) {
+    assert.equal(M.cableProblem(p, c, ctx), null, c.label);
+    M.claimPorts(ctx, c);
+  }
+  assert.equal(M.pruneCables(M.clone(p)), 0, 'nothing to prune');
+  const flagged = C.describeAll(p)
+    .filter((d) => d.issues.length)
+    .map((d) => [d.cable.label, ends(p, d.cable).join(' → '), d.issues.map((i) => `${i.code}: ${i.text}`)]);
+  assert.deepEqual(flagged, [
+    ['ST-0001', 'ceph-01 eth1 → sw-mgmt-a02 swp49', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp49 is the slower end']],
+    ['ST-0002', 'ceph-02 eth1 → sw-mgmt-a02 swp50', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp50 is the slower end']],
+    ['ST-0003', 'ceph-03 eth1 → sw-mgmt-a02 swp51', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp51 is the slower end']],
+    ['IB-0026', 'ceph-03 ib1 → ib-leaf-a03 p11', ['reach: Needs 3.9 m: a QSFP56 DAC reaches 3 m']],
+  ]);
+  const ex = (label) => p.cables.find((c) => c.label === label);
+  assert.deepEqual(ends(p, ex('IB-0043')), ['ib-leaf-b02 p1', 'gpu-srv-01 ib0', 'gpu-srv-01 ib1'], 'breakouts from the leaf');
+  assert.equal(C.describe(p, ex('MGT-0041')).lengthM, 45, 'the riser has its length set');
+  assert.ok(M.deviceById(p, 'ex-1').reversed, 'switches are mounted back to front');
+  assert.equal(M.typeOf(p, M.deviceById(p, 'ex-50').type).id, 'switch-osfp');
+  assert.deepEqual(p.deviceTypes.map((t) => t.id).slice(0, 3), ['switch-rj45', 'switch-qsfp', 'switch-osfp']);
+  assert.deepEqual(p.floors.map((f) => f.rowPitchM), [3, 2.4]);
+});
+
+test('deleting devices, racks, rows, floors and types removes their cables', () => {
+  const p = M.createExampleProject();
+  const total = p.cables.length;
+  const byLabel = (label) => p.cables.find((c) => c.label === label);
+  const drop = (name) => (p.devices = p.devices.filter((d) => d.name !== name));
+
+  // A device: cn-001 has three cables.
+  drop('cn-001');
+  assert.equal(M.pruneCables(p), 3);
+  assert.equal(p.cables.length, total - 3);
+
+  // A breakout loses only its leg on a deleted device…
+  const up = byLabel('IB-0055');
+  assert.deepEqual(ends(p, up), ['ib-leaf-b02 p31', 'core-sw-01 p7', 'core-sw-02 p7']);
+  drop('core-sw-02');
+  assert.equal(M.pruneCables(p), 6 + 4, 'six cables from Row A go, four breakouts from Row B lose a leg');
+  assert.equal(p.cables.length, total - 3 - 6, 'the six single cables to core-sw-02 go');
+  assert.deepEqual(up.b.map((e) => e && e.port), ['p7', null]);
+  // …and goes when it has none left, or loses its head.
+  drop('core-sw-01');
+  M.pruneCables(p);
+  assert.ok(!p.cables.includes(up));
+  const servers = byLabel('IB-0043');
+  drop('ib-leaf-b02');
+  M.pruneCables(p);
+  assert.ok(!p.cables.includes(servers));
+
+  // A rack, a floor, a row.
+  M.removeRack(p, 'r3');
+  assert.equal(C.cablesWithin(p, 'r3').length, 0);
+  assert.ok(p.cables.every((c) => M.cableEnds(c).every((x) => M.deviceById(p, x.end.device))));
+  const n = p.cables.length;
+  M.removeFloor(p, 'f2');
+  assert.equal(p.cables.length, n - 7, 'the archive and its riser');
+  M.removeRow(p, 'row1');
+  assert.ok(p.cables.every((c) => M.cableEnds(c).every((x) => M.deviceById(p, x.end.device))));
+  assert.equal(M.pruneCables(p), 0);
+
+  // A device type.
+  const q = M.createExampleProject();
+  M.deleteDeviceType(q, 'storage-enclosure');
+  assert.equal(q.cables.filter((c) => c.network === 'n-sas').length, 0, 'every SAS cable ends on an enclosure');
+  assert.equal(q.cables.length, total - 12 - 4, 'and four enclosures were on the management network');
+
+  // setRowRackCount removes the racks at the end, with their cables.
+  const r = M.createExampleProject();
+  M.setRowRackCount(r, 'row2', 1);
+  assert.equal(C.cablesWithin(r, 'r5').length + C.cablesWithin(r, 'r6').length, 0);
+  assert.ok(r.cables.some((c) => c.label === 'MGT-0030'), 'Row A uplinks stay');
+});
+
+test('pruning keeps the first cable on a port and clears lost networks', () => {
+  const p = M.createExampleProject();
+  const dupe = M.clone(p.cables[0]);
+  dupe.id = 'dupe';
+  p.cables.push(dupe);
+  p.cables[1].network = 'gone';
+  assert.equal(M.pruneCables(p), 2);
+  assert.ok(!p.cables.some((c) => c.id === 'dupe'));
+  assert.equal(p.cables[1].network, null);
+  assert.equal(M.pruneCables({ devices: [], cables: [] }), 0);
+});
+
+test('duplicating devices, racks, rows and floors copies the cables between the copies', () => {
+  const p = M.createExampleProject();
+  const total = p.cables.length;
+  const rack = M.duplicateRack(p, 'r1');
+  const inside = (id) => p.cables.filter((c) => M.cableEnds(c).every((x) => M.deviceById(p, x.end.device).loc.rack === id));
+  assert.equal(inside(rack.id).length, inside('r1').length, 'every cable within Rack A01 is copied');
+  assert.equal(p.cables.length, total + inside('r1').length, 'cables to other racks are not');
+  const copy = inside(rack.id).find((c) => ends(p, c)[0] === 'cn-013 eth0');
+  assert.deepEqual(ends(p, copy), ['cn-013 eth0', 'sw-mgmt-a04 swp1']);
+  assert.equal(copy.label, 'MGT-0042', 'labels continue their series');
+  assert.notEqual(copy.id, p.cables[0].id);
+  assert.equal(new Set(labelsOf(p)).size, p.cables.length);
+
+  const n = p.cables.length;
+  const row = M.duplicateRow(p, 'row2');
+  const breakouts = p.cables.slice(n).filter((c) => Array.isArray(c.b));
+  assert.equal(breakouts.length, 12 + 4, 'leaf breakouts to the servers and to the core switches');
+  assert.ok(breakouts.every((c) => M.locateRack(p, M.deviceById(p, c.a.device).loc.rack).row.id === row.id));
+
+  const m = p.cables.length;
+  const floor = M.duplicateFloor(p, 'f2');
+  assert.equal(p.cables.length - m, 6, 'the riser stays with the original floor');
+  assert.ok(p.cables.slice(m).every((c) => M.cableEnds(c).every((x) => M.locateRack(p, M.deviceById(p, x.end.device).loc.rack).floor.id === floor.id)));
+  assert.equal(M.pruneCables(M.clone(p)), 0, 'the copies are valid');
+  assert.equal(new Set(labelsOf(p)).size, p.cables.length, 'labels stay unique');
+
+  // copyCables on its own, with custom labels.
+  const q = M.createExampleProject();
+  const c0 = q.cables[0];
+  c0.label = 'uplink';
+  const moves = [{ id: c0.a.device, loc: { rack: 'r1', kind: 'u', at: 40 } }, { id: c0.b.device, loc: { rack: 'r1', kind: 'u', at: 47 } }];
+  const copies = M.copiesAt(q, moves);
+  q.devices.push(...copies);
+  const made = M.copyCables(q, new Map(moves.map((mv, i) => [mv.id, copies[i].id])));
+  assert.deepEqual(made.map((c) => c.label), ['uplink-2']);
+  assert.equal(made[0].a.device, copies[0].id);
+});
+
+test('changing a device type’s ports keeps cables by group and place', () => {
+  const p = M.createExampleProject();
+  const sw = M.typeOf(p, 'switch-rj45');
+  const old = M.clone(sw.ports);
+  const renamed = [
+    { name: 'ge-0/0/', first: 0, count: 48, connector: 'rj45', speedGbps: 1, side: 'front' },
+    { name: 'xe-0/1/', first: 0, count: 2, connector: 'sfp+', speedGbps: 10, side: 'front' },
+  ];
+  const lost = C.portChangeImpact(p, 'switch-rj45', renamed);
+  // swp51 and swp52 are places 3 and 4 of the second group, which now has two ports.
+  assert.deepEqual(lost.map((c) => c.label), ['ST-0003', 'MGT-0030', 'MGT-0031', 'MGT-0032', 'MGT-0041']);
+  const before = p.cables.length;
+  assert.equal(M.updateDeviceType(p, 'switch-rj45', { ports: renamed }), null);
+  assert.equal(p.cables.length, before - lost.length);
+  const first = p.cables.find((c) => c.label === 'MGT-0001');
+  assert.deepEqual(ends(p, first), ['cn-001 eth0', 'sw-mgmt-a01 ge-0/0/0'], 'swp1 was the first port of the first group');
+  assert.ok(p.cables.some((c) => ends(p, c).includes('sw-mgmt-a02 xe-0/1/0')), 'swp49 became xe-0/1/0');
+  assert.equal(M.pruneCables(M.clone(p)), 0);
+  assert.equal(M.remapPorts(p, 'nope', old), 0);
+  assert.deepEqual(C.portChangeImpact(p, 'switch-rj45', M.typeOf(p, 'switch-rj45').ports), [], 'no change, nothing lost');
+});
+
+test('cable labels continue their series', () => {
+  const p = M.createEmptyProject();
+  p.networks.push({ id: 'n1', name: 'InfiniBand', color: '#2f6fdb', firstLabel: 'IB-0001' });
+  assert.equal(M.nextCableLabel(p, 'n1'), 'IB-0001');
+  assert.equal(M.nextCableLabel(p, null), 'C-0001');
+  p.cables.push({ label: 'IB-0001' }, { label: 'IB-0009' }, { label: 'C-12' }, { label: 'IB-0003-x' });
+  assert.equal(M.nextCableLabel(p, 'n1'), 'IB-0010', 'past the highest of the series, keeping the width');
+  assert.equal(M.nextCableLabel(p, 'n1', new Set(['IB-0010', 'IB-0011'])), 'IB-0012', 'taken labels count');
+  assert.equal(M.nextCableLabel(p, null), 'C-0013');
+  p.cables.push({ label: 'IB-9999' });
+  assert.equal(M.nextCableLabel(p, 'n1'), 'IB-10000');
+  p.networks[0].firstLabel = 'X7';
+  assert.equal(M.nextCableLabel(p, 'n1'), 'X7', 'a custom first label');
+  p.networks[0].firstLabel = 'core';
+  assert.equal(M.nextCableLabel(p, 'n1'), 'core-0001', 'a label without a number starts a series');
+  assert.equal(M.nextLabelAfter(p, 'IB-0001'), 'IB-10000');
+  assert.equal(M.nextLabelAfter(p, 'riser'), 'riser-2');
+  assert.equal(M.defaultFirstLabel('InfiniBand'), 'INF-0001');
+  assert.equal(M.defaultFirstLabel('Storage 25G'), 'STO-0001');
+  assert.equal(M.defaultFirstLabel('25G'), '25G-0001');
+  assert.equal(M.defaultFirstLabel('机房'), 'C-0001');
+});
+
+test('a layout copy keeps the catalogs but no cables or networks', () => {
+  const ex = M.createExampleProject();
+  const p = M.copyLayout(ex);
+  assert.deepEqual([p.cables, p.networks, p.devices], [[], [], []]);
+  assert.deepEqual(p.cableTypes, ex.cableTypes);
+  assert.deepEqual(p.transceivers, ex.transceivers);
+  const q = M.createExampleProject();
+  q.cables[0].notes = 'changed';
+  assert.ok(!M.isPristineExample(q), 'cables count for an edited example');
+  const r = M.createExampleProject();
+  r.networks[0].color = '#000000';
+  assert.ok(!M.isPristineExample(r));
 });

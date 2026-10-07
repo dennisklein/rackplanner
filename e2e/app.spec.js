@@ -198,7 +198,7 @@ test('the floor map shows every row and opens a clicked rack', async ({ page }) 
   await expect(page.locator('.fm-rack')).toHaveCount(6);
 
   await page.click('.fm-metric [data-metric="power"]');
-  await expect(page.locator('.fm-rack[data-rack="r6"] .fm-val')).toHaveText('15.4 kW');
+  await expect(page.locator('.fm-rack[data-rack="r6"] .fm-val')).toHaveText('15.9 kW');
 
   await page.click('.fm-rack[data-rack="r5"]');
   await expect(page.locator('#scene')).toBeVisible();
@@ -632,7 +632,7 @@ test('a CSV export opens as a new plan', async ({ page }) => {
   await page.click('#open-file');
   await (await chooser).setFiles({ name: 'Hall 2 inventory.csv', mimeType: 'text/csv', buffer: fs.readFileSync(await csv.path()) });
   await expect(page.locator('#dlg-report')).toBeVisible();
-  await expect(page.locator('#report-list li')).toHaveCount(3);
+  await expect(page.locator('#report-list li')).toHaveCount(4);
   await page.click('#dlg-report button[value="ok"]');
   await expect(page.locator('#plan-name')).toHaveValue('Hall 2 inventory');
   expect(await planDevices(page)).toBe(65);
