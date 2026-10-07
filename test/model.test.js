@@ -579,7 +579,7 @@ test('the example is cabled without a refused state and with exactly the intende
     ['ST-0001', 'ceph-01 eth1 → sw-mgmt-a02 swp49', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp49 is the slower end']],
     ['ST-0002', 'ceph-02 eth1 → sw-mgmt-a02 swp50', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp50 is the slower end']],
     ['ST-0003', 'ceph-03 eth1 → sw-mgmt-a02 swp51', ['speed: Runs at 10 Gb/s, not 25 Gb/s: sw-mgmt-a02 swp51 is the slower end']],
-    ['IB-0026', 'ceph-03 ib1 → ib-leaf-a03 p11', ['reach: Needs 3.9 m: a QSFP56 DAC reaches 3 m']],
+    ['IB-0026', 'ceph-03 ib1 → ib-leaf-a03 p11', ['reach: Needs 4 m: a QSFP56 DAC reaches 3 m']],
   ]);
   const ex = (label) => p.cables.find((c) => c.label === label);
   assert.deepEqual(ends(p, ex('IB-0043')), ['ib-leaf-b02 p1', 'gpu-srv-01 ib0', 'gpu-srv-01 ib1'], 'breakouts from the leaf');
@@ -627,7 +627,11 @@ test('deleting devices, racks, rows, floors and types removes their cables', () 
   const n = p.cables.length;
   M.removeFloor(p, 'f2');
   assert.equal(p.cables.length, n - 7, 'the archive and its riser');
+  const inRow = C.cablesWithin(p, 'row1').length;
+  const beforeRow = p.cables.length;
+  assert.ok(inRow > 0 && inRow < beforeRow);
   M.removeRow(p, 'row1');
+  assert.equal(p.cables.length, beforeRow - inRow, 'only the row’s cables go');
   assert.ok(p.cables.every((c) => M.cableEnds(c).every((x) => M.deviceById(p, x.end.device))));
   assert.equal(M.pruneCables(p), 0);
 
@@ -723,6 +727,18 @@ test('changing a device type’s ports keeps cables by group and place', () => {
   assert.equal(moved.length, q.cables.filter((c) => M.cableEnds(c).some((x) => M.deviceById(q, x.end.device).type === 'switch-rj45')).length - lost.length, 'every other cable on these switches is on a renamed port');
   const mgt = moved.find((x) => x.cable.label === 'MGT-0001');
   assert.deepEqual(mgt.moves, [{ device: mgt.cable.b.device, from: 'swp1', to: 'ge-0/0/0' }]);
+});
+
+test('a port change that takes away a breakout’s leg names the cable and keeps its other leg', () => {
+  const p = M.createExampleProject();
+  const fewer = M.clone(M.typeOf(p, 'gpu-server').ports);
+  const ib = fewer.findIndex((g) => g.name === 'ib');
+  fewer[ib] = Object.assign({}, fewer[ib], { count: 3 });
+  assert.deepEqual(C.portChangeImpact(p, 'gpu-server', fewer).map((c) => c.label), ['IB-0044', 'IB-0046', 'IB-0048', 'IB-0050', 'IB-0052', 'IB-0054']);
+  assert.equal(M.updateDeviceType(p, 'gpu-server', { ports: fewer }), null);
+  assert.equal(p.cables.length, 147, 'no cable goes');
+  assert.deepEqual(p.cables.find((c) => c.label === 'IB-0044').b.map((e) => e && e.port), ['ib2', null]);
+  assert.deepEqual(p.cables.find((c) => c.label === 'IB-0043').b.map((e) => e && e.port), ['ib0', 'ib1']);
 });
 
 test('adding or removing a port group leaves the other groups’ cables on their ports', () => {

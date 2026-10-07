@@ -44,18 +44,23 @@
     return out;
   }
 
-  /** Names tell cable types and transceivers apart in cable schedules: a name used before gets a number. */
+  /**
+   * Names tell cable types and transceivers apart in cable schedules: a
+   * name used before gets a number no other entry has.
+   */
   function uniqueNames(list, kind, warnings) {
-    const used = new Set();
+    const used = new Set(list.map((t) => t.name));
+    const seen = new Set();
     for (const t of list) {
-      if (used.has(t.name)) {
+      if (seen.has(t.name)) {
         const base = t.name.slice(0, 56);
         let i = 2;
         while (used.has(`${base} ${i}`)) i++;
         warnings.push(`Renamed the ${kind} ${t.name} to ${base} ${i}: the name is used twice.`);
         t.name = `${base} ${i}`;
+        used.add(t.name);
       }
-      used.add(t.name);
+      seen.add(t.name);
     }
     return list;
   }
@@ -379,8 +384,9 @@
 
   function csvCell(value) {
     let s = String(value == null ? '' : value);
-    // Keep spreadsheet apps from evaluating cells as formulas.
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    // Keep spreadsheet apps from evaluating cells as formulas. A value that
+    // already looks guarded gets one more apostrophe, which parseCSV takes off.
+    if (/^'*[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
 
@@ -450,9 +456,9 @@
       row.push(cell);
       rows.push(row);
     }
-    // Undo the formula guard csvCell adds.
+    // Undo the formula guard csvCell adds: one apostrophe.
     return rows
-      .map((r) => r.map((v) => (/^'[=+\-@\t\r]/.test(v) ? v.slice(1) : v)))
+      .map((r) => r.map((v) => (/^'+[=+\-@\t\r]/.test(v) ? v.slice(1) : v)))
       .filter((r) => r.some((v) => v.trim() !== ''));
   }
 
@@ -644,19 +650,26 @@
   }
 
   const CABLE_HEADERS = {
-    label: ['label', 'cable', 'cable label', 'cable id'],
+    label: ['label', 'cable label', 'cable id', 'cable'],
     network: ['network', 'vlan'],
-    type: ['cable type', 'type', 'cable'],
+    // "Cable" comes last for the type, so that alone it is the label.
+    type: ['cable type', 'type', 'cable model', 'cable'],
     lengthM: ['length (m)', 'length m', 'metres', 'meters'],
     lengthKind: ['length'],
     leg: ['leg'],
     aDevice: ['a device', 'from device', 'from'],
     aPort: ['a port', 'from port'],
+    aFloor: ['a floor', 'from floor'],
+    aRow: ['a row', 'from row'],
     aRack: ['a rack', 'from rack'],
+    aPosition: ['a position', 'from position'],
     aTransceiver: ['a transceiver', 'from transceiver'],
     bDevice: ['b device', 'to device', 'to'],
     bPort: ['b port', 'to port'],
+    bFloor: ['b floor', 'to floor'],
+    bRow: ['b row', 'to row'],
     bRack: ['b rack', 'to rack'],
+    bPosition: ['b position', 'to position'],
     bTransceiver: ['b transceiver', 'to transceiver'],
     notes: ['notes', 'note', 'comment', 'comments'],
   };
@@ -664,7 +677,7 @@
   /**
    * Which column holds what: { label: 0, type: 2, … }. Aliases are tried
    * in rank order over all keys, and a column fills one key only, so
-   * "Cable type" is the type and "Cable" the label next to it.
+   * "Cable" is the label, or the type next to a "Label" or "Cable ID".
    */
   function cableColumns(header) {
     const col = {};
@@ -685,7 +698,7 @@
 
   /** True when CSV text is a cable schedule (it has A and B device columns) rather than a device inventory. */
   function isCablesCSV(text) {
-    const rows = parseCSV(String(text || '').split(/\r?\n/)[0]);
+    const rows = parseCSV(String(text || ''));
     const col = rows.length ? cableColumns(rows[0]) : {};
     return col.aDevice !== undefined && col.bDevice !== undefined && col.aPort !== undefined && col.bPort !== undefined;
   }
@@ -716,10 +729,35 @@
       if (!byName.has(k)) byName.set(k, []);
       byName.get(k).push(d);
     }
-    const findDevice = (name, rackName) => {
-      const list = byName.get(lower(name)) || [];
-      const inRack = rackName && list.find((d) => lower((M.rackById(project, d.loc.rack) || {}).name) === lower(rackName));
-      return inRack || list[0] || null;
+    const racks = new Map(M.allRacks(project).map((r) => [r.rack.id, r]));
+    const places = {
+      floor: (d) => racks.get(d.loc.rack).floor.name,
+      row: (d) => racks.get(d.loc.rack).row.name,
+      rack: (d) => racks.get(d.loc.rack).rack.name,
+      position: (d) => positionText(project, d),
+    };
+    const samePlace = (x, y) => lower(x).replace(/\s+/g, '').replace(/–/g, '-') === lower(y).replace(/\s+/g, '').replace(/–/g, '-');
+    /**
+     * The device a line's end names: { device } when one device has the
+     * name in the place the line gives (its floor, row, rack and position,
+     * where given; the name as written before another case), with `off` the
+     * part of the place no such device is in; { many } when that leaves
+     * more than one.
+     */
+    const findDevice = (row, side) => {
+      const name = get(row, `${side}Device`);
+      let list = byName.get(lower(name)) || [];
+      let off = null;
+      for (const [k, at] of Object.entries(places)) {
+        const v = get(row, side + k[0].toUpperCase() + k.slice(1));
+        if (!v || !list.length) continue;
+        const here = list.filter((d) => samePlace(at(d), v));
+        if (here.length) list = here;
+        else off = off || `${k} ${v}`;
+      }
+      const exact = list.filter((d) => d.name === name);
+      if (exact.length) list = exact;
+      return list.length > 1 ? { many: list.length } : { device: list[0] || null, off };
     };
     // By name as written, then by name in any case, then by id: an entry's name wins over another one's id.
     const findIn = (list, v) => {
@@ -744,7 +782,7 @@
       const leg = /^(\d+)\s*\/\s*(\d+)$/.exec(get(r, 'leg'));
       const type = lookup(project.cableTypes, get(r, 'type')).item;
       if (!leg && !(type && type.legs > 1)) return void cables.push({ line, rows: [r], lines: [line], at: null });
-      const key = [get(r, 'label'), get(r, 'aDevice'), get(r, 'aPort')].map(lower).join('\u0000');
+      const key = [get(r, 'label'), get(r, 'aFloor'), get(r, 'aRow'), get(r, 'aRack'), get(r, 'aDevice'), get(r, 'aPort')].map(lower).join('\u0000');
       let c = breakouts.get(key);
       if (!c) {
         breakouts.set(key, (c = { line, rows: [], lines: [], at: [], totals: [] }));
@@ -756,7 +794,9 @@
       c.totals.push(leg ? parseInt(leg[2], 10) : null);
     });
 
-    const many = C.connector(project);
+    // Labels given further down the file are taken too, so that a line without one doesn't get theirs.
+    const given = new Set(rows.slice(1).map((r) => get(r, 'label').slice(0, 40).trim()).filter(Boolean));
+    const many = C.connector(project, given);
     let added = 0;
     for (const c of cables) {
       const r = c.rows[0];
@@ -764,12 +804,16 @@
       const what = label ? `cable ${label}` : `line ${c.line}`;
       const skip = (why) => void warnings.push(`Skipped ${what}: ${why}.`);
       let problem = null;
+      const notes = [];
       const end = (row, side) => {
         const name = get(row, `${side}Device`);
         const port = get(row, `${side}Port`);
         if (!name && !port) return null;
-        const d = findDevice(name, get(row, `${side}Rack`));
-        if (!d) problem = problem || `there is no device ${name || 'without a name'}`;
+        const found = findDevice(row, side);
+        const d = found.device;
+        if (found.many) problem = problem || `${found.many} devices are named ${name}: give their floor, row and rack`;
+        else if (!d) problem = problem || `there is no device ${name || 'without a name'}`;
+        else if (found.off) notes.push(`${d.name} is not in ${found.off}, so it is the one in rack ${places.rack(d)}`);
         const e = { device: d ? d.id : '', port };
         const tr = get(row, `${side}Transceiver`);
         const t = lookup(project.transceivers, tr);
@@ -836,7 +880,10 @@
       const lengthM = lower(get(r, 'lengthKind')) !== 'estimated' && metres !== '' && Number.isFinite(Number(metres)) ? Number(metres) : null;
       const result = many.add(Object.assign(props, { network: network ? network.id : null, lengthM }));
       if (result.error) skip(result.error);
-      else added++;
+      else {
+        added++;
+        for (const n of notes) warnings.push(`${label ? `Cable ${label}` : `Line ${c.line}`}: ${n}.`);
+      }
     }
     return { added, warnings };
   }

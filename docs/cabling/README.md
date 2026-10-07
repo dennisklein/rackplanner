@@ -191,7 +191,10 @@ For `type: null`, the first cable type in catalog order that fits both ports
 and reaches the needed length; if none reaches, the first that fits:
 
 - copper and direct types fit when their plugs fit the ports' connectors
-  (an exact connector match is preferred to the same family);
+  (an exact connector match is preferred to the same family: a type that
+  matches only by family gives way to the first copper or direct type that
+  matches more exactly, while fiber types keep their place in the order; a
+  type with two different plugs is turned so that its plugs match best);
 - fiber types fit when, at each end, the port is a fiber port of the plug's
   kind, or a cage with a transceiver in the catalog that fits it, has the
   plug's fiber connector and mode, and reaches the length.
@@ -257,7 +260,10 @@ Refusals aside, problems are warnings that stay until fixed:
 - **Cable schedule CSV**: one row per cable (per leg for breakouts) with
   label, network, type, length and whether it is estimated, both ends with
   floor, row, rack, position, device, port and transceiver, speed, checks
-  and notes. **Open** reads it back into the current plan by device names.
+  and notes. **Open** reads it back into the current plan by device names,
+  told apart by the floor, row, rack and position given (and the name as
+  written before another case); a name it cannot tell apart is skipped
+  with a warning.
 - **PNG and SVG** of the cabling elevation and the fabric.
 
 ## 2. The Cabling workspace

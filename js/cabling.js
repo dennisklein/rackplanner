@@ -31,7 +31,8 @@
     const f = Math.pow(10, digits === undefined ? 2 : digits);
     return `${Math.round(m * f) / f} m`;
   }
-  const fmtNeed = (m) => fmtM(m, 1);
+  /** A needed length, rounded up to 0.1 m as an estimated length would be: never down to a limit it is past. */
+  const fmtNeed = (m) => fmtM(Math.ceil(m * 10 - 1e-6) / 10, 1);
   /** "25 Gb/s", "100 Mb/s". */
   function fmtSpeed(g) {
     if (!g) return '';
@@ -152,9 +153,11 @@
 
   // --------------------------------------------------------------- catalogs
 
-  function uniqueName(list, base) {
+  /** `name`, or with a number when `list` has it: "QSFP56 DAC 2". The base is cut so that the name keeps within 60 characters. */
+  function uniqueName(list, name) {
     const used = new Set(list.map((x) => x.name));
-    if (!used.has(base)) return base;
+    if (!used.has(name)) return name;
+    const base = name.slice(0, 56);
     let i = 2;
     while (used.has(`${base} ${i}`)) i++;
     return `${base} ${i}`;
@@ -345,17 +348,18 @@
   /**
    * connect for many cables in a row, reading the plan's ports and labels
    * once: { check(props), add(props) }. `check` says why connect would
-   * refuse a cable (or null) and `add` adds it like connect. Nothing else
-   * may change the plan's cables in between.
+   * refuse a cable (or null) and `add` adds it like connect. Labels it
+   * hands out skip `taken` (a Set) as well. Nothing else may change the
+   * plan's cables in between.
    */
-  function connector(project) {
+  function connector(project, taken) {
     const ctx = M.cableContext(project);
     let labels = null;
     const check = (props) => (project.cables.length >= L.cables ? `A plan holds ${L.cables} cables` : M.cableProblem(project, draftCable(props), ctx));
     const add = (props) => {
       const error = check(props);
       if (error) return { error };
-      labels = labels || M.labeler(project);
+      labels = labels || M.labeler(project, taken);
       const cable = finishCable(project, props || {}, M.uid('cb'), labels);
       project.cables.push(cable);
       M.claimPorts(ctx, cable);
@@ -572,14 +576,17 @@
 
   /**
    * The first fit in catalog order, except that a copper or direct type
-   * whose plugs only match by family is passed over while another copper or
-   * direct type in `fits` matches more ports exactly. Fiber types keep their
-   * place: they meet cages through transceivers.
+   * whose plugs only match by family gives way to the first copper or
+   * direct type in `fits` that matches the most ports exactly, wherever
+   * that stands. Fiber types keep their place: they meet cages through
+   * transceivers, so they neither win nor lose by it.
    */
   function firstFit(fits) {
     const direct = (f) => mediaOf(f.type).kind !== 'fiber';
-    const most = Math.max(-1, ...fits.filter(direct).map((f) => f.score));
-    return fits.find((f) => !direct(f) || f.score === most) || null;
+    const first = fits[0];
+    if (!first || !direct(first)) return first || null;
+    const most = Math.max(...fits.filter(direct).map((f) => f.score));
+    return first.score === most ? first : fits.find((f) => direct(f) && f.score === most);
   }
 
   /**
@@ -595,11 +602,13 @@
   function resolve(project, cable, metres, ctx) {
     const c = ctx || context(project);
     const ports = { a: endPort(c, cable.a), b: M.legsOf(cable).map((e) => (e ? endPort(c, e) : null)) };
+    // A single type with two different plugs goes the way that fits, and of two that fit, the one matching more ports exactly.
     const tryType = (t) => {
       const f = typeFit(c, t, cable, ports, metres, false);
-      if (f.ok || t.legs > 1 || t.connector === t.connectorB) return f;
+      if (t.legs > 1 || t.connector === t.connectorB) return f;
       const flipped = typeFit(c, t, cable, ports, metres, true);
-      return flipped.ok ? flipped : f;
+      if (f.ok !== flipped.ok) return f.ok ? f : flipped;
+      return flipped.score > f.score ? flipped : f;
     };
     let fit = null;
     const auto = !cable.type;
@@ -717,9 +726,7 @@
     if (needM === null && lengthAuto) {
       issues.push({ code: 'length', level: 'warn', text: 'The ends are on different floors: enter the length', short: 'No length' });
     } else if (!lengthAuto && needM !== null && cable.lengthM < needM - 1e-9) {
-      // The need rounded up, as an estimated length would be; never down to what the set length already is.
-      const shown = Math.ceil(needM * 10 - 1e-6) / 10;
-      issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs ${fmtNeed(shown)}`, short: 'Too short' });
+      issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs ${fmtNeed(needM)}`, short: 'Too short' });
     }
     const uses = cable.label ? c.labels.get(cable.label) || 0 : 0;
     if (uses > 1) {

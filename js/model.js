@@ -217,7 +217,8 @@
   const CONNECTOR_MAP = new Map(CONNECTORS.map((c) => [c.id, c]));
 
   /** Cable media: copper patch cords, direct cables (plugs on the cable) and fiber (needs optics at cages). */
-  const MEDIA = {
+  // Without a prototype, so that a name like "constructor" from a file is no media.
+  const MEDIA = Object.assign(Object.create(null), {
     cat6: { label: 'Cat6 copper', short: 'Cat6', kind: 'copper', plug: 'rj45' },
     cat6a: { label: 'Cat6a copper', short: 'Cat6a', kind: 'copper', plug: 'rj45' },
     cat8: { label: 'Cat8 copper', short: 'Cat8', kind: 'copper', plug: 'rj45' },
@@ -228,7 +229,7 @@
     om4: { label: 'Multimode fiber OM4', short: 'OM4', kind: 'fiber', mode: 'mmf', plug: 'lc' },
     om5: { label: 'Multimode fiber OM5', short: 'OM5', kind: 'fiber', mode: 'mmf', plug: 'lc' },
     os2: { label: 'Single-mode fiber OS2', short: 'OS2', kind: 'fiber', mode: 'smf', plug: 'lc' },
-  };
+  });
 
   const cableType = (id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM) => ({ id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM });
   const DEFAULT_CABLE_TYPES = [
@@ -619,6 +620,12 @@
     return { lc: 'om4', mpo: 'om4', sas: 'sas' }[c.family] || 'cat6a';
   }
 
+  /**
+   * A catalog name from untrusted input: cable schedules mark picked types
+   * and transceivers with "(auto)", so a name doesn't end in it.
+   */
+  const catalogName = (v) => str(v, 60).replace(/(\s*\(auto\))+$/i, '').trim();
+
   /** A valid cable type from untrusted input (the id is left to the caller). Plugs that don't suit the media fall back to its usual one. */
   function cleanCableType(raw) {
     const r = isObj(raw) ? raw : {};
@@ -631,7 +638,7 @@
     const lengths = (Array.isArray(r.lengthsM) ? r.lengthsM : []).map((v) => clampNum(v, 0.1, 10000, null)).filter((v) => v !== null);
     return {
       id: str(String(r.id == null ? '' : r.id), 40),
-      name: str(r.name, 60) || `${plugs} ${MEDIA[media].short}`,
+      name: catalogName(r.name) || `${plugs} ${MEDIA[media].short}`,
       media,
       connector,
       connectorB,
@@ -652,7 +659,7 @@
     const speedGbps = clampNum(r.speedGbps, 0, 1600, connectorById(connector).speedGbps);
     return {
       id: str(String(r.id == null ? '' : r.id), 40),
-      name: str(r.name, 60) || `${connectorById(connector).label} ${speedGbps}G ${mode === 'smf' ? 'LR' : 'SR'}`,
+      name: catalogName(r.name) || `${connectorById(connector).label} ${speedGbps}G ${mode === 'smf' ? 'LR' : 'SR'}`,
       connector,
       fiber,
       mode,
@@ -1910,6 +1917,15 @@
     return changed;
   }
 
+  const LABEL_MAX = 40;
+
+  /** formatSerial within the length of a label: a number that outgrows it shortens the head (LLL-9999 → LL-10000). */
+  function formatLabel(s, n) {
+    const num = String(n).padStart(s.width, '0');
+    const head = s.head.slice(0, Math.max(0, LABEL_MAX - num.length - s.tail.length));
+    return (head + num + s.tail).slice(0, LABEL_MAX).trim();
+  }
+
   /** Series of a label to continue: IB-0009 → IB-0010; a label without a number starts one (uplink → uplink-0001). */
   const labelSeries = (seed) => parseSerial(seed) || { head: `${seed}-`, num: 1, width: 4, tail: '' };
 
@@ -1938,18 +1954,18 @@
       next(seed, inclusive) {
         const s = labelSeries(seed);
         const max = Math.max(inclusive ? s.num - 1 : s.num, highest.get(`${s.head}\u0000${s.tail}`) || 0);
-        return take(firstFree(used, max + 1, (n) => formatSerial(s, n)));
+        return take(firstFree(used, max + 1, (n) => formatLabel(s, n)));
       },
       /** Counts `label` as taken (a label given by hand) and returns it. */
       take,
       /** `seed` itself when free, else the first free label of its series after it (not past the highest). */
       from(seed) {
         const s = labelSeries(seed);
-        return take(firstFree(used, s.num, (n) => formatSerial(s, n)));
+        return take(firstFree(used, s.num, (n) => formatLabel(s, n)));
       },
       /** The label after `label`: IB-0009 → IB-0010 (past the highest used), uplink → uplink-2. */
       after(label) {
-        return parseSerial(label) ? this.next(label, false) : take(firstFree(used, 2, (i) => `${label}-${i}`));
+        return parseSerial(label) ? this.next(label, false) : take(firstFree(used, 2, (i) => `${label.slice(0, LABEL_MAX - 1 - String(i).length)}-${i}`));
       },
     };
   }

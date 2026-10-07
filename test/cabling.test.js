@@ -171,6 +171,11 @@ test('needed lengths follow the cable’s way through racks, trays and rows', ()
   M.deviceById(p, 'n1').slackM = null;
   // Across rows: the floor's row pitch for every row between them.
   near(need(end('n1', 'eth0'), end('sw4', 'swp1')).m, nDrop + swDrop + 1 + 3 + slack);
+  p.devices.push(M.newDevice({ id: 'sw5', type: 'switch-rj45', name: 'sw5', reversed: true, loc: { rack: 'r5', kind: 'u', at: 1 } }));
+  near(need(end('n1', 'eth0'), end('sw5', 'swp1')).m, nDrop + swDrop + 1 + 0.6 + 3 + slack, 'second rack of the next row');
+  const rowC = M.addRow(p, 'f1', { racks: 2 });
+  p.devices.push(M.newDevice({ id: 'sw8', type: 'switch-rj45', name: 'sw8', reversed: true, loc: { rack: rowC.racks[1].id, kind: 'u', at: 1 } }));
+  near(need(end('n1', 'eth0'), end('sw8', 'swp1')).m, nDrop + swDrop + 1 + 0.6 + 2 * 3 + slack, 'two row pitches');
   p.floors[0].rowPitchM = 2;
   near(need(end('n1', 'eth0'), end('sw4', 'swp1')).m, nDrop + swDrop + 1 + 2 + slack);
   // Across floors there is no estimate.
@@ -259,6 +264,20 @@ test('auto types follow the catalog order, fiber types too', () => {
   assert.equal(type('IB-0001'), 'dac-qsfp56');
 });
 
+test('an exact DAC added after fiber still wins over the same-family DAC ahead of that fiber', () => {
+  const p = plan();
+  const c = link(p, end('sw1', 'swp49'), end('sw3', 'swp49'));
+  const get = () => C.describe(p, c);
+  assert.equal(get().type.id, 'dac-sfp28', 'SFP+ to SFP+ by family');
+  const order = p.cableTypes.map((t) => t.id);
+  assert.ok(order.indexOf('dac-sfp28') < order.indexOf('lc-om4'), 'fiber between the two DACs');
+  const sfpp = C.addCableType(p, { name: 'SFP+ DAC', media: 'dac', connector: 'sfp+', speedGbps: 10, maxM: 5, lengthsM: [1, 2, 3, 5] });
+  assert.deepEqual([get().type.id, get().ends.map((e) => e.transceiver), get().issues], [sfpp.id, [null, null], []]);
+  // Fiber placed ahead of both keeps its place.
+  C.moveCableType(p, 'lc-om4', 0);
+  assert.equal(get().type.id, 'lc-om4');
+});
+
 test('single cable types with two different plugs fit either way round', () => {
   const p = plan();
   const t = C.addCableType(p, { name: 'QSFP56 to SFP28 DAC', media: 'dac', connector: 'qsfp56', connectorB: 'sfp28', speedGbps: 25, maxM: 3, lengthsM: [1, 2, 3] });
@@ -266,6 +285,20 @@ test('single cable types with two different plugs fit either way round', () => {
   const r = C.resolve(p, c, 1);
   assert.deepEqual([r.type.id, r.flip, r.fits.a, r.fits.b], [t.id, true, true, [true]]);
   assert.deepEqual(codes(p, c), ['speed']);
+});
+
+test('a type with two plugs of one family turns to match the ports exactly, whichever end is A', () => {
+  const run = (a, b, named) => {
+    const p = plan();
+    const t = C.addCableType(p, { name: 'SFP28 to SFP+ DAC', media: 'dac', connector: 'sfp+', connectorB: 'sfp28', speedGbps: 10, maxM: 5, lengthsM: [1, 2, 3, 5] });
+    C.moveCableType(p, t.id, 0);
+    const r = C.resolve(p, link(p, a, b, named ? { type: t.id } : {}), 1);
+    return [r.type.id === t.id, r.flip];
+  };
+  // Port order: sn1 eth1 is SFP28, sw3 swp49 is SFP+.
+  assert.deepEqual(run(end('sn1', 'eth1'), end('sw3', 'swp49')), [true, true], 'picked, turned so both plugs match');
+  assert.deepEqual(run(end('sw3', 'swp49'), end('sn1', 'eth1')), [true, false], 'the same with the ends swapped');
+  assert.deepEqual(run(end('sn1', 'eth1'), end('sw3', 'swp49'), true), [true, true], 'named, it turns the same way');
 });
 
 test('fiber cables plug straight into fiber ports and need optics only at cages', () => {
@@ -299,7 +332,7 @@ test('named fiber types get their transceivers picked within reach, or use the o
   C.updateCable(p, cable.id, { a: end('n1', 'ib0', 'sfp-10g-sr') });
   assert.deepEqual(get().issues.map((i) => [i.code, i.text, i.short]), [['optics', 'SFP+ 10G SR does not fit n1 ib0 (QSFP56)', 'Wrong optics']]);
   C.updateCable(p, cable.id, { a: end('n1', 'ib0', 'qsfp28-100g-lr4') });
-  assert.deepEqual(get().issues.map((i) => i.text).slice(0, 1), ['QSFP28 100G LR4 does not take MPO multimode fiber']);
+  assert.deepEqual(get().issues.map((i) => [i.code, i.text]), [['optics', 'QSFP28 100G LR4 does not take MPO multimode fiber']]);
   // Without a fitting transceiver in the catalog.
   C.updateCable(p, cable.id, { a: end('n1', 'ib0') });
   p.transceivers = p.transceivers.filter((t) => !t.connector.startsWith('qsfp'));
@@ -322,12 +355,12 @@ test('every check says what is wrong', () => {
     ['speed', 'note', 'Runs at 10 Gb/s, not 25 Gb/s: sw1 swp49 is the slower end', 'Runs at 10G'],
   ]);
   const reach = link(p, end('n1', 'ib0'), end('leaf3', 'p1'), { type: 'dac-qsfp56' });
-  assert.deepEqual(C.describe(p, reach).issues.map((i) => [i.code, i.text, i.short]), [['reach', 'Needs 3.5 m: a QSFP56 DAC reaches 3 m', 'Too long']]);
+  assert.equal(C.describe(p, reach).needM, 3.51);
+  assert.deepEqual(C.describe(p, reach).issues.map((i) => [i.code, i.text, i.short]), [['reach', 'Needs 3.6 m: a QSFP56 DAC reaches 3 m', 'Too long']], 'the need rounded up');
   assert.equal(C.describe(p, reach).lengthM, null, 'no stock length either, but one warning is enough');
   p.floors[0].rowPitchM = 20;
   const stock = link(p, end('sn1', 'eth0'), end('sw4', 'swp1'));
-  const needs = C.fmtM(C.neededLength(p, stock).m, 1);
-  assert.deepEqual(C.describe(p, stock).issues.map((i) => [i.code, i.text, i.short]), [['stock', `Needs ${needs}: the longest Cat6a patch cord is 20 m`, 'No stock length']]);
+  assert.deepEqual(C.describe(p, stock).issues.map((i) => [i.code, i.text, i.short]), [['stock', 'Needs 23.2 m: the longest Cat6a patch cord is 20 m', 'No stock length']]);
   const type = link(p, end('osw', 'p1'), end('sw1', 'swp2'));
   assert.deepEqual(codes(p, type), ['type']);
   const floors = link(p, end('n2', 'eth0'), end('sw6', 'swp1'));
@@ -350,6 +383,23 @@ test('every check says what is wrong', () => {
   const twice = link(p, end('n3', 'eth0'), end('sw1', 'swp4'), { label: 'C-0001' });
   assert.deepEqual(C.describe(p, twice).issues.map((i) => [i.code, i.text, i.short]), [['label', 'The label C-0001 is used twice', 'Label used twice']]);
   assert.deepEqual(codes(p, p.cables[0]), ['plug', 'plug', 'label'], 'both cables with the label are flagged');
+});
+
+test('a need just past a limit never reads as the limit', () => {
+  const p = plan();
+  const dac = link(p, end('n1', 'ib0'), end('leaf3', 'p1'), { type: 'dac-qsfp56' });
+  M.rackById(p, 'r1').slackM = 0;
+  M.deviceById(p, 'n1').slackM = 0.06;
+  assert.equal(C.describe(p, dac).needM, 3.02);
+  assert.deepEqual(texts(p, dac), ['Needs 3.1 m: a QSFP56 DAC reaches 3 m']);
+  // The longest stock length, by 2 cm.
+  const cat = link(p, end('n2', 'eth0'), end('sw3', 'swp1'));
+  const before = C.describe(p, cat).needM;
+  M.deviceById(p, 'n2').slackM = Math.round((20.02 - before + 0.3) * 100) / 100;
+  assert.equal(C.describe(p, cat).needM, 20.02);
+  assert.deepEqual(texts(p, cat), ['Needs 20.1 m: the longest Cat6a patch cord is 20 m']);
+  M.deviceById(p, 'n2').slackM = Math.round((20 - before + 0.3) * 100) / 100;
+  assert.deepEqual([C.describe(p, cat).needM, texts(p, cat)], [20, []], 'exactly the longest one is fine');
 });
 
 test('the order list counts stock lengths, lengths made to measure and transceivers', () => {
@@ -577,4 +627,46 @@ test('formats', () => {
   assert.equal(C.shortSpeed(400), '400G');
   assert.equal(C.fmtRatio(2.75), '2.8:1');
   assert.equal(C.fmtRatio(null), '–');
+});
+
+test('fiber breakouts get optics at the head and at every used leg, and the order list counts each', () => {
+  const p = plan();
+  const t = C.addCableType(p, { name: 'MPO to 4 × LC OM4', media: 'om4', connector: 'mpo', connectorB: 'lc', legs: 4, lengthsM: [] });
+  p.devices.push(M.newDevice({ id: 'sn2', type: 'storage-node', name: 'sn2', loc: { rack: 'r1', kind: 'u', at: 34 } }));
+  const bo = link(p, end('leaf1', 'p3'), [end('sn1', 'eth1'), end('sn2', 'eth1'), null, null], { type: t.id });
+  const d = C.describe(p, bo);
+  assert.deepEqual(d.ends.map((e) => [e.role, e.leg, e.transceiver.id]), [['a', null, 'qsfp56-200g-sr4'], ['b', 0, 'sfp28-25g-sr'], ['b', 1, 'sfp28-25g-sr']]);
+  assert.deepEqual(d.legSpeedsGbps, [25, 25, null, null]);
+  assert.deepEqual(d.issues.map((i) => i.text), ['Runs at 25 Gb/s, not 50 Gb/s: sn1 eth1 is the slower end']);
+  assert.deepEqual(C.billOfMaterials(p).transceivers.map((x) => [x.transceiver.id, x.count]), [['sfp28-25g-sr', 2], ['qsfp56-200g-sr4', 1]]);
+});
+
+test('moving a device, rack or row keeps its cables, and the estimates follow', () => {
+  const p = plan();
+  const c = link(p, end('n1', 'eth0'), end('sw4', 'swp1'));
+  assert.ok(M.moveRack(p, 'r4', 'row1', 1));
+  assert.equal(p.cables.length, 1);
+  near(C.describe(p, c).needM, 10 * U + 0.5 * U + 1 + 0.6 + 0.8, 'next to r1 now');
+  const q = plan();
+  const k = link(q, end('n1', 'eth0'), end('sw4', 'swp1'));
+  assert.ok(M.moveRow(q, 'row2', 'f2', 0));
+  assert.deepEqual([q.cables.length, C.describe(q, k).needM, codes(q, k)], [1, null, ['length']], 'on another floor now');
+  const s = plan();
+  const r = link(s, end('n1', 'eth0'), end('sw1', 'swp1'));
+  M.deviceById(s, 'n1').loc.at = 40;
+  assert.equal(C.describe(s, r).needM, 2.56);
+});
+
+test('a transceiver named on a copper or DAC end is ignored, a cable’s rating limits its speed, and labels count their uses', () => {
+  const p = plan();
+  const c = link(p, end('sn1', 'eth1', 'sfp28-25g-sr'), end('sw3', 'swp49'));
+  const d = C.describe(p, c);
+  assert.deepEqual([d.type.id, d.ends.map((e) => e.transceiver)], ['dac-sfp28', [null, null]]);
+  assert.deepEqual(C.billOfMaterials(p).transceivers, []);
+  assert.equal(C.deleteTransceiver(p, 'sfp28-25g-sr'), '1 cable end uses this transceiver', 'still named, so still kept');
+  const q28 = C.addCableType(p, { name: 'QSFP28 DAC', media: 'dac', connector: 'qsfp28', speedGbps: 100, maxM: 5, lengthsM: [1, 2, 3, 5] });
+  const r = link(p, end('n1', 'ib0'), end('leaf1', 'p1'), { type: q28.id });
+  assert.deepEqual(C.describe(p, r).issues.map((i) => [i.code, i.text, i.short]), [['speed', 'Runs at 100 Gb/s, not 200 Gb/s: the QSFP28 DAC is rated 100 Gb/s', 'Runs at 100G']]);
+  for (const [n, s] of [['n1', 'swp1'], ['n2', 'swp2'], ['n3', 'swp3']]) link(p, end(n, 'eth0'), end('sw1', s), { label: 'X' });
+  assert.deepEqual(C.describe(p, p.cables.find((x) => x.label === 'X')).issues.map((i) => [i.text, i.short]), [['The label X is used 3 times', 'Label used 3 times']]);
 });
