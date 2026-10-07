@@ -488,6 +488,14 @@ test('port groups are written as patterns and read back', () => {
   for (const g of groups) assert.deepEqual(M.parsePortPattern(M.portPattern(g)), g.count ? { name: g.name, first: g.first, count: g.count } : { name: g.name });
   assert.deepEqual(M.parsePortPattern(' ib[0 – 3] '), { name: 'ib', first: 0, count: 4 });
   for (const bad of ['', 'swp[4-1]', '[x]', 'a[1-2]b', 'a|b', '[1-2000]', 'x[1-2]]']) assert.equal(M.parsePortPattern(bad), null, bad);
+  // Each refused pattern says why: a well-formed range over the limit is no syntax error.
+  assert.equal(M.portPatternProblem('eth[1-2000]'), `A device type has at most ${M.LIMITS.ports} ports`);
+  assert.equal(M.portPatternProblem('eth[1-1024]'), null);
+  assert.match(M.portPatternProblem('swp[4-1]'), /counts down/);
+  assert.match(M.portPatternProblem('p[10000]'), /up to 9999/);
+  assert.match(M.portPatternProblem('a|b'), /“a\|b” isn’t a port name or a range/);
+  assert.match(M.portPatternProblem('  '), /needs a name/);
+  for (const ok of ['bmc', '[1-24]', ' ib[0 – 3] ']) assert.equal(M.portPatternProblem(ok), null, ok);
 
   assert.deepEqual(groups[3], { name: 'bmc', connector: 'rj45', speedGbps: 1, side: 'rear' }, 'a single port has no first or count');
   assert.deepEqual(groups[4], { name: 'eth', first: 7, count: 1, connector: 'sfp+', speedGbps: 10, side: 'rear' }, 'speed defaults to the connector’s');
@@ -495,6 +503,17 @@ test('port groups are written as patterns and read back', () => {
   assert.equal(M.cleanPortGroup({ name: 'x', connector: 'toslink' }), null, 'unknown connector');
   assert.equal(M.cleanPortGroup({ name: '', connector: 'rj45' }), null, 'a single port needs a name');
   assert.equal(M.cleanPortGroup({ name: 'a|b[1]', connector: 'rj45', side: 'front' }).name, 'ab1', 'characters used by keys and patterns are dropped');
+});
+
+test('portsProblem names what cleanPorts would drop', () => {
+  const sw = (name, first, count) => ({ name, first, count, connector: 'rj45' });
+  assert.equal(M.portsProblem([sw('swp', 1, 48), { name: 'bmc', connector: 'rj45' }]), null);
+  assert.equal(M.portsProblem([]), null);
+  assert.equal(M.portsProblem([sw('swp', 1, 4), sw('swp', 4, 2)]), 'Port swp4 is named twice');
+  assert.equal(M.portsProblem([sw('swp', 1, 4), { name: 'swp2', connector: 'sfp+' }]), 'Port swp2 is named twice');
+  assert.match(M.portsProblem([{ name: 'x', connector: 'toslink' }]), /needs a name/);
+  assert.equal(M.portsProblem([sw('a', 1, 1000), sw('b', 1, 25)]), 'A device type has at most 1024 ports');
+  assert.equal(M.portsProblem(Array.from({ length: 33 }, (_, i) => ({ name: `p${i}`, connector: 'rj45' }))), 'A device type has at most 32 port groups');
 });
 
 test('device types expand their ports and drop groups that clash or overflow', () => {

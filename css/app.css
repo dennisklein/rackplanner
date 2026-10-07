@@ -233,6 +233,7 @@ p { margin: 0; }
 .menu-right { left: auto; right: 0; }
 .menu-up { top: auto; bottom: calc(100% + 6px); }
 .menu-rows { max-height: 60vh; overflow: auto; }
+#cat-pg-menu { overflow-y: auto; overscroll-behavior: contain; }
 .menu button[aria-checked="true"] { background: var(--surface-3); }
 .menu button[aria-checked="true"] span { font-weight: 600; }
 .menu button span .ic { vertical-align: -2px; }
@@ -629,7 +630,7 @@ kbd {
 .seg span { display: flex; align-items: center; gap: 5px; padding: 0 11px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .seg label + label span { border-left: 1px solid var(--line-strong); }
 .seg input:checked + span { background: var(--ink); color: var(--surface); }
-.seg input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: -4px; }
+.seg input:focus-visible + span { outline: 2px solid var(--tape); outline-offset: -3px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { position: relative; display: flex; }
@@ -688,8 +689,11 @@ kbd {
 .dlg-sm { width: min(400px, calc(100vw - 32px)); }
 .dlg-wide { width: min(760px, calc(100vw - 32px)); }
 .dlg-shell { display: flex; flex-direction: column; max-height: inherit; }
-.dlg .tabs { margin-top: 6px; height: 32px; --seg-pad: 12px; }
-.dlg-body.catalog { display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-auto-rows: max-content; gap: 16px; align-items: start; min-height: 360px; }
+.dlg .tabs { margin-top: 6px; height: 32px; --seg-pad: 12px; max-width: 100%; flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.dlg .tabs > button { flex: none; white-space: nowrap; }
+/* Wide enough for a cable type's sub line and the port table beside the list. */
+#dlg-catalog { width: min(880px, calc(100vw - 32px)); }
+.dlg-body.catalog { display: grid; grid-template-columns: 290px minmax(0, 1fr); grid-auto-rows: max-content; gap: 16px; align-items: start; min-height: 360px; }
 .cat-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; padding: 2px; }
 .cat-item {
   position: relative;
@@ -712,11 +716,49 @@ kbd {
 .cat-meta { display: flex; flex-direction: column; min-width: 0; }
 .cat-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-sub { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Cable types and transceivers say more: their sub line takes two lines when it needs them. */
+#cat-list:is([data-tab="cables"], [data-tab="transceivers"]) .cat-sub { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .cat-count { font: 500 11.5px/1 var(--font-mono); color: var(--ink-3); padding: 3px 6px; border-radius: 3px; background: var(--surface-3); }
 .cat-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .cat-preview { padding: 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; }
 .cat-preview svg { width: 100%; max-width: 360px; height: auto; max-height: 200px; }
-.cat-actions { display: flex; align-items: center; gap: 8px; }
+.cat-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cat-form input:disabled { opacity: .55; }
+.field-hint { font-size: 11.5px; color: var(--ink-3); }
+
+/* Catalog: a device type's General | Ports switch, its ports, and the drawings of cables and transceivers. */
+.cat-subs { height: 30px; align-self: flex-start; flex: none; }
+.cat-subs > button { font-size: 13px; }
+.cat-preview-2 { grid-template-columns: 34px minmax(0, 1fr); gap: 10px 8px; align-items: center; justify-items: start; }
+.cat-preview-2 svg { max-width: 380px; }
+.cat-side { font: 600 10.5px/1 var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+/* On a phone the port table scrolls sideways rather than squeezing the names. */
+.pt-wrap { position: relative; overflow-x: auto; margin: 0 -4px; }
+.pt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pt-table td:first-child input { min-width: 104px; }
+.pt-table th { text-align: left; font-weight: 500; font-size: 11.5px; color: var(--ink-3); padding: 0 4px 6px; }
+.pt-table td { padding: 3px 4px; }
+.pt-table :where(input, select) { height: 30px; padding: 0 6px; font-size: 13px; }
+.pt-table td:first-child { width: 30%; }
+.pt-table td:nth-child(2) select { min-width: 90px; }
+.pt-table td:nth-child(3) select { min-width: 64px; }
+.pt-table td:nth-child(4) select { min-width: 66px; }
+.pt-table .pt-count { text-align: right; color: var(--ink-2); padding-right: 6px; }
+.pt-table td:last-child { width: 32px; }
+.cat-slack-hint { align-self: end; padding-bottom: 8px; }
+.cat-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--ink-2); padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); }
+.cat-note .ic { flex: none; margin-top: 2px; color: var(--ink-3); }
+.cat-art .ca-cord { fill: none; stroke: var(--ink-2); stroke-width: 2.6; stroke-linecap: round; }
+.cat-art .ca-leg { stroke-width: 1.7; }
+.cat-art .ca-plug { fill: var(--surface-3); stroke: var(--ink-3); stroke-width: .8; }
+.cat-art .ca-fin { fill: none; stroke: var(--ink-3); stroke-width: .6; opacity: .7; }
+.cat-art .ca-face { fill: var(--ink-3); }
+.cat-art .ca-socket { fill: var(--surface); }
+.cat-art .ca-bail { fill: none; stroke-width: 2; stroke-linejoin: round; }
+/* A radio segment that fills its field: Front to front | Back to front. */
+.seg-fill { display: flex; }
+.seg-fill label { flex: 1; }
+.seg-fill span { flex: 1; justify-content: center; white-space: nowrap; }
 .plan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .plan-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .plan-item.is-current { border-color: var(--tape-edge); background: var(--surface-2); }
@@ -735,6 +777,7 @@ kbd {
 .dlg-sub.mono { font-family: var(--font-mono); font-size: 12.5px; }
 .dlg-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
 .dlg-body p { color: var(--ink-2); }
+.dlg-body .form-error { color: var(--danger); }
 .dlg-foot {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2);

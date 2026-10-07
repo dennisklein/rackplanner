@@ -769,15 +769,25 @@ test.describe('offline', () => {
     page.on('request', (r) => {
       if (!r.url().startsWith('http://127.0.0.1')) external.push(r.url());
     });
+    // After the first visit, before the worker serves anything, every script
+    // the page needs is precached: the planner opens offline from then on.
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    const precached = await page.evaluate(async () => {
+      const keys = await (await caches.open('rackplanner-v4')).keys();
+      return keys.map((r) => new URL(r.url).pathname);
+    });
+    const scripts = await page.evaluate(() => [...document.scripts].filter((s) => s.src).map((s) => new URL(s.src).pathname));
+    expect(scripts.length).toBeGreaterThan(4);
+    expect(precached).toEqual(expect.arrayContaining(scripts));
     await page.reload();
     await expect(devices(page)).toHaveCount(37);
     expect(await page.evaluate(() => document.fonts.check('600 12px "IBM Plex Mono"'))).toBe(true);
     await page.evaluate(() => navigator.serviceWorker.ready);
     const cached = await page.evaluate(async () => {
-      const keys = await (await caches.open('rackplanner-v3')).keys();
+      const keys = await (await caches.open('rackplanner-v4')).keys();
       return keys.map((r) => new URL(r.url).pathname);
     });
-    expect(cached).toEqual(expect.arrayContaining(['/index.html', '/js/app.js', '/js/io.js', '/css/fonts.css', '/fonts/ibm-plex-mono-latin-600-normal.woff2']));
+    expect(cached).toEqual(expect.arrayContaining(['/index.html', '/js/app.js', '/js/cabling.js', '/js/io.js', '/css/fonts.css', '/fonts/ibm-plex-mono-latin-600-normal.woff2']));
     expect(external).toEqual([]);
   });
 });

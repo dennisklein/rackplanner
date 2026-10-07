@@ -533,6 +533,30 @@
     return out;
   }
 
+  /**
+   * Why the port groups `list` cannot be a device type's ports as given, or
+   * null: a group without a connector or name, a port named twice, or more
+   * than 32 groups or 1024 ports (cleanPorts would drop those silently).
+   */
+  function portsProblem(list) {
+    const groups = Array.isArray(list) ? list : [];
+    if (groups.length > LIMITS.portGroups) return `A device type has at most ${LIMITS.portGroups} port groups`;
+    const names = new Set();
+    let total = 0;
+    for (const raw of groups) {
+      const g = cleanPortGroup(raw);
+      if (!g) return 'A port group needs a name, like bmc, or a range, like swp[1-48], and a connector';
+      const own = groupNames(g);
+      total += own.length;
+      if (total > LIMITS.ports) return `A device type has at most ${LIMITS.ports} ports`;
+      for (const n of own) {
+        if (names.has(n)) return `Port ${n} is named twice`;
+        names.add(n);
+      }
+    }
+    return null;
+  }
+
   /** Every port of a device type in catalog order: [{ name, group, index, connector, speedGbps, side }]. */
   function expandPorts(type) {
     const out = [];
@@ -552,16 +576,28 @@
 
   /** Reads a pattern like portPattern writes: { name, first, count }, { name } for one port, or null. */
   function parsePortPattern(text) {
+    return portPatternProblem(text) ? null : readPortPattern(text);
+  }
+  const PORT_RANGE = /^(.*?)\[\s*(\d+)\s*(?:[-–]\s*(\d+)\s*)?\]$/;
+  function readPortPattern(text) {
     const t = String(text == null ? '' : text).trim();
-    const m = /^(.*?)\[\s*(\d+)\s*(?:[-–]\s*(\d+)\s*)?\]$/.exec(t);
-    if (m) {
-      const first = parseInt(m[2], 10);
-      const last = m[3] === undefined ? first : parseInt(m[3], 10);
-      const name = m[1].trim();
-      if (last < first || last - first + 1 > LIMITS.ports || first > 9999 || portName(name) !== name) return null;
-      return { name, first, count: last - first + 1 };
-    }
-    return t && portName(t) === t ? { name: t } : null;
+    const m = PORT_RANGE.exec(t);
+    if (!m) return { name: t };
+    const first = parseInt(m[2], 10);
+    const last = m[3] === undefined ? first : parseInt(m[3], 10);
+    return { name: m[1].trim(), first, count: last - first + 1 };
+  }
+  /** Why `text` is no pattern parsePortPattern reads (a sentence), or null when it is one. */
+  function portPatternProblem(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return 'A port group needs a name, like bmc, or a range, like swp[1-48]';
+    const g = readPortPattern(t);
+    if (portName(g.name) !== g.name) return `“${t}” isn’t a port name or a range like swp[1-48]`;
+    if (g.count === undefined) return null;
+    if (g.count < 1) return `“${t}” counts down: put the lower number first, like swp[1-48]`;
+    if (g.first > 9999) return 'Port numbers go up to 9999';
+    if (g.count > LIMITS.ports) return `A device type has at most ${LIMITS.ports} ports`;
+    return null;
   }
 
   // --------------------------------------------------------------- catalogs
@@ -2335,10 +2371,12 @@
     plugFits,
     cleanPortGroup,
     cleanPorts,
+    portsProblem,
     groupNames,
     expandPorts,
     portPattern,
     parsePortPattern,
+    portPatternProblem,
     cleanDeviceType,
     cleanRackType,
     mediaConnectors,

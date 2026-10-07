@@ -11,6 +11,7 @@
   'use strict';
 
   const M = window.RP.model;
+  const C = window.RP.cabling;
   const IO = window.RP.io;
   const R = window.RP.render;
   const G = R.geometry;
@@ -276,6 +277,9 @@
     history.key = null;
     persist();
     render();
+    // Text refused for the plan as it was belongs to no field of this one.
+    cat.keep = null;
+    cat.error = '';
     if ($('#dlg-catalog').open) renderCatalog();
   }
   function undo() {
@@ -745,11 +749,12 @@
     const pos = M.locateRack(project, rackId);
     if (!pos) return;
     if (pos.row.racks.length <= 1) return toast(`${pos.row.name} needs at least one rack; delete the row instead`, { warn: true });
-    const n = M.devicesWithin(project, rackId).length;
+    const devs = M.devicesWithin(project, rackId);
+    const n = devs.length;
     if (n) {
       const ok = await confirmDialog({
         title: `Delete ${pos.rack.name}?`,
-        body: `It holds ${plural(n, 'device')}, which are deleted with it. Undo brings everything back.`,
+        body: `It holds ${devicesAndCables(devs)}, which are deleted with it. Undo brings everything back.`,
         ok: 'Delete rack',
       });
       if (!ok) return;
@@ -762,10 +767,12 @@
     const pos = M.locateRow(project, rowId);
     if (!pos) return;
     if (pos.floor.rows.length <= 1) return toast(`${pos.floor.name} needs at least one row; delete the floor instead`, { warn: true });
-    const n = M.devicesWithin(project, rowId).length;
+    const devs = M.devicesWithin(project, rowId);
+    const n = devs.length;
+    const cables = cablesGoingWith(idSet(devs));
     const ok = await confirmDialog({
       title: `Delete ${pos.row.name}?`,
-      body: `This deletes its ${plural(pos.row.racks.length, 'rack')}${n ? ` and ${plural(n, 'device')}` : ''}. Undo brings everything back.`,
+      body: `This deletes its ${listAnd([plural(pos.row.racks.length, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable')])}. Undo brings everything back.`,
       ok: 'Delete row',
     });
     if (!ok) return;
@@ -777,11 +784,13 @@
     const floor = M.floorById(project, floorId);
     if (!floor) return;
     if (project.floors.length <= 1) return toast('A plan needs at least one floor', { warn: true });
-    const n = M.devicesWithin(project, floorId).length;
+    const devs = M.devicesWithin(project, floorId);
+    const n = devs.length;
+    const cables = cablesGoingWith(idSet(devs));
     const racks = floor.rows.reduce((a, r) => a + r.racks.length, 0);
     const ok = await confirmDialog({
       title: `Delete ${floor.name}?`,
-      body: `This deletes ${plural(floor.rows.length, 'row')}, ${plural(racks, 'rack')}${n ? ` and ${plural(n, 'device')}` : ''}. Undo brings everything back.`,
+      body: `This deletes ${listAnd([plural(floor.rows.length, 'row'), plural(racks, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable')])}. Undo brings everything back.`,
       ok: 'Delete floor',
     });
     if (!ok) return;
@@ -799,7 +808,7 @@
       const names = removed.map((r) => r.name).join(', ');
       const ok = await confirmDialog({
         title: removed.length === 1 ? `Remove ${names}?` : `Remove ${removed.length} racks?`,
-        body: `${names} ${removed.length === 1 ? 'holds' : 'hold'} ${plural(lost.length, 'device')}, which ${lost.length === 1 ? 'is' : 'are'} removed too. Undo brings everything back.`,
+        body: `${names} ${removed.length === 1 ? 'holds' : 'hold'} ${devicesAndCables(lost)}, which ${lost.length === 1 && !cablesGoingWith(idSet(lost)) ? 'is' : 'are'} removed too. Undo brings everything back.`,
         ok: removed.length === 1 ? 'Remove rack' : 'Remove racks',
       });
       if (!ok) return;
@@ -952,7 +961,29 @@
       .join('');
   }
 
+  /**
+   * Draws the inspector of the selection. A form control with focus is
+   * left first, so an edit made in it is kept and shown, and gets focus
+   * back when the same selection is drawn again, so arrow keys on a radio
+   * keep switching it rather than moving the device. For another selection
+   * focus leaves the inspector, as keys then belong to the plan.
+   */
+  let inspectorKey = null;
   function renderInspector() {
+    const active = document.activeElement;
+    const focusId = active && active.id && el.inspector.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) ? active.id : null;
+    // Leaving the control fires its change (a value typed but not yet
+    // committed), which may redraw the plan and this inspector.
+    if (focusId) active.blur();
+    const key = JSON.stringify(ui.selection || null);
+    const same = key === inspectorKey;
+    inspectorKey = key;
+    drawInspector();
+    const again = focusId && same && document.getElementById(focusId);
+    if (again && el.inspector.contains(again) && !again.disabled) again.focus();
+  }
+
+  function drawInspector() {
     const s = ui.selection;
     if (s && s.kind === 'devices') {
       if (s.ids.length === 1) renderDeviceInspector(M.deviceById(project, s.ids[0]));
@@ -983,14 +1014,30 @@
 
   /** A field bound to a device property: text as typed, or `parse`d when the field is left. */
   function bindField(input, id, prop, parse) {
-    const apply = (p, v) => (M.deviceById(p, id)[prop] = v);
-    if (!parse) return bindText(input, `${prop}:${id}`, apply);
+    if (!parse) return bindText(input, `${prop}:${id}`, (p, v) => (M.deviceById(p, id)[prop] = v));
+    bindProp(input, (p) => M.deviceById(p, id), prop, parse);
+  }
+  /** A field bound to property `prop` of what `get(draft)` finds (a rack, a floor …), `parse`d when the field is left. */
+  function bindProp(input, get, prop, parse) {
     input.addEventListener('change', () => {
       const v = parse(input.value);
-      commit((p) => void apply(p, v), { inspector: false });
+      commit((p) => void (get(p)[prop] = v), { inspector: false });
+      // Show what is kept: a value out of range is clamped.
+      const kept = get(project)[prop];
+      input.value = kept == null ? '' : kept;
     });
   }
   const parseOptNum = (max) => (v) => (String(v).trim() === '' ? null : M.clampNum(v, 0, max, null));
+
+  /** A "Front to front | Back to front" radio group for `reversed`; `value` undefined checks neither (mixed). */
+  function mountRadios(name, value, labelId) {
+    const radio = (v, text) =>
+      `<label><input type="radio" name="${name}" id="${name}-${v ? 'back' : 'front'}" value="${v ? 'back' : 'front'}"${value === v ? ' checked' : ''}><span>${text}</span></label>`;
+    return (
+      `<div class="field"><span class="label" id="${labelId}">Mounted</span>` +
+      `<div class="seg seg-fill" role="radiogroup" aria-labelledby="${labelId}">${radio(false, 'Front to front')}${radio(true, 'Back to front')}</div></div>`
+    );
+  }
 
   function renderDeviceInspector(d) {
     const type = M.typeOf(project, d.type);
@@ -1028,6 +1075,7 @@
       `<div class="field"><label for="insp-slot">Slot</label><select id="insp-slot">${slotOpts}</select></div>` +
       (type.variable ? `<div class="field"><label for="insp-height">Height (U)</label><input id="insp-height" type="number" min="1" max="${M.rackUnits(project, d.loc.rack)}" step="1" value="${hU}" inputmode="numeric"></div>` : '') +
       `</div>` +
+      (type.face === 'reserved' ? '' : mountRadios('insp-mount', !!d.reversed, 'insp-mount-label')) +
       (d.loc.kind === 'u'
         ? `<div class="nudge"><button type="button" class="btn sm" id="insp-up"${canUp ? '' : ' disabled'} title="Next free position above (↑)">${icon('up')}Move up</button>` +
           `<button type="button" class="btn sm" id="insp-down"${canDown ? '' : ' disabled'} title="Next free position below (↓)">${icon('down')}Move down</button></div>`
@@ -1070,6 +1118,9 @@
       moveDevice(id, loc, { follow: true });
     });
     $('#insp-slot').addEventListener('change', (e) => moveDevice(id, parseLocKey(d.loc.rack, e.target.value)));
+    $$('input[name="insp-mount"]', el.inspector).forEach((r) =>
+      r.addEventListener('change', () => commit((p) => void (M.deviceById(p, id).reversed = r.value === 'back')))
+    );
     const heightInput = $('#insp-height');
     if (heightInput) {
       heightInput.addEventListener('change', () => {
@@ -1102,6 +1153,9 @@
     const clusters = new Set(devs.map((d) => d.cluster || null));
     const owners = new Set(devs.map((d) => d.owner || ''));
     const same = clusters.size === 1 ? [...clusters][0] : undefined;
+    // Reserved space faces no way: only devices are mounted one way or the other.
+    const mountable = devs.filter((d) => M.typeOf(project, d.type).face !== 'reserved');
+    const mounts = new Set(mountable.map((d) => !!d.reversed));
     const sorted = M.sortedDevices(Object.assign({}, project, { devices: devs }));
     const power = devs.reduce((a, d) => a + M.powerOf(project, d), 0);
     const units = devs.filter((d) => d.loc.kind === 'u').reduce((a, d) => a + M.deviceHeight(project, d), 0);
@@ -1128,7 +1182,9 @@
       `<div class="btn-grid"><button type="button" class="btn sm" data-group="up" title="Next room above (↑)">${icon('up')}Up</button><button type="button" class="btn sm" data-group="down" title="Next room below (↓)">${icon('down')}Down</button>` +
       `<button type="button" class="btn sm" data-group="left" title="Rack to the left (←)">${icon('left')}Left rack</button><button type="button" class="btn sm" data-group="right" title="Rack to the right (→)">Right rack${icon('right')}</button></div>` +
       `<p class="sec-hint">Or drag any of them; hold <kbd>Alt</kbd> to copy the group.</p></section>` +
-      `<section class="insp-sec"><h3>Set for all</h3><div class="field-grid">` +
+      `<section class="insp-sec"><h3>Set for all</h3>` +
+      (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label') : '') +
+      `<div class="field-grid">` +
       `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="120"></div>` +
       `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div></div>` +
       `</div></section>` +
@@ -1146,6 +1202,9 @@
         if (r.value === '__new') return openClusterDialog(null, apply, () => renderInspector());
         commit((p) => void apply(p, r.value || null));
       })
+    );
+    $$('input[name="multi-mount"]', el.inspector).forEach((r) =>
+      r.addEventListener('change', () => commit((p) => void mountable.forEach((d) => (M.deviceById(p, d.id).reversed = r.value === 'back'))))
     );
     $('#multi-owner').addEventListener('change', (e) => {
       const v = e.target.value.trim();
@@ -1220,6 +1279,10 @@
       `</div>` +
       `<section class="insp-sec"><h3><label for="insp-rack-type">Rack type</label></h3>` +
       `<div class="inline"><select id="insp-rack-type">${typeOpts}</select><button type="button" class="btn sm" id="insp-rack-types">${icon('book')}Types</button></div></section>` +
+      `<section class="insp-sec"><h3>Cable lengths</h3><div class="field-grid">` +
+      `<div class="field"><label for="insp-rack-tray">To cable tray (m)</label><input id="insp-rack-tray" type="number" min="0" max="10" step="0.1" inputmode="decimal" value="${rack.trayM == null ? '' : rack.trayM}" placeholder="${rt.trayM} (type)"></div>` +
+      `<div class="field"><label for="insp-rack-slack">Slack per cable (m)</label><input id="insp-rack-slack" type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${rack.slackM == null ? '' : rack.slackM}" placeholder="${rt.slackM} (type)"></div>` +
+      `</div><p class="sec-hint">From the top unit up to the tray, and the slack a cable gets at each end in this rack. Empty fields take the rack type’s.</p></section>` +
       statsSection(st) +
       `<section class="insp-sec"><h3>Place in the row</h3>` +
       `<div class="btn-grid">` +
@@ -1249,6 +1312,8 @@
       }
     });
     $('#insp-rack-types').addEventListener('click', () => openCatalog('racks', rack.type));
+    bindProp($('#insp-rack-tray'), (p) => M.rackById(p, id), 'trayM', parseOptNum(10));
+    bindProp($('#insp-rack-slack'), (p) => M.rackById(p, id), 'slackM', parseOptNum(10));
     $$('[data-rack-act]', el.inspector).forEach((b) =>
       b.addEventListener('click', () => {
         const act = b.dataset.rackAct;
@@ -1267,7 +1332,7 @@
     $('#insp-clear-rack').addEventListener('click', async () => {
       const ok = await confirmDialog({
         title: `Empty ${rack.name}?`,
-        body: `This removes all ${plural(devs.length, 'device')} from ${rack.name}. Undo brings them back.`,
+        body: `This removes all ${devicesAndCables(devs)} from ${rack.name}. Undo brings them back.`,
         ok: 'Remove devices',
       });
       if (ok) commit((p) => void M.removeDevicesIn(p, new Set([id])));
@@ -1348,6 +1413,9 @@
       `<div class="insp-where">${esc(`${plural(floor.rows.length, 'row')} · ${plural(t.racks, 'rack')} · ${plural(t.count, 'device')}`)}</div></div>` +
       statsSection(t) +
       `<section class="insp-sec"><h3>Rows</h3><div class="rack-bars">${rows}</div></section>` +
+      `<section class="insp-sec"><h3>Cable lengths</h3><div class="field-grid">` +
+      `<div class="field"><label for="floor-pitch">Row pitch (m)</label><input id="floor-pitch" type="number" min="0.5" max="50" step="0.1" inputmode="decimal" value="${floor.rowPitchM == null ? '' : floor.rowPitchM}" placeholder="${M.DEFAULT_ROW_PITCH_M}"></div>` +
+      `</div><p class="sec-hint">From one row to the next, which a cable crosses for every row between its ends.</p></section>` +
       `<section class="insp-sec"><h3>Order</h3><div class="btn-grid">` +
       `<button type="button" class="btn sm" data-floor-act="-1"${i ? '' : ' disabled'}>${icon('left')}Earlier</button>` +
       `<button type="button" class="btn sm" data-floor-act="1"${i < project.floors.length - 1 ? '' : ' disabled'}>Later${icon('right')}</button></div></section>` +
@@ -1359,6 +1427,7 @@
       `</div>`;
     const id = floor.id;
     bindText($('#insp-floor-name'), 'floor:' + id, (p, v) => (M.floorById(p, id).name = v), () => `Floor ${i + 1}`);
+    bindProp($('#floor-pitch'), (p) => M.floorById(p, id), 'rowPitchM', (v) => M.clampNum(String(v).trim() === '' ? null : v, 0.5, 50, M.DEFAULT_ROW_PITCH_M));
     $$('[data-open-row]', el.inspector).forEach((b) => b.addEventListener('click', () => setRow(b.dataset.openRow, { view: 'sheet' })));
     $$('[data-floor-act]', el.inspector).forEach((b) => b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)))));
     $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
@@ -1532,7 +1601,11 @@
     ui.selection = { kind: 'devices', ids: [copy.id] };
     const row = rowOfRack(loc.rack);
     if (row !== ui.rowId) setRow(row, { render: false });
-    commit((p) => void p.devices.push(copy));
+    // A cable never joins a device to itself, so a single copy has none; copyCables is a no-op kept for symmetry.
+    commit((p) => {
+      p.devices.push(copy);
+      M.copyCables(p, new Map([[id, copy.id]]));
+    });
     toast(`Added ${copy.name} at ${M.formatDeviceLoc(project, copy)}`);
   }
 
@@ -1545,21 +1618,56 @@
     revealDevice(ui.selection.ids[0]);
   }
 
+  /** Copies devices to `moves` ([{ id, loc }]) with the cables between them, in one undo step. */
   function copyGroup(moves, verb) {
     const copies = M.copiesAt(project, moves);
+    // copiesAt keeps the order of `moves`, which maps each original to its copy.
+    const idMap = new Map(moves.map((m, i) => [m.id, copies[i].id]));
     ui.selection = { kind: 'devices', ids: copies.map((c) => c.id) };
-    commit((p) => void p.devices.push(...copies));
+    let cables = 0;
+    commit((p) => {
+      p.devices.push(...copies);
+      cables = M.copyCables(p, idMap).length;
+    });
     const first = copies[0];
-    toast(`${verb || 'Copied'} ${plural(copies.length, 'device')}, from ${first.name} at ${M.formatDeviceLoc(project, first)}`, { action: 'Undo', onAction: undo });
+    toast(`${verb || 'Copied'} ${plural(copies.length, 'device')}${andCables(cables)}, from ${first.name} at ${M.formatDeviceLoc(project, first)}`, { action: 'Undo', onAction: undo });
+  }
+
+  /**
+   * How many cables go when the devices `gone` (a Set of ids) go: the ones
+   * that lose their head or every far end (a breakout that keeps a leg only
+   * loses the others).
+   */
+  function cablesGoingWith(gone) {
+    if (!project.cables.length || !gone.size) return 0;
+    const work = Object.assign({}, project, { devices: project.devices.filter((d) => !gone.has(d.id)), cables: M.clone(project.cables) });
+    M.pruneCables(work);
+    return project.cables.length - work.cables.length;
+  }
+  /** " and 37 cables", or nothing without cables. */
+  const andCables = (n) => (n ? ` and ${plural(n, 'cable')}` : '');
+  const idSet = (devs) => new Set(devs.map((d) => d.id));
+  /** "15 devices and 37 cables": the devices `devs` and the cables that go with them. */
+  function devicesAndCables(devs) {
+    return plural(devs.length, 'device') + andCables(cablesGoingWith(idSet(devs)));
+  }
+  /** "a, b and c" of the parts that are not empty. */
+  function listAnd(parts) {
+    const p = parts.filter(Boolean);
+    return p.length > 1 ? `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}` : p.join('');
   }
 
   function deleteDevices(ids) {
     const devs = ids.map((id) => M.deviceById(project, id)).filter(Boolean);
     if (!devs.length) return;
-    const gone = new Set(devs.map((d) => d.id));
+    const gone = idSet(devs);
+    const cables = cablesGoingWith(gone);
     ui.selection = null;
-    commit((p) => void (p.devices = p.devices.filter((x) => !gone.has(x.id))));
-    toast(devs.length === 1 ? `Deleted ${devs[0].name}` : `Deleted ${plural(devs.length, 'device')}`, { action: 'Undo', onAction: undo });
+    commit((p) => {
+      p.devices = p.devices.filter((x) => !gone.has(x.id));
+      M.pruneCables(p);
+    });
+    toast(`Deleted ${devs.length === 1 ? devs[0].name : plural(devs.length, 'device')}${andCables(cables)}`, { action: 'Undo', onAction: undo });
   }
 
   function replaceProject(next) {
@@ -1570,6 +1678,8 @@
     const ok = commit((p) => {
       Object.keys(p).forEach((k) => delete p[k]);
       Object.assign(p, M.clone(next));
+      // Imports and a fresh start come checked, but no cable may point past the plan.
+      M.pruneCables(p);
     });
     if (!M.rowById(project, ui.rowId)) ui.rowId = M.allRows(project)[0].row.id;
     render();
@@ -1664,6 +1774,7 @@
         height: device ? device.height : height,
         color: clusterColor(clusterId),
         name: device ? device.name : hint.name,
+        reversed: !!(device && device.reversed),
       })
     );
   }
@@ -1671,7 +1782,7 @@
   function drawGhosts(moves, ok) {
     const items = moves.map((m) => {
       const d = M.deviceById(project, m.id);
-      return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(d.cluster) };
+      return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(d.cluster), reversed: !!d.reversed };
     });
     setGhosts(R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId }));
   }
@@ -2214,6 +2325,7 @@
     closeMenus();
     closeSearch();
     if (!dlg.open) dlg.showModal();
+    hostToasts();
   }
 
   // Close on Cancel buttons and on a click on the backdrop.
@@ -2580,10 +2692,19 @@
 
   // Catalog dialog -----------------------------------------------------
 
-  const cat = { tab: 'devices', id: null, error: '', pressed: false, pending: false, skipClick: false };
+  /**
+   * The catalog's state: the tab and the selected type, the part of a device
+   * type shown ('general' or 'ports'), an error shown again after a redraw,
+   * a refused value kept in its field ({ id, value }), a field to focus
+   * after the next redraw, and the pointer guard of refreshCatalog.
+   */
+  const cat = { tab: 'devices', id: null, sub: 'general', error: '', keep: null, focus: null, pressed: false, pending: false, skipClick: false };
+  // Stock lengths of cable types made to length in this session, given back when they are unticked.
+  const lastLengths = new Map();
 
   function openCatalog(tab, id) {
     cat.tab = tab || cat.tab;
+    cat.sub = 'general';
     selectCatalogItem(id || null);
     openDialog($('#dlg-catalog'));
   }
@@ -2591,46 +2712,64 @@
   function selectCatalogItem(id) {
     cat.id = id;
     cat.error = '';
+    cat.keep = null;
     renderCatalog();
   }
 
+  const catTab = () => CAT_TABS[cat.tab] || CAT_TABS.devices;
   function catalogUse(tab, id) {
-    return tab === 'devices' ? project.devices.filter((d) => d.type === id).length : M.rackTypeUse(project, id);
+    return CAT_TABS[tab].use(id);
   }
 
   function renderCatalog() {
-    const devices = cat.tab === 'devices';
-    const list = devices ? project.deviceTypes : project.rackTypes;
+    // This render does what a deferred one would have.
+    cat.pending = false;
+    const tab = catTab();
+    const list = tab.list();
     if (!list.some((t) => t.id === cat.id)) cat.id = list.length ? list[0].id : null;
-    for (const b of $$('#dlg-catalog [role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.tab === cat.tab));
-    const focusId = document.activeElement && $('#cat-form').contains(document.activeElement) ? document.activeElement.id : null;
+    // Only the catalog's own tabs: the device type's General | Ports switch is no tab.
+    for (const b of $$('#dlg-catalog .dlg-head [role="tab"]')) {
+      b.setAttribute('aria-selected', String(b.dataset.tab === cat.tab));
+      // On a phone the tabs scroll sideways: keep the selected one in sight.
+      if (b.dataset.tab === cat.tab && $('#dlg-catalog').open) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    const active = document.activeElement;
+    const focusId = cat.focus || (active && $('#cat-form').contains(active) ? active.id : null);
+    cat.focus = null;
+    // A text field focused again keeps its caret and selection.
+    const caret = active && active.id === focusId && /^(text|search|number)?$/.test(active.getAttribute('type') || '') && active.tagName === 'INPUT' ? [active.selectionStart, active.selectionEnd] : null;
+    $('#cat-list').dataset.tab = cat.tab;
     $('#cat-list').innerHTML = list
       .map((t) => {
-        const n = catalogUse(cat.tab, t.id);
-        const sub = devices ? M.formatTypeSpec(t) : `${t.units}U · ${plural(t.sideSlots, 'side slot')}${t.powerW ? ` · ${fmtKw(t.powerW)}` : ''}`;
-        const art = devices
-          ? (() => {
-              const pv = R.renderPreview(t, ui.theme, null, t.defaultName, measure);
-              return `<svg class="cat-art" viewBox="0 0 ${pv.width} ${pv.height}" aria-hidden="true">${pv.body}</svg>`;
-            })()
-          : `<span class="cat-rack" style="--u:${t.units}" aria-hidden="true"></span>`;
+        const n = tab.use(t.id);
         return (
           `<button type="button" role="option" class="cat-item" data-id="${esc(t.id)}" aria-selected="${t.id === cat.id}">` +
           `<span class="cat-grip" title="Drag to reorder" aria-hidden="true">${icon('grip', 'ic-sm')}</span>` +
-          `${art}<span class="cat-meta"><span class="cat-name">${esc(devices ? t.label : t.name)}</span><span class="cat-sub">${esc(sub)}</span></span>` +
-          `<span class="cat-count" title="${n} in use">${n}</span></button>`
+          `${tab.art(t)}<span class="cat-meta"><span class="cat-name">${esc(tab.name(t))}</span><span class="cat-sub">${esc(tab.sub(t))}</span></span>` +
+          `<span class="cat-count" title="${esc(tab.useText(n))}">${n}</span></button>`
         );
       })
       .join('');
-    const menu = $('#menu-cat-new');
-    menu.innerHTML = devices
-      ? M.TYPE_TEMPLATES.map((t, i) => `<button type="button" role="menuitem" data-template="${i}"><span>${esc(t.label)}</span><small>${esc(M.formatTypeSpec(t))}</small></button>`).join('') +
-        (cat.id ? `<hr><button type="button" role="menuitem" data-template="copy"><span>Copy of the selected type</span><small>${esc(M.typeOf(project, cat.id).label)}</small></button>` : '')
-      : `<button type="button" role="menuitem" data-template="rack"><span>New rack type</span><small>42U, 2 side slots</small></button>` +
-        (cat.id ? `<button type="button" role="menuitem" data-template="copy"><span>Copy of the selected type</span><small>${esc(M.rackTypeById(project, cat.id).name)}</small></button>` : '');
-    $('#cat-form').innerHTML = cat.id ? (devices ? deviceTypeForm(M.typeOf(project, cat.id)) : rackTypeForm(M.rackTypeById(project, cat.id))) : `<p class="empty-note">No types yet. Add one with “New type”.</p>`;
+    const sel = cat.id ? tab.byId(project, cat.id) : null;
+    $('#menu-cat-new').innerHTML =
+      tab
+        .templates()
+        .map(([key, label, sub]) => `<button type="button" role="menuitem" data-template="${esc(String(key))}"><span>${esc(label)}</span><small>${esc(sub)}</small></button>`)
+        .join('') +
+      (sel ? `<hr><button type="button" role="menuitem" data-template="copy"><span>Copy of the selected ${tab.noun}</span><small>${esc(tab.name(sel))}</small></button>` : '');
+    $('#cat-form').innerHTML = sel ? tab.form(sel) : `<p class="empty-note">${esc(tab.empty)}</p>`;
+    const kept = cat.keep && document.getElementById(cat.keep.id);
+    if (kept) kept.value = cat.keep.value;
     if (cat.error) showError('#cat-error', cat.error);
-    if (focusId && $(`#${focusId}`)) $(`#${focusId}`).focus();
+    const f = focusId && (focusId.startsWith('@') ? catTabbables()[Number(focusId.slice(1))] : document.getElementById(focusId));
+    if (f && !f.disabled) f.focus();
+    if (f && caret && caret[0] !== null && f.tagName === 'INPUT' && f.value === active.value) {
+      try {
+        f.setSelectionRange(caret[0], caret[1]);
+      } catch (e) {
+        // A field type without a caret.
+      }
+    }
   }
 
   /**
@@ -2647,9 +2786,9 @@
     if (!cat.pressed) return;
     cat.pressed = false;
     // After the click that belongs to this pointerup.
+    // Not when that click has redrawn the catalog already.
     if (cat.pending) setTimeout(() => {
-      cat.pending = false;
-      if ($('#dlg-catalog').open) renderCatalog();
+      if (cat.pending && $('#dlg-catalog').open) renderCatalog();
     });
   });
 
@@ -2662,12 +2801,36 @@
     );
   }
 
+  /** The bar under a form: order buttons, how much uses the type, and Delete. */
+  function catActions(list, t, n, attrs) {
+    return (
+      `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
+      `<div class="cat-actions">${orderButtons(list, t.id)}<span class="sec-hint">${esc(catTab().useText(n))}</span><span class="spacer"></span>` +
+      `<button type="button" class="btn sm danger-text" id="cat-delete"${attrs || ''}>${icon('trash')}Delete ${catTab().noun}</button></div>`
+    );
+  }
+
+  const options = (list, cur) => list.map(([v, label]) => `<option value="${esc(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${esc(label)}</option>`).join('');
+  const svgArt = (w, h, body) => `<svg class="cat-art" viewBox="0 0 ${w} ${h}" aria-hidden="true">${body}</svg>`;
+  const previewSVG = (pv) => `<svg viewBox="0 0 ${pv.width} ${pv.height}" aria-hidden="true">${pv.body}</svg>`;
+  const connName = (id) => (M.connectorById(id) || { label: id }).label;
+
+  // Device types: General | Ports -------------------------------------
+
   function deviceTypeForm(t) {
+    const b = (sub, text) => `<button type="button" id="cat-sub-${sub}" data-cat-sub="${sub}" aria-pressed="${cat.sub === sub}">${text}</button>`;
+    return (
+      `<div class="seg cat-subs" role="group" aria-label="Part of the type">${b('general', 'General')}${b('ports', `Ports · ${M.expandPorts(t).length}`)}</div>` +
+      (cat.sub === 'ports' ? portsForm(t) : generalForm(t))
+    );
+  }
+
+  function generalForm(t) {
     const n = catalogUse('devices', t.id);
     const pv = R.renderPreview(t, ui.theme, '#2f6fdb', t.defaultName, measure);
     const faces = M.FACES.map((f) => `<option value="${f.id}"${f.id === t.face ? ' selected' : ''}>${esc(f.label)}</option>`).join('');
     return (
-      `<div class="cat-preview"><svg viewBox="0 0 ${pv.width} ${pv.height}" aria-hidden="true">${pv.body}</svg></div>` +
+      `<div class="cat-preview">${previewSVG(pv)}</div>` +
       `<div class="field-grid cat-fields">` +
       `<div class="field span2"><label for="cat-label">Name</label><input id="cat-label" data-prop="label" type="text" value="${esc(t.label)}" maxlength="60" autocomplete="off"></div>` +
       `<div class="field"><label for="cat-tag">Tag on the front</label><input id="cat-tag" data-prop="tag" type="text" value="${esc(t.tag)}" maxlength="12" autocomplete="off"></div>` +
@@ -2678,11 +2841,160 @@
       `<div class="field"><label for="cat-power">Power (W)</label><input id="cat-power" data-prop="powerW" data-num type="number" min="0" step="10" value="${t.powerW}"></div>` +
       `<div class="field"><label for="cat-weight">Weight (kg)</label><input id="cat-weight" data-prop="weightKg" data-num type="number" min="0" step="0.5" value="${t.weightKg}"></div>` +
       `</div>` +
-      `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
-      `<div class="cat-actions">${orderButtons(project.deviceTypes, t.id)}<span class="sec-hint">${n ? `${plural(n, 'device')} of this type` : 'Not used yet'}</span><span class="spacer"></span>` +
-      `<button type="button" class="btn sm danger-text" id="cat-delete">${icon('trash')}Delete type</button></div>`
+      catActions(project.deviceTypes, t, n)
     );
   }
+
+  const SPEEDS = [0.1, 1, 10, 25, 40, 50, 100, 200, 400, 800];
+  const SIDES = [
+    ['front', 'Front'],
+    ['rear', 'Rear'],
+  ];
+
+  function portsForm(t) {
+    const front = R.renderPreview(t, ui.theme, null, t.defaultName, measure, undefined, 'front');
+    const rear = R.renderPreview(t, ui.theme, null, t.defaultName, measure, undefined, 'rear');
+    const conns = M.CONNECTORS.map((c) => [c.id, c.label]);
+    const rows = t.ports
+      .map((g, i) => {
+        const pattern = M.portPattern(g);
+        const speeds = (SPEEDS.includes(g.speedGbps) ? SPEEDS : SPEEDS.concat(g.speedGbps).sort((a, b) => a - b)).map((s) => [s, C.shortSpeed(s) || 'not rated']);
+        const id = (k) => `cat-pg-${i}-${k}`;
+        return (
+          `<tr><td><input id="${id('names')}" class="mono" type="text" data-pg="${i}" data-pg-prop="names" value="${esc(pattern)}" maxlength="48" autocomplete="off" spellcheck="false" aria-label="Names of port group ${i + 1}"></td>` +
+          `<td><select id="${id('connector')}" data-pg="${i}" data-pg-prop="connector" aria-label="Connector of ${esc(pattern)}">${options(conns, g.connector)}</select></td>` +
+          `<td><select id="${id('speed')}" data-pg="${i}" data-pg-prop="speedGbps" aria-label="Speed of ${esc(pattern)}">${options(speeds, g.speedGbps)}</select></td>` +
+          `<td><select id="${id('side')}" data-pg="${i}" data-pg-prop="side" aria-label="Side of ${esc(pattern)}">${options(SIDES, g.side)}</select></td>` +
+          `<td class="pt-count mono">${M.groupNames(g).length}</td>` +
+          `<td><button type="button" class="btn icon sm subtle" id="${id('del')}" data-pg-del="${i}" title="Remove these ports" aria-label="Remove ${esc(pattern)}">${icon('trash')}</button></td></tr>`
+        );
+      })
+      .join('');
+    const others = project.deviceTypes.filter((x) => x.id !== t.id && x.ports.length);
+    const devs = new Set(project.devices.filter((d) => d.type === t.id).map((d) => d.id));
+    let cabled = 0;
+    for (const c of project.cables) for (const x of M.cableEnds(c)) if (devs.has(x.end.device)) cabled++;
+    const full = t.ports.length >= M.LIMITS.portGroups;
+    return (
+      `<div class="cat-preview cat-preview-2"><span class="cat-side">Front</span>${previewSVG(front)}<span class="cat-side">Rear</span>${previewSVG(rear)}</div>` +
+      (t.ports.length
+        ? `<div class="pt-wrap"><table class="pt-table"><thead><tr><th scope="col">Names</th><th scope="col">Connector</th><th scope="col">Speed</th><th scope="col">Side</th>` +
+          `<th scope="col" class="pt-count">Ports</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="empty-note">No ports yet. Add a group, or copy the ports of another type.</p>`) +
+      `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
+      `<div class="cat-actions">` +
+      `<button type="button" class="btn sm" id="cat-pg-add"${full ? ` disabled title="A device type has at most ${M.LIMITS.portGroups} port groups"` : ''}>${icon('plus', 'ic-sm')}Add ports</button>` +
+      `<div class="menu-wrap"><button type="button" class="btn sm subtle" id="cat-pg-copy" aria-haspopup="menu" aria-expanded="false" aria-controls="cat-pg-menu"${others.length ? '' : ' disabled'}>Copy ports from…${icon('chevron', 'ic-sm')}</button>` +
+      `<div class="menu" id="cat-pg-menu" role="menu" hidden>` +
+      others.map((x) => `<button type="button" role="menuitem" data-pg-copy="${esc(x.id)}"><span>${esc(x.label)}</span><small>${esc(x.ports.map(M.portPattern).join(', '))}</small></button>`).join('') +
+      `</div></div></div>` +
+      `<p class="sec-hint">A range in brackets names a series: swp[1-48] is swp1 … swp48, Ethernet1/[1-32] works too; a plain name such as bmc is one port. Side is the device’s own side: a device mounted back to front has its front ports at the rack’s rear.</p>` +
+      `<div class="field-grid"><div class="field"><label for="cat-slack">Slack per cable (m)</label>` +
+      `<input id="cat-slack" data-prop="slackM" data-num type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${t.slackM}"></div>` +
+      `<p class="sec-hint cat-slack-hint">Extra length a cable gets at a device of this type; a device can set its own.</p></div>` +
+      (devs.size
+        ? `<p class="cat-note">${icon('info', 'ic-sm')}<span>${plural(devs.size, 'device')} of this type ${devs.size === 1 ? 'has' : 'have'} ${plural(cabled, 'port')} cabled. A change that unplugs cables names them before it applies.</span></p>`
+        : '')
+    );
+  }
+
+  /** Group `i` of the ports of `t` changed: its names (a pattern), connector, speed or side. A message why when the names are no pattern. */
+  function editedPorts(t, i, prop, value) {
+    const ports = M.clone(t.ports);
+    const g = ports[i];
+    if (!g) return ports;
+    if (prop === 'names') {
+      const problem = M.portPatternProblem(value);
+      if (problem) return problem;
+      const parsed = M.parsePortPattern(value);
+      delete g.first;
+      delete g.count;
+      Object.assign(g, parsed);
+    } else if (prop === 'connector') {
+      g.connector = value;
+      // A new connector brings its usual speed: an RJ45 group turned QSFP56 runs at 200G.
+      const c = M.connectorById(value);
+      if (c && c.speedGbps) g.speedGbps = c.speedGbps;
+    } else if (prop === 'speedGbps') g.speedGbps = Number(value);
+    else if (prop === 'side') g.side = value === 'front' ? 'front' : 'rear';
+    return ports;
+  }
+
+  /**
+   * Gives the selected device type the port groups `ports` (or refuses a
+   * message in their place). Groups that are not valid are refused with
+   * the reason, keeping `keep` ({ id, value }) in its field; a change that
+   * unplugs cables names them and asks first, and can be undone. Focus
+   * goes to cat.focus after the change, or to the control `back` (an id)
+   * when the question is answered No.
+   */
+  async function setTypePorts(ports, keep, back) {
+    const id = cat.id;
+    const t = M.typeOf(project, id);
+    if (!t) return;
+    // Where focus goes after the redraw, kept across the question below.
+    const focus = cat.focus;
+    const problem = typeof ports === 'string' ? ports : M.portsProblem(ports);
+    if (problem) {
+      cat.error = problem;
+      cat.keep = keep || null;
+      return refreshCatalog();
+    }
+    cat.keep = null;
+    const lost = C.portChangeImpact(project, id, ports);
+    if (lost.length) {
+      const shown = lost.slice(0, 6).map((c) => c.label || 'one without a label');
+      const ok = await confirmDialog({
+        title: `Unplug ${plural(lost.length, 'cable')}?`,
+        body:
+          `This change takes away ports of ${t.label} that ${lost.length === 1 ? 'a cable is' : 'cables are'} plugged into: ` +
+          `${shown.join(', ')}${lost.length > shown.length ? ` and ${lost.length - shown.length} more` : ''}. Undo plugs them back in.`,
+        ok: lost.length === 1 ? 'Unplug the cable' : `Unplug ${lost.length} cables`,
+      });
+      cat.focus = ok ? focus : back || focus;
+      if (!ok) {
+        cat.error = '';
+        return renderCatalog();
+      }
+      openDialog($('#dlg-catalog'));
+    }
+    const err = commitOrError((p) => M.updateDeviceType(p, id, { ports }));
+    cat.error = err || '';
+    refreshCatalog();
+    if (lost.length && !err) toast(`Unplugged ${plural(lost.length, 'cable')} from ${t.label}`, { action: 'Undo', onAction: undo });
+  }
+
+  function portChange(input) {
+    const t = M.typeOf(project, cat.id);
+    if (!t) return;
+    const ports = editedPorts(t, Number(input.dataset.pg), input.dataset.pgProp, input.value);
+    if (typeof ports !== 'string' && JSON.stringify(ports) === JSON.stringify(t.ports)) {
+      // Typed back to what it was: drop an error about it.
+      if (cat.keep && cat.keep.id === input.id) {
+        cat.keep = null;
+        cat.error = '';
+        refreshCatalog();
+      }
+      return;
+    }
+    setTypePorts(ports, { id: input.id, value: input.value });
+  }
+
+  /** Adds the next free single port eth0, eth1 … (RJ45, 1G, rear) and puts the cursor in its names. */
+  function addPortGroup() {
+    const t = M.typeOf(project, cat.id);
+    const names = new Set(M.expandPorts(t).map((p) => p.name));
+    let n = 0;
+    while (names.has(`eth${n}`)) n++;
+    const field = `cat-pg-${t.ports.length}-names`;
+    cat.focus = field;
+    setTypePorts(t.ports.concat({ name: `eth${n}`, connector: 'rj45', speedGbps: 1, side: 'rear' }));
+    cat.focus = null;
+    const input = document.getElementById(field);
+    if (input) input.select();
+  }
+
+  // Rack types --------------------------------------------------------
 
   function rackTypeForm(t) {
     const n = catalogUse('racks', t.id);
@@ -2694,54 +3006,387 @@
       `<div class="field"><label for="cat-slots">Side slots</label><input id="cat-slots" data-prop="sideSlots" data-num type="number" min="0" max="${maxSlots}" step="1" value="${t.sideSlots}"></div>` +
       `<div class="field"><label for="cat-rpower">Power budget (kW)</label><input id="cat-rpower" data-prop="powerW" data-kw type="number" min="0" step="0.5" value="${t.powerW / 1000}" placeholder="none"></div>` +
       `<div class="field"><label for="cat-rweight">Max. load (kg)</label><input id="cat-rweight" data-prop="weightKg" data-num type="number" min="0" step="10" value="${t.weightKg}" placeholder="none"></div>` +
+      `<div class="field"><label for="cat-rwidth">Width (mm)</label><input id="cat-rwidth" data-prop="widthMm" data-num type="number" min="300" max="1200" step="50" value="${t.widthMm}"></div>` +
+      `<div class="field"><label for="cat-rdepth">Depth (mm)</label><input id="cat-rdepth" data-prop="depthMm" data-num type="number" min="600" max="1600" step="50" value="${t.depthMm}"></div>` +
+      `<div class="field"><label for="cat-rtray">To cable tray (m)</label><input id="cat-rtray" data-prop="trayM" data-num type="number" min="0" max="10" step="0.1" inputmode="decimal" value="${t.trayM}"></div>` +
+      `<div class="field"><label for="cat-rslack">Slack per cable (m)</label><input id="cat-rslack" data-prop="slackM" data-num type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${t.slackM}"></div>` +
       `</div>` +
-      `<p class="sec-hint">Up to ${maxSlots} side slot${maxSlots === 1 ? '' : 's'} fit a ${t.units}U rack. A budget of 0 means none; racks over their budget are flagged in red.</p>` +
-      `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
-      `<div class="cat-actions">${orderButtons(project.rackTypes, t.id)}<span class="sec-hint">${n ? `Used by ${plural(n, 'rack')}` : 'Not used yet'}</span><span class="spacer"></span>` +
-      `<button type="button" class="btn sm danger-text" id="cat-delete"${n || project.rackTypes.length <= 1 ? ' disabled' : ''} title="${n ? 'Give its racks another type first' : ''}">${icon('trash')}Delete type</button></div>`
+      `<p class="sec-hint">Up to ${maxSlots} side slot${maxSlots === 1 ? '' : 's'} fit a ${t.units}U rack. A budget of 0 means none; racks over their budget are flagged in red. ` +
+      `Cable lengths count the width and depth, the way from the top unit up to the cable tray, and the slack a cable gets at each end; racks can override the tray and the slack.</p>` +
+      catActions(project.rackTypes, t, n, n || project.rackTypes.length <= 1 ? ` disabled title="${n ? 'Give its racks another type first' : 'A plan needs at least one rack type'}"` : '')
     );
   }
+
+  // Cable types -------------------------------------------------------
+
+  /** Jacket colors in the catalog's drawings; direct cables (DAC, SAS) take the ink color. */
+  const JACKET = { cat6: '#5f86b3', cat6a: '#5f86b3', cat8: '#4a6f9e', aoc: '#e2a23b', om3: '#3fb7c9', om4: '#3fb7c9', om5: '#7fb83a', os2: '#e3c43c' };
+  const FIBER_MODE = { mmf: '#3fb7c9', smf: '#e3c43c' };
+  const fmtLen = (m) => (m >= 1000 ? `${Math.round(m / 100) / 10} km` : `${m} m`);
+
+  /** "0.5–3 m", "3 m" or "made to length". */
+  function stockText(t) {
+    const l = t.lengthsM;
+    if (!l.length) return 'made to length';
+    return l.length === 1 ? fmtLen(l[0]) : `${l[0]}–${fmtLen(l[l.length - 1])}`;
+  }
+  /** "QSFP56", "QSFP56 → QSFP28", "OSFP → 2 × QSFP56". */
+  function plugsText(t) {
+    if (t.legs > 1) return `${connName(t.connector)} → ${t.legs} × ${connName(t.connectorB)}`;
+    return t.connector === t.connectorB ? connName(t.connector) : `${connName(t.connector)} → ${connName(t.connectorB)}`;
+  }
+  /** Parts of a sub line joined by dots, which are the only places it breaks (not at spaces, nor after a dash: "0.5–3 m"). */
+  const subLine = (parts) => parts.map((x) => x.replace(/ /g, '\u00a0').replace(/[–-]/g, '$&\u2060')).join(' · ');
+  /** "DAC · QSFP56 · 0.5–3 m", "OM4 · MPO · made to length", "DAC · OSFP → 2 × QSFP56". */
+  function cableSub(t) {
+    const media = (C.MEDIA[t.media] || { short: t.media }).short;
+    return subLine(t.legs > 1 ? [media, plugsText(t)] : [media, plugsText(t), stockText(t)]);
+  }
+
+  /** A cable in its jacket's color with a plug at each end; a breakout fans out into its legs. */
+  function cableArt(t) {
+    const color = JACKET[t.media] ? ` style="stroke:${JACKET[t.media]}"` : '';
+    const plug = (x, y, w, h) => `<rect class="ca-plug" x="${x}" y="${y - h / 2}" width="${w}" height="${h}" rx="1"/>`;
+    let body = '';
+    if (t.legs <= 1) body = `<path class="ca-cord"${color} d="M12 12H52"/>` + plug(1, 12, 11, 7) + plug(52, 12, 11, 7);
+    else {
+      const gap = Math.min(6, 18 / (t.legs - 1));
+      body = `<path class="ca-cord"${color} d="M12 12H26"/>`;
+      let plugs = '';
+      for (let i = 0; i < t.legs; i++) {
+        const y = Math.round((12 + (i - (t.legs - 1) / 2) * gap) * 10) / 10;
+        body += `<path class="ca-cord ca-leg"${color} d="M26 12C36 12 38 ${y} 46 ${y}H53"/>`;
+        plugs += plug(53, y, 10, Math.max(1.6, Math.min(5, gap - 1)));
+      }
+      body += plugs + plug(1, 12, 11, 8);
+    }
+    return svgArt(64, 24, body);
+  }
+
+  /** Stock lengths typed as "0.5, 1, 1.5 m": a list of numbers, or a message naming what is no length. */
+  function parseLengths(text) {
+    const parts = String(text)
+      .split(/[\s,;]+/)
+      .map((x) => x.replace(/m$/i, ''))
+      .filter(Boolean);
+    const bad = parts.find((x) => !(Number(x) > 0));
+    return bad ? `“${bad}” isn’t a length in metres` : parts.map(Number);
+  }
+
+  /** Stock lengths for a cable type that stops being made to length: what it had, else those of a standard type like it. */
+  function stockLengthsFor(t) {
+    if (lastLengths.has(t.id)) return lastLengths.get(t.id);
+    const like = (f) => M.DEFAULT_CABLE_TYPES.find((d) => d.lengthsM.length && f(d));
+    const d = like((x) => x.media === t.media && x.connector === t.connector) || like((x) => x.media === t.media);
+    return d ? d.lengthsM.slice() : [1, 2, 3, 5];
+  }
+
+  function madeToLength(on) {
+    const id = cat.id;
+    const t = M.cableTypeById(project, id);
+    if (!t) return;
+    if (on && t.lengthsM.length) lastLengths.set(id, t.lengthsM);
+    const err = commitOrError((p) => C.updateCableType(p, id, { lengthsM: on ? [] : stockLengthsFor(t) }));
+    cat.error = err || '';
+    cat.keep = null;
+    refreshCatalog();
+  }
+
+  function cableTypeForm(t) {
+    const n = catalogUse('cables', t.id);
+    const media = Object.keys(C.MEDIA).map((k) => [k, C.MEDIA[k].label]);
+    const plugs = M.mediaConnectors(t.media).map((id) => [id, connName(id)]);
+    const made = !t.lengthsM.length;
+    return (
+      `<div class="field-grid cat-fields">` +
+      `<div class="field span2"><label for="cat-c-name">Name</label><input id="cat-c-name" data-prop="name" type="text" value="${esc(t.name)}" maxlength="60" autocomplete="off"></div>` +
+      `<div class="field"><label for="cat-c-media">Media</label><select id="cat-c-media" data-prop="media">${options(media, t.media)}</select></div>` +
+      `<div class="field"><label for="cat-c-legs">Legs</label><input id="cat-c-legs" data-prop="legs" data-num type="number" min="1" max="${M.LIMITS.legs}" step="1" value="${t.legs}">` +
+      `<small class="field-hint">2 to ${M.LIMITS.legs}: a breakout</small></div>` +
+      `<div class="field"><label for="cat-c-conn">Plug at end A</label><select id="cat-c-conn" data-prop="connector">${options(plugs, t.connector)}</select></div>` +
+      `<div class="field"><label for="cat-c-connb">Plug at the other ends</label><select id="cat-c-connb" data-prop="connectorB">${options(plugs, t.connectorB)}</select></div>` +
+      `<div class="field"><label for="cat-c-speed">Speed rating (Gb/s)</label><input id="cat-c-speed" data-prop="speedGbps" data-num type="number" min="0" max="1600" step="1" value="${t.speedGbps}">` +
+      `<small class="field-hint">0: not rated</small></div>` +
+      `<div class="field"><label for="cat-c-reach">Reach (m)</label><input id="cat-c-reach" data-prop="maxM" data-num type="number" min="0" step="1" value="${t.maxM}">` +
+      `<small class="field-hint">0: no limit${C.MEDIA[t.media] && C.MEDIA[t.media].kind === 'fiber' ? '; the transceivers’ reach counts' : ''}</small></div>` +
+      `<div class="field span2"><label for="cat-c-lengths">Stock lengths (m)</label>` +
+      `<input id="cat-c-lengths" class="mono" data-prop="lengthsM" data-list type="text" value="${esc(t.lengthsM.join(', '))}" placeholder="${made ? 'made to length' : '0.5, 1, 1.5, 2'}" autocomplete="off" spellcheck="false"${made ? ' disabled' : ''}>` +
+      `<label class="check"><input type="checkbox" id="cat-c-made"${made ? ' checked' : ''}><span>Made to length</span></label></div>` +
+      `</div>` +
+      `<p class="sec-hint">A cable without a type picks the first one in this order that fits its ports and reaches, and gets the next stock length up; a type made to length gets the length the cable needs, and the order list shows those lengths.</p>` +
+      catActions(project.cableTypes, t, n)
+    );
+  }
+
+  // Transceivers ------------------------------------------------------
+
+  const FIBERS = [
+    ['lc', 'LC duplex'],
+    ['mpo', 'MPO'],
+  ];
+  const MODES = [
+    ['mmf', 'Multimode'],
+    ['smf', 'Single-mode'],
+  ];
+
+  /** "QSFP56 · MPO · MMF · 100 m". */
+  const transceiverSub = (t) => subLine([connName(t.connector), t.fiber.toUpperCase(), t.mode.toUpperCase(), fmtLen(t.reachM)]);
+
+  /** A module: its body, the fiber sockets at the front and the pull tab in the color of its fiber's mode. */
+  function transceiverArt(t) {
+    const sockets =
+      t.fiber === 'mpo'
+        ? `<rect class="ca-socket" x="45.5" y="9.2" width="4" height="5.6" rx=".6"/>`
+        : `<rect class="ca-socket" x="45.5" y="7.6" width="4" height="3.6" rx=".6"/><rect class="ca-socket" x="45.5" y="12.8" width="4" height="3.6" rx=".6"/>`;
+    return svgArt(
+      64,
+      24,
+      `<rect class="ca-plug" x="4" y="7" width="40" height="10" rx="1"/><path class="ca-fin" d="M9 10h30M9 12h30M9 14h30"/>` +
+        `<rect class="ca-face" x="44" y="5.5" width="7" height="13" rx="1"/>${sockets}` +
+        `<path class="ca-bail" style="stroke:${FIBER_MODE[t.mode] || FIBER_MODE.mmf}" d="M51 7.5H60V16.5H51"/>`
+    );
+  }
+
+  function transceiverForm(t) {
+    const n = catalogUse('transceivers', t.id);
+    const cages = M.CONNECTORS.filter((c) => c.cage).map((c) => [c.id, c.label]);
+    return (
+      `<div class="field-grid cat-fields">` +
+      `<div class="field span2"><label for="cat-x-name">Name</label><input id="cat-x-name" data-prop="name" type="text" value="${esc(t.name)}" maxlength="60" autocomplete="off"></div>` +
+      `<div class="field"><label for="cat-x-conn">Fits</label><select id="cat-x-conn" data-prop="connector">${options(cages, t.connector)}</select></div>` +
+      `<div class="field"><label for="cat-x-fiber">Fiber plug</label><select id="cat-x-fiber" data-prop="fiber">${options(FIBERS, t.fiber)}</select></div>` +
+      `<div class="field"><label for="cat-x-mode">Mode</label><select id="cat-x-mode" data-prop="mode">${options(MODES, t.mode)}</select></div>` +
+      `<div class="field"><label for="cat-x-speed">Speed (Gb/s)</label><input id="cat-x-speed" data-prop="speedGbps" data-num type="number" min="0" max="1600" step="1" value="${t.speedGbps}"></div>` +
+      `<div class="field"><label for="cat-x-reach">Reach (m)</label><input id="cat-x-reach" data-prop="reachM" data-num type="number" min="0" step="10" value="${t.reachM}"></div>` +
+      `</div>` +
+      `<p class="sec-hint">A fiber cable needs a transceiver at every cage it plugs into. Cables pick the first one in this order that fits the cage, takes the fiber’s plug and mode, and reaches.</p>` +
+      catActions(project.transceivers, t, n)
+    );
+  }
+
+  // Tabs --------------------------------------------------------------
+
+  async function deleteDeviceType(id) {
+    const t = M.typeOf(project, id);
+    const devs = project.devices.filter((d) => d.type === id);
+    if (devs.length) {
+      const cables = cablesGoingWith(idSet(devs));
+      const ok = await confirmDialog({
+        title: `Delete ${t.label}?`,
+        body: `${plural(devs.length, 'device')} of this type${andCables(cables)} ${devs.length === 1 && !cables ? 'is' : 'are'} deleted with it. Undo brings everything back.`,
+        ok: 'Delete type and devices',
+      });
+      if (!ok) return false;
+      openDialog($('#dlg-catalog'));
+    }
+    commit((p) => void M.deleteDeviceType(p, id));
+    toast(`Deleted the type ${t.label}`, { action: 'Undo', onAction: undo });
+    return true;
+  }
+
+  /** Deletes through `remove(draft, id)`, which refuses with a message (shown under the form) while the type is in use. */
+  function deleteOrRefuse(remove, id, what) {
+    const err = commitOrError((p) => remove(p, id));
+    if (err) {
+      cat.error = err;
+      showError('#cat-error', err);
+      return false;
+    }
+    toast(`Deleted ${what}`, { action: 'Undo', onAction: undo });
+    return true;
+  }
+
+  /**
+   * What each catalog tab lists and how: names, sub lines, drawings, use
+   * counts, the form, and the model functions that change, move, add and
+   * delete its types. `templates` are [key, name, sub line] for “New type”.
+   */
+  const CAT_TABS = {
+    devices: {
+      noun: 'type',
+      list: () => project.deviceTypes,
+      byId: M.typeOf,
+      name: (t) => t.label,
+      sub: (t) => M.formatTypeSpec(t),
+      art: (t) => {
+        const pv = R.renderPreview(t, ui.theme, null, t.defaultName, measure);
+        return svgArt(pv.width, pv.height, pv.body);
+      },
+      use: (id) => project.devices.filter((d) => d.type === id).length,
+      useText: (n) => (n ? `${plural(n, 'device')} of this type` : 'Not used yet'),
+      form: deviceTypeForm,
+      update: M.updateDeviceType,
+      move: M.moveDeviceType,
+      templates: () => M.TYPE_TEMPLATES.map((t, i) => [i, t.label, M.formatTypeSpec(t)]),
+      add: (p, tpl) => M.addDeviceType(p, tpl === 'copy' ? M.typeOf(p, cat.id) : M.TYPE_TEMPLATES[Number(tpl)]),
+      del: deleteDeviceType,
+      empty: 'No types yet. Add one with “New type”.',
+    },
+    racks: {
+      noun: 'type',
+      list: () => project.rackTypes,
+      byId: M.rackTypeById,
+      name: (t) => t.name,
+      sub: (t) => `${t.units}U · ${plural(t.sideSlots, 'side slot')}${t.powerW ? ` · ${fmtKw(t.powerW)}` : ''}`,
+      art: (t) => `<span class="cat-rack" style="--u:${t.units}" aria-hidden="true"></span>`,
+      use: (id) => M.rackTypeUse(project, id),
+      useText: (n) => (n ? `Used by ${plural(n, 'rack')}` : 'Not used yet'),
+      form: rackTypeForm,
+      update: M.updateRackType,
+      move: M.moveRackType,
+      templates: () => [['rack', 'New rack type', '42U, 2 side slots']],
+      add: (p, tpl) => M.addRackType(p, tpl === 'copy' ? M.rackTypeById(p, cat.id) : { name: 'Custom rack', units: 42, sideSlots: 2, powerW: 8000, weightKg: 1000 }),
+      del: (id) => deleteOrRefuse(M.deleteRackType, id, `the rack type ${M.rackTypeById(project, id).name}`),
+      empty: 'No types yet. Add one with “New type”.',
+    },
+    cables: {
+      noun: 'type',
+      list: () => project.cableTypes,
+      byId: M.cableTypeById,
+      name: (t) => t.name,
+      sub: cableSub,
+      art: cableArt,
+      use: (id) => C.cableTypeUse(project, id),
+      useText: (n) => (n ? `${plural(n, 'cable')} name${n === 1 ? 's' : ''} this type` : 'No cable names this type'),
+      form: cableTypeForm,
+      update: C.updateCableType,
+      move: C.moveCableType,
+      templates: () => M.DEFAULT_CABLE_TYPES.map((t, i) => [i, t.name, cableSub(t)]),
+      add: (p, tpl) => C.addCableType(p, tpl === 'copy' ? M.cableTypeById(p, cat.id) : M.DEFAULT_CABLE_TYPES[Number(tpl)]),
+      del: (id) => deleteOrRefuse(C.deleteCableType, id, `the cable type ${M.cableTypeById(project, id).name}`),
+      empty: 'No cable types: cables can’t pick a type or be ordered. Add one with “New type”.',
+    },
+    transceivers: {
+      noun: 'transceiver',
+      list: () => project.transceivers,
+      byId: M.transceiverById,
+      name: (t) => t.name,
+      sub: transceiverSub,
+      art: transceiverArt,
+      use: (id) => C.transceiverUse(project, id),
+      useText: (n) => (n ? `${plural(n, 'cable end')} name${n === 1 ? 's' : ''} this transceiver` : 'No cable end names this transceiver'),
+      form: transceiverForm,
+      update: C.updateTransceiver,
+      move: C.moveTransceiver,
+      templates: () => M.DEFAULT_TRANSCEIVERS.map((t, i) => [i, t.name, transceiverSub(t)]),
+      add: (p, tpl) => C.addTransceiver(p, tpl === 'copy' ? M.transceiverById(p, cat.id) : M.DEFAULT_TRANSCEIVERS[Number(tpl)]),
+      del: (id) => deleteOrRefuse(C.deleteTransceiver, id, `the transceiver ${M.transceiverById(project, id).name}`),
+      empty: 'No transceivers: fiber cables can’t plug into cages. Add one with “New type”.',
+    },
+  };
 
   function catalogChange(input) {
     const prop = input.dataset.prop;
     let value = input.value;
     if (input.dataset.num !== undefined) value = Number(value);
     if (input.dataset.kw !== undefined) value = Number(value) * 1000;
+    if (input.dataset.list !== undefined) {
+      value = parseLengths(input.value);
+      if (typeof value === 'string') {
+        cat.error = value;
+        cat.keep = { id: input.id, value: input.value };
+        return refreshCatalog();
+      }
+    }
     const id = cat.id;
-    const err = commitOrError((p) => (cat.tab === 'devices' ? M.updateDeviceType(p, id, { [prop]: value }) : M.updateRackType(p, id, { [prop]: value })));
+    const update = catTab().update;
+    const err = commitOrError((p) => update(p, id, { [prop]: value }));
     cat.error = err || '';
+    cat.keep = null;
     refreshCatalog();
   }
 
   $('#cat-form').addEventListener('change', (e) => {
-    if (e.target.dataset && e.target.dataset.prop) catalogChange(e.target);
+    const t = e.target;
+    if (!t.dataset) return;
+    if (t.dataset.pgProp) portChange(t);
+    else if (t.id === 'cat-c-made') madeToLength(t.checked);
+    else if (t.dataset.prop) catalogChange(t);
   });
   $('#cat-form').addEventListener('click', async (e) => {
     if (!e.target.closest('#cat-delete')) return;
-    const id = cat.id;
-    if (cat.tab === 'devices') {
-      const t = M.typeOf(project, id);
-      const n = catalogUse('devices', id);
-      if (n) {
-        const ok = await confirmDialog({
-          title: `Delete ${t.label}?`,
-          body: `${plural(n, 'device')} of this type ${n === 1 ? 'is' : 'are'} deleted with it. Undo brings everything back.`,
-          ok: 'Delete type and devices',
-        });
-        if (!ok) return;
-        openDialog($('#dlg-catalog'));
-      }
-      commit((p) => void M.deleteDeviceType(p, id));
-      toast(`Deleted the type ${t.label}`, { action: 'Undo', onAction: undo });
-    } else {
-      const err = commitOrError((p) => M.deleteRackType(p, id));
-      if (err) return showError('#cat-error', err);
-    }
-    selectCatalogItem(null);
+    if (await catTab().del(cat.id)) selectCatalogItem(null);
   });
+  $('#cat-form').addEventListener('click', (e) => {
+    const sub = e.target.closest('[data-cat-sub]');
+    if (sub) {
+      cat.sub = sub.dataset.catSub;
+      cat.error = '';
+      cat.keep = null;
+      renderCatalog();
+      return $(`#cat-sub-${cat.sub}`).focus();
+    }
+    if (e.target.closest('#cat-pg-add')) return addPortGroup();
+    const del = e.target.closest('[data-pg-del]');
+    if (del) {
+      // Focus moves to the remove button of the row that takes its place, or
+      // of the row above, or to Add ports when no row is left.
+      const t = M.typeOf(project, cat.id);
+      const i = Number(del.dataset.pgDel);
+      // Answered No, focus goes back to this button.
+      cat.focus = t.ports.length > 1 ? `cat-pg-${Math.min(i, t.ports.length - 2)}-del` : 'cat-pg-add';
+      setTypePorts(t.ports.filter((g, k) => k !== i), null, del.id);
+      cat.focus = null;
+      return;
+    }
+    if (e.target.closest('#cat-pg-copy')) {
+      // A field left by this click redraws first, or that redraw would
+      // close the menu again.
+      if (cat.pending) renderCatalog();
+      return toggleMenu($('#cat-pg-copy'), $('#cat-pg-menu'), true);
+    }
+    const copy = e.target.closest('[data-pg-copy]');
+    if (copy) {
+      closeMenus();
+      cat.focus = 'cat-pg-copy';
+      setTypePorts(M.clone(M.typeOf(project, copy.dataset.pgCopy).ports), null, 'cat-pg-copy');
+      cat.focus = null;
+    }
+  });
+  // In the port table Enter moves on like Tab. Both commit the field
+  // before moving, so that the redraw this causes knows where focus goes.
+  $('#cat-form').addEventListener('keydown', (e) => {
+    const menu = e.target.closest('#cat-pg-menu');
+    if (menu) return menuKeydown(e, menu, $('#cat-pg-copy'));
+    const field = e.target.closest('.pt-table input, .pt-table select, .pt-table button');
+    if (!field || (e.key !== 'Enter' && e.key !== 'Tab') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Enter' && field.tagName !== 'INPUT') return;
+    const fields = $$('.pt-table input, .pt-table select, .pt-table button', $('#cat-form'));
+    const next = fields[fields.indexOf(field) + (e.shiftKey ? -1 : 1)];
+    if (!next && e.key === 'Tab') return;
+    e.preventDefault();
+    cat.focus = next ? next.id : field.id;
+    if (next) next.focus();
+    else field.blur();
+    cat.focus = null;
+  });
+  // Tab out of any other field of the form likewise: its change redraws
+  // the form, and the control the browser was moving to is gone with it.
+  $('#cat-form').addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const field = e.target.closest('input, select, textarea');
+    if (!field || field.type === 'radio' || field.type === 'checkbox') return;
+    const list = catTabbables();
+    const k = list.indexOf(field) + (e.shiftKey ? -1 : 1);
+    if (k < 0 || k >= list.length) return;
+    e.preventDefault();
+    cat.focus = list[k].id || `@${k}`;
+    list[k].focus();
+    cat.focus = null;
+  });
+  /** The controls of the catalog's form Tab stops at, in order (one per radio group). */
+  function catTabbables() {
+    return $$('input, select, textarea, button, [tabindex]', $('#cat-form')).filter((x) => {
+      if (x.disabled || x.tabIndex < 0 || !x.getClientRects().length || x.closest('[hidden]')) return false;
+      if (x.type !== 'radio') return true;
+      const group = $$(`input[type="radio"][name="${CSS.escape(x.name)}"]`, $('#cat-form'));
+      return x.checked || (!group.some((r) => r.checked) && group[0] === x);
+    });
+  }
+
   /** Moves a type to `toIndex` of its list and keeps it selected. */
   function moveCatalogItem(id, toIndex, refocus) {
-    const move = cat.tab === 'devices' ? M.moveDeviceType : M.moveRackType;
+    const move = catTab().move;
     commit((p) => (move(p, id, toIndex) ? undefined : false));
     selectCatalogItem(id);
     const item = $(`#cat-list .cat-item[data-id="${CSS.escape(id)}"]`);
@@ -2752,7 +3397,7 @@
   $('#cat-form').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cat-move]');
     if (!b) return;
-    const list = cat.tab === 'devices' ? project.deviceTypes : project.rackTypes;
+    const list = catTab().list();
     moveCatalogItem(cat.id, list.findIndex((t) => t.id === cat.id) + Number(b.dataset.catMove));
     const again = $(`#cat-form [data-cat-move="${b.dataset.catMove}"]`);
     if (again && !again.disabled) again.focus();
@@ -2839,7 +3484,7 @@
     if (!item || cat.skipClick) return;
     selectCatalogItem(item.dataset.id);
   });
-  $$('#dlg-catalog [role="tab"]').forEach((b) =>
+  $$('#dlg-catalog .dlg-head [role="tab"]').forEach((b) =>
     b.addEventListener('click', () => {
       cat.tab = b.dataset.tab;
       selectCatalogItem(null);
@@ -2850,11 +3495,10 @@
     if (!item) return;
     closeMenus();
     const tpl = item.dataset.template;
-    const made = commitAdd((p) => {
-      if (cat.tab === 'devices') return M.addDeviceType(p, tpl === 'copy' ? M.typeOf(p, cat.id) : M.TYPE_TEMPLATES[Number(tpl)]);
-      return M.addRackType(p, tpl === 'copy' ? M.rackTypeById(p, cat.id) : { name: 'Custom rack', units: 42, sideSlots: 2, powerW: 8000, weightKg: 1000 });
-    });
+    const add = catTab().add;
+    const made = commitAdd((p) => add(p, tpl));
     if (!made) return toast(`The catalog is full`, { warn: true });
+    cat.sub = 'general';
     selectCatalogItem(made.id);
     const first = $('#cat-form input');
     if (first) first.select();
@@ -3061,14 +3705,54 @@
     $$('[aria-haspopup="menu"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
   }
 
-  function toggleMenu(btn, menu) {
+  /** Opens or closes `menu` under `btn`; `fit` keeps it inside the dialog body it opens in. */
+  function toggleMenu(btn, menu, fit) {
     const willOpen = menu.hidden;
     closeMenus();
     if (!willOpen) return;
     menu.hidden = false;
+    if (fit) fitMenu(menu);
     btn.setAttribute('aria-expanded', 'true');
     const first = menu.querySelector('[aria-checked="true"]') || menu.querySelector('button');
     if (first) first.focus();
+  }
+
+  /**
+   * Keeps an open menu inside the scrolling box it opens in (a dialog's
+   * body): upward when there is more room above, scrolling itself when it
+   * is taller than the room, and right-aligned when it would run past the
+   * right edge.
+   */
+  function fitMenu(menu) {
+    const box = menu.closest('.dlg-body');
+    if (!box || menu.hidden) return;
+    menu.classList.remove('menu-up', 'menu-right');
+    menu.style.maxHeight = '';
+    const b = box.getBoundingClientRect();
+    const btn = menu.parentElement.getBoundingClientRect();
+    const below = b.bottom - btn.bottom - 12;
+    const above = btn.top - b.top - 12;
+    const h = menu.offsetHeight;
+    const up = h > below && above > below;
+    menu.classList.toggle('menu-up', up);
+    const room = up ? above : below;
+    if (h > room) menu.style.maxHeight = `${Math.max(120, Math.floor(room))}px`;
+    if (menu.getBoundingClientRect().right > b.right) menu.classList.add('menu-right');
+  }
+
+  /** Arrow keys walk a menu, Escape closes it back to its button `btn`, Tab leaves it. */
+  function menuKeydown(e, menu, btn) {
+    const items = $$('button', menu);
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenus();
+      btn.focus();
+    } else if (e.key === 'Tab') closeMenus();
   }
 
   // Menu buttons, their menus, and what fills a menu before it opens.
@@ -3085,19 +3769,7 @@
       if (fill) fill();
       toggleMenu(btn, menu);
     });
-    menu.addEventListener('keydown', (e) => {
-      const items = $$('button', menu);
-      const i = items.indexOf(document.activeElement);
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        closeMenus();
-        btn.focus();
-      } else if (e.key === 'Tab') closeMenus();
-    });
+    menu.addEventListener('keydown', (e) => menuKeydown(e, menu, btn));
   });
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.menu-wrap')) closeMenus();
@@ -3331,6 +4003,17 @@
 
   // ---------------------------------------------------------------- toasts
 
+  /**
+   * A modal dialog makes the rest of the page inert, so while one is open
+   * the toasts live in it (fixed to the window all the same) to keep their
+   * Undo buttons in reach.
+   */
+  function hostToasts() {
+    const host = $$('dialog[open]').pop() || document.body;
+    if (el.toasts.parentNode !== host) host.appendChild(el.toasts);
+  }
+  $$('dialog').forEach((dlg) => dlg.addEventListener('close', hostToasts));
+
   function toast(message, opts) {
     const o = opts || {};
     const t = document.createElement('div');
@@ -3354,6 +4037,7 @@
       });
       t.appendChild(b);
     }
+    hostToasts();
     el.toasts.appendChild(t);
     while (el.toasts.children.length > 3) el.toasts.firstElementChild.remove();
     timer = setTimeout(dismiss, o.action ? 6000 : o.warn ? 5000 : 3200);

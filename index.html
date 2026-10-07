@@ -44,6 +44,7 @@
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 18a2 2 0 0 1 2-2h11"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
   <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 14h10v7H7z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.1"/></symbol>
   <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r=".9"/><circle cx="15" cy="6" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="18" r=".9"/><circle cx="15" cy="18" r=".9"/></symbol>
   <symbol id="i-theme-system" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
   <symbol id="i-theme-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
@@ -117,7 +118,7 @@
     <section class="panel-sec bin-parts">
       <div class="sec-head">
         <h2>Devices</h2>
-        <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit device and rack types"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
+        <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit the types of devices, racks, cables and transceivers"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
       </div>
       <p class="sec-hint"><span class="hint-pointer">Drag onto a rack, or click one and then click a slot.</span><span class="hint-touch">Tap a device, then tap a free slot in a rack.</span></p>
       <div class="parts" id="parts"></div>
@@ -400,12 +401,14 @@
 <dialog class="dlg dlg-wide" id="dlg-catalog" aria-labelledby="catalog-title">
   <div class="dlg-shell">
     <header class="dlg-head">
-      <span class="tape">Catalog</span>
-      <h2 id="catalog-title">Device and rack types</h2>
-      <p class="dlg-sub">Types belong to this plan and travel with its file. Changes apply right away; Undo takes them back. Drag types to reorder them: the devices panel follows this order, and new rows get the first rack type.</p>
+      <span class="tape">Types</span>
+      <h2 id="catalog-title">Catalog</h2>
+      <p class="dlg-sub">The types of devices, racks, cables and transceivers belong to this plan and travel with its file. Changes apply right away; Undo takes them back. Drag types to reorder them: the devices panel follows this order, new rows get the first rack type, and cables pick the first cable type that fits.</p>
       <div class="seg tabs" role="tablist" aria-label="Catalog">
         <button type="button" role="tab" id="cat-tab-devices" data-tab="devices" aria-selected="true" aria-controls="cat-panel">Device types</button>
         <button type="button" role="tab" id="cat-tab-racks" data-tab="racks" aria-selected="false" aria-controls="cat-panel">Rack types</button>
+        <button type="button" role="tab" id="cat-tab-cables" data-tab="cables" aria-selected="false" aria-controls="cat-panel">Cable types</button>
+        <button type="button" role="tab" id="cat-tab-transceivers" data-tab="transceivers" aria-selected="false" aria-controls="cat-panel">Transceivers</button>
       </div>
     </header>
     <div class="dlg-body catalog" id="cat-panel" role="tabpanel">
@@ -429,6 +432,7 @@
 <div class="print-root" id="print-root" aria-hidden="true"></div>
 
 <script src="js/model.js"></script>
+<script src="js/cabling.js"></script>
 <script src="js/io.js"></script>
 <script src="js/render.js"></script>
 <script src="js/library.js"></script>
