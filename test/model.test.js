@@ -52,6 +52,22 @@ test('a new plan has one floor with one row of three 47U racks and the standard 
   assert.equal(M.createEmptyProject(40).floors[0].rows[0].racks.length, 16, 'clamped to 16');
 });
 
+test('names of types are put in the plural inside a sentence', () => {
+  const cases = {
+    '48-port switch': '48-port switches',
+    'Compute node': 'compute nodes',
+    'Storage enclosure': 'storage enclosures',
+    PDU: 'PDUs',
+    'GPU server': 'GPU servers',
+    '1U server': '1U servers',
+    '32-port 400G switch': '32-port 400G switches',
+    'Patch box': 'patch boxes',
+    'Battery': 'batteries',
+    'Relay': 'relays',
+  };
+  for (const [name, many] of Object.entries(cases)) assert.equal(M.pluralName(name), many, name);
+});
+
 test('floors, rows and racks respect their limits', () => {
   const p = M.createEmptyProject(1);
   for (let i = 0; i < 10; i++) M.addFloor(p, { racks: 1 });

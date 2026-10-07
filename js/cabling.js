@@ -63,9 +63,11 @@
    * Lookups for many cables at once: devices, racks with their place along
    * the row, ports by type, label counts and the catalogs by id. Functions
    * taking an optional `ctx` build one when it is missing; pass one when
-   * describing many cables of the same plan.
+   * describing many cables of the same plan. With `opts.memo`, describe
+   * keeps what it finds per cable object: for a plan that no longer
+   * changes, such as each state of the app's undo history.
    */
-  function context(project) {
+  function context(project, opts) {
     const racks = new Map();
     const rackX = new Map();
     const order = new Map();
@@ -98,6 +100,7 @@
       cableTypes: new Map(project.cableTypes.map((t) => [t.id, t])),
       transceivers: new Map(project.transceivers.map((t) => [t.id, t])),
       networks: new Map(project.networks.map((n) => [n.id, n])),
+      memo: opts && opts.memo ? new WeakMap() : null,
     };
   }
 
@@ -377,6 +380,35 @@
     if (error) return error;
     project.cables[i] = finishCable(project, merged, id);
     return null;
+  }
+
+  /**
+   * updateCable for many cables, reading the plan's ports once: cable `id`
+   * of `ids` gets `changes` (an object, or a function of the cable and its
+   * place in `ids` that returns one). Each change is checked as updateCable
+   * checks it; a refused one leaves its cable as it was and the others go
+   * on. Returns [{ id, error }] for the cables refused ([] when all changed).
+   */
+  function updateCables(project, ids, changes) {
+    const ctx = M.cableContext(project);
+    const at = new Map(project.cables.map((c, i) => [c.id, i]));
+    const refused = [];
+    ids.forEach((id, k) => {
+      const i = at.get(id);
+      if (i === undefined) return void refused.push({ id, error: 'Unknown cable' });
+      const cur = project.cables[i];
+      const merged = Object.assign({}, cur, typeof changes === 'function' ? changes(cur, k) : changes);
+      const error = M.cableProblem(project, draftCable(merged, id), ctx);
+      if (error) return void refused.push({ id, error });
+      const next = finishCable(project, merged, id);
+      for (const x of M.cableEnds(cur)) {
+        const key = `${x.end.device}|${x.end.port}`;
+        if (ctx.used.get(key) === cur) ctx.used.delete(key);
+      }
+      M.claimPorts(ctx, next);
+      project.cables[i] = next;
+    });
+    return refused;
   }
 
   /** Removes cables by id (one id or a list); returns how many went. */
@@ -698,6 +730,8 @@
    */
   function describe(project, cable, ctx) {
     const c = ctx || context(project);
+    const known = c.memo && c.memo.get(cable);
+    if (known) return known;
     const need = neededLength(project, cable, c);
     const needM = need ? need.m : null;
     const lengthAuto = cable.lengthM === null || cable.lengthM === undefined;
@@ -735,7 +769,7 @@
 
     const legSpeeds = sp.legs;
     const rated = legSpeeds.filter((g) => g);
-    return {
+    const out = {
       cable,
       type,
       auto: r.auto,
@@ -756,11 +790,13 @@
       })),
       issues,
     };
+    if (c.memo) c.memo.set(cable, out);
+    return out;
   }
 
-  /** describe for many cables (default: all) with one context. */
-  function describeAll(project, cables) {
-    const ctx = context(project);
+  /** describe for many cables (default: all) with one context (made when `ctx` is not given). */
+  function describeAll(project, cables, ctx) {
+    ctx = ctx || context(project);
     return (cables || project.cables).map((c) => describe(project, c, ctx));
   }
 
@@ -769,9 +805,9 @@
    * cables by stock length (a length set between two is bought at the
    * longer), cables made to length with each length and the total, and
    * transceivers. `unresolved` counts cables without a type or length, or
-   * longer than their type's longest stock length.
+   * longer than their type's longest stock length. `ctx` is optional.
    */
-  function billOfMaterials(project, cables) {
+  function billOfMaterials(project, cables, ctx) {
     const stock = new Map();
     const made = new Map();
     const optics = new Map();
@@ -781,7 +817,7 @@
       if (!m) map.set(key, (m = new Map()));
       m.set(sub, (m.get(sub) || 0) + 1);
     };
-    for (const d of describeAll(project, cables)) {
+    for (const d of describeAll(project, cables, ctx)) {
       for (const e of d.ends) if (e.transceiver) optics.set(e.transceiver.id, (optics.get(e.transceiver.id) || 0) + 1);
       // A length set between stock lengths is bought at the next one; past the longest it cannot be.
       const buy = d.type && d.lengthM !== null && d.type.lengthsM.length ? stockLength(d.type, d.lengthM) : d.lengthM;
@@ -847,9 +883,10 @@
    * a rack first), 'network' or 'type' (in catalog order, then the ones
    * without), or 'device' (a cable is listed under each device it joins, in
    * rack order). Returns [{ key, label, cables }]; cables keep their order.
+   * `context` is optional.
    */
-  function groupCables(project, cables, by) {
-    const ctx = context(project);
+  function groupCables(project, cables, by, context0) {
+    const ctx = context0 || context(project);
     const groups = new Map();
     const put = (key, label, rank, cable) => {
       let g = groups.get(key);
@@ -887,11 +924,11 @@
     return [...groups.values()].sort((x, y) => compareRanks(x.rank, y.rank)).map(({ key, label, cables: list }) => ({ key, label, cables: list }));
   }
 
-  /** Predicate for cables matching `query` (every word must occur in its label, devices, ports, network, type or notes), or null for an empty query. */
-  function cableMatcher(project, query) {
+  /** Predicate for cables matching `query` (every word must occur in its label, devices, ports, network, type or notes), or null for an empty query. `context0` is optional. */
+  function cableMatcher(project, query, context0) {
     const words = M.queryWords(query);
     if (!words.length) return null;
-    const ctx = context(project);
+    const ctx = context0 || context(project);
     return (cable) => {
       const net = ctx.networks.get(cable.network);
       const type = describe(project, cable, ctx).type;
@@ -1077,6 +1114,7 @@
     connect,
     connector,
     updateCable,
+    updateCables,
     disconnect,
     planSeries,
     connectSeries,

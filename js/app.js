@@ -121,8 +121,9 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system' }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system', workspace: 'racks' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
+  if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   const lib = window.RP.library.create(storage);
   let planId = null;
@@ -131,6 +132,7 @@
   let savedJSON = null; // projectJSON as last loaded or saved
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
   const ui = {
+    workspace: prefs.workspace, // 'racks' | 'cabling'; the Cabling workspace keeps its own state (js/cabling-ui.js)
     selection: null, // { kind: 'devices', ids } | { kind: 'rack' | 'row' | 'floor', id }
     rowId: null, // the row shown
     view: prefs.view === 'map' ? 'map' : 'sheet',
@@ -173,6 +175,7 @@
     ui.focusCluster = null;
     ui.hoverCluster = null;
     ui.armed = null;
+    cab.reset();
     // Undo buttons in toasts refer to the previous plan.
     el.toasts.textContent = '';
     const remembered = prefs.rows[id];
@@ -281,6 +284,7 @@
     cat.keep = null;
     cat.error = '';
     if ($('#dlg-catalog').open) renderCatalog();
+    cab.onRestore();
   }
   function undo() {
     if (!history.past.length) return;
@@ -323,6 +327,38 @@
     fileInput: $('#file-input'),
     printRoot: $('#print-root'),
   };
+
+  // The Cabling workspace: app.js hands it what it needs and calls its hooks
+  // at the dispatch points below while ui.workspace is 'cabling'.
+  const cab = window.RP.cablingUI.create({
+    project: () => project,
+    ui,
+    prefs,
+    savePrefs,
+    el,
+    commit,
+    commitAdd,
+    undo,
+    render,
+    renderStage,
+    renderInspector,
+    setRow,
+    currentRow,
+    setWorkspace,
+    toast,
+    openDialog,
+    showError,
+    confirmDialog,
+    reportWarnings,
+    renderSwatches,
+    openCatalog,
+    download,
+    fileBase,
+    keepFocus,
+    esc,
+    icon,
+    plural,
+  });
 
   // ------------------------------------------------------------ selection
 
@@ -383,6 +419,8 @@
   }
 
   function selectThing(kind, id, opts) {
+    // Racks, rows and floors are edited in the Racks workspace.
+    if (ui.workspace === 'cabling') setWorkspace('racks');
     ui.selection = { kind, id };
     if (kind === 'rack') {
       const row = rowOfRack(id);
@@ -405,8 +443,11 @@
     pruneUiState();
     renderNav();
     renderStage();
-    renderParts();
-    renderClusters();
+    if (ui.workspace === 'cabling') cab.renderBin();
+    else {
+      renderParts();
+      renderClusters();
+    }
     if (o.inspector !== false) renderInspector();
     renderChrome();
     if (ui.searchOpen) renderSearchResults();
@@ -425,6 +466,7 @@
     if (!valid(ui.focusCluster)) ui.focusCluster = null;
     if (!valid(ui.hoverCluster)) ui.hoverCluster = null;
     if (ui.armed && !M.typeOf(project, ui.armed)) ui.armed = null;
+    cab.prune();
   }
 
   function findDevEl(id) {
@@ -479,6 +521,7 @@
   }
 
   function renderStage() {
+    if (ui.workspace === 'cabling') return cab.renderStage();
     const map = ui.view === 'map';
     el.svg.toggleAttribute('hidden', map);
     el.floormap.hidden = !map;
@@ -489,7 +532,7 @@
   }
 
   function renderScene() {
-    if (ui.view === 'map') return;
+    if (ui.view === 'map' || ui.workspace === 'cabling') return;
     const active = document.activeElement;
     const focusedId = active && active !== el.svg && el.svg.contains(active) && active.dataset ? active.dataset.id : null;
     const sel = ui.selection;
@@ -635,6 +678,7 @@
     el.rowPrev.disabled = i <= 0;
     el.rowNext.disabled = i >= rows.length - 1;
     for (const b of $$('.view-toggle button')) b.setAttribute('aria-pressed', String(b.dataset.view === ui.view));
+    if (ui.workspace === 'cabling') cab.renderNav();
   }
 
   function renderFloorTabs() {
@@ -673,6 +717,30 @@
   el.rowNext.addEventListener('click', () => stepRow(1));
   $$('.view-toggle button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
+  /** Switches between the Racks and the Cabling workspace; each keeps its selection, and Racks its scroll. */
+  const racksScroll = { at: null };
+  function setWorkspace(ws) {
+    if ((ws !== 'racks' && ws !== 'cabling') || ws === ui.workspace) return;
+    if (ui.drag) cancelDrag();
+    disarm();
+    closeMenus();
+    if (ui.workspace === 'racks') racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view };
+    ui.workspace = ws;
+    prefs.workspace = ws;
+    savePrefs();
+    cab.cancelPending();
+    if (ws === 'racks') cab.hideBin();
+    render();
+    if (ws === 'cabling') {
+      if (cab.zoomable()) fitWidth();
+    } else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
+      el.canvas.scrollLeft = racksScroll.at.left;
+      el.canvas.scrollTop = racksScroll.at.top;
+    } else if (racksScroll.at || prefs.zoom) scrollToOrigin();
+    else fitWidth();
+  }
+  $$('.ws-switch [data-workspace]').forEach((b) => b.addEventListener('click', () => setWorkspace(b.dataset.workspace)));
+
   function setView(view) {
     if (view === ui.view) return;
     ui.view = view;
@@ -703,7 +771,8 @@
     const t = e.target.closest('button');
     if (!t) return;
     closeMenus();
-    if (t.dataset.row) setRow(t.dataset.row, { view: 'sheet' });
+    // In Racks a row picked shows its elevation; Cabling keeps the Racks view as it was.
+    if (t.dataset.row) setRow(t.dataset.row, ui.workspace === 'racks' ? { view: 'sheet' } : {});
     else if (t.dataset.rowAction === 'add') addRowTo(currentRow().floor.id);
     else if (t.dataset.rowAction === 'settings') selectThing('row', ui.rowId);
   });
@@ -883,6 +952,10 @@
   }
 
   function renderChrome() {
+    const cabling = ui.workspace === 'cabling';
+    for (const b of $$('.ws-switch [data-workspace]')) b.setAttribute('aria-pressed', String(b.dataset.workspace === ui.workspace));
+    $('#app').classList.toggle('is-cabling', cabling);
+    el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
     el.undo.disabled = !history.past.length;
     el.redo.disabled = !history.future.length;
     if (document.activeElement !== el.planName) el.planName.value = project.name;
@@ -895,13 +968,15 @@
         `<button type="button" data-disarm aria-label="Stop placing">${icon('x', 'ic-sm')}</button>`;
     }
     el.armedHint.hidden = !ui.armed;
+    if (cabling) cab.renderChrome();
   }
 
   // ------------------------------------------------------------ inspector
 
+  /** Cluster chips; each has an id, so that an inspector drawn again after a change puts focus back on it and arrow keys go on through the chips. */
   function clusterChips(name, selected, withNew) {
     const chip = (value, label, color, checked, cls) =>
-      `<label class="chip${cls || ''}"><input type="radio" name="${name}" value="${esc(value)}"${checked ? ' checked' : ''}>` +
+      `<label class="chip${cls || ''}"><input type="radio" name="${name}" id="${esc(`${name}-${value || 'none'}`)}" value="${esc(value)}"${checked ? ' checked' : ''}>` +
       `<span>${color !== undefined ? `<i class="sw" style="--c:${color || 'var(--unassigned)'}"></i>` : ''}${esc(label)}</span></label>`;
     let s = chip('', 'None', null, selected === null);
     for (const c of project.clusters) s += chip(c.id, c.name, c.color, selected === c.id);
@@ -975,7 +1050,7 @@
     // Leaving the control fires its change (a value typed but not yet
     // committed), which may redraw the plan and this inspector.
     if (focusId) active.blur();
-    const key = JSON.stringify(ui.selection || null);
+    const key = ui.workspace === 'cabling' ? 'cabling:' + cab.inspectorKey() : JSON.stringify(ui.selection || null);
     const same = key === inspectorKey;
     inspectorKey = key;
     drawInspector();
@@ -984,6 +1059,7 @@
   }
 
   function drawInspector() {
+    if (ui.workspace === 'cabling') return cab.renderInspector();
     const s = ui.selection;
     if (s && s.kind === 'devices') {
       if (s.ids.length === 1) renderDeviceInspector(M.deviceById(project, s.ids[0]));
@@ -1484,6 +1560,7 @@
       `<dt><kbd>/</kbd></dt><dd>Search</dd>` +
       `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
       `<dt><kbd>M</kbd></dt><dd>Floor map</dd>` +
+      `<dt><kbd>C</kbd></dt><dd>Cabling</dd>` +
       `<dt><kbd>Shift</kbd> + click</dt><dd>Add to selection</dd>` +
       `<dt><kbd>Shift</kbd> + drag</dt><dd>Select an area</dd>` +
       `<dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>Select the row</dd>` +
@@ -1674,6 +1751,7 @@
     ui.selection = null;
     ui.focusCluster = null;
     ui.hoverCluster = null;
+    cab.reset();
     disarm();
     const ok = commit((p) => {
       Object.keys(p).forEach((k) => delete p[k]);
@@ -1704,8 +1782,13 @@
     el.zoomLevel.textContent = Math.round(ui.zoom * 100) + '%';
   }
 
+  /** Whether the stage shows a drawing that zooms: the Racks sheet, or a drawing of the Cabling workspace. */
+  function zoomable() {
+    return ui.workspace === 'cabling' ? cab.zoomable() : ui.view !== 'map';
+  }
+
   function setZoom(z, anchor, remember) {
-    if (ui.view === 'map') return;
+    if (!zoomable()) return;
     const nz = clamp(Math.round(z * 1000) / 1000, 0.1, 3);
     const c = el.canvas;
     const cr = c.getBoundingClientRect();
@@ -1728,7 +1811,7 @@
   // Fit the sheet's width, but never so small that labels become unreadable,
   // and show it from the top left.
   function fitWidth() {
-    if (ui.view === 'map') return;
+    if (!zoomable()) return;
     fitZoom('width', false);
     if (ui.zoom < 0.5) setZoom(0.5, null, false);
     scrollToOrigin();
@@ -1740,7 +1823,7 @@
   }
 
   function fitZoom(mode, remember) {
-    if (ui.view === 'map') return;
+    if (!zoomable()) return;
     const cs = getComputedStyle(el.canvas);
     const cw = el.canvas.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const ch = el.canvas.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
@@ -2004,6 +2087,8 @@
       return;
     }
     if (e.button !== 0) return;
+    // The Cabling workspace's drawings have their own pointer handling.
+    if (ui.workspace === 'cabling') return;
     const press = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
     if (e.target.closest('.add-rack')) {
       if (e.pointerType === 'mouse') e.preventDefault();
@@ -2210,6 +2295,7 @@
 
   function renderSearchResults() {
     const q = ui.query.trim();
+    const cabling = ui.workspace === 'cabling';
     const res = M.search(project, q, 6);
     const groups = [
       ['floors', 'Floors', 'map'],
@@ -2217,6 +2303,12 @@
       ['racks', 'Racks', 'rack'],
       ['devices', 'Devices', 'rack'],
     ];
+    if (cabling) {
+      const found = cab.searchCables(q, 8);
+      res.cables = found.items;
+      res.counts.cables = found.count;
+      groups.push(['cables', 'Cables', 'cable']);
+    }
     const items = [];
     let html = '';
     for (const [key, label, kind] of groups) {
@@ -2231,10 +2323,10 @@
           `<span class="sr-kind">${icon(kind, 'ic-sm')}</span>` +
           `<span class="sr-name">${esc(it.name)}</span><span class="sr-detail">${esc(it.detail)}</span></div>`;
       }
-      if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' ? ' (highlighted in the racks)' : ''}</div>`;
+      if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' && !cabling ? ' (highlighted in the racks)' : ''}</div>`;
     }
     if (!items.length) html = `<div class="sr-empty" role="presentation">Nothing matches “${esc(q)}”.</div>`;
-    else if (res.counts.devices) html += `<div class="sr-foot" role="presentation">Matching devices stay highlighted; <kbd>Esc</kbd> clears the search.</div>`;
+    else if (res.counts.devices && !cabling) html += `<div class="sr-foot" role="presentation">Matching devices stay highlighted; <kbd>Esc</kbd> clears the search.</div>`;
     ui.searchItems = items;
     if (ui.searchActive >= items.length) ui.searchActive = items.length - 1;
     el.searchResults.innerHTML = html;
@@ -2268,6 +2360,10 @@
 
   function chooseResult(it) {
     closeSearch();
+    if (ui.workspace === 'cabling') {
+      el.search.blur();
+      return cab.chooseResult(it);
+    }
     if (it.kind === 'device') {
       el.search.blur();
       selectDevices([it.id], { follow: true, focus: true });
@@ -3658,6 +3754,11 @@
 
   function openText(text, fileName) {
     const csv = /\.(csv|tsv|txt)$/i.test(fileName) || !/^\s*[[{]/.test(text);
+    // A cable schedule always adds its cables to the plan open.
+    if (csv && IO.isCablesCSV(text)) {
+      const err = cab.importCablesText(text);
+      return err ? showError('#open-error', err) : undefined;
+    }
     if (csv) return importCSVText(text, fileName);
     let raw;
     try {
@@ -3890,6 +3991,8 @@
       let name;
       if (kind === 'json') download((name = `${fileBase()}.json`), new Blob([IO.serialize(project)], { type: 'application/json' }));
       else if (kind === 'csv') download((name = `${fileBase()}.csv`), new Blob(['﻿' + IO.toCSV(project)], { type: 'text/csv;charset=utf-8' }));
+      else if (kind === 'cables-csv') download((name = `${fileBase()}-cables.csv`), new Blob(['﻿' + IO.exportCablesCSV(project)], { type: 'text/csv;charset=utf-8' }));
+      else if (kind === 'order-csv') download((name = `${fileBase()}-cable-order.csv`), new Blob(['﻿' + IO.exportOrderCSV(project)], { type: 'text/csv;charset=utf-8' }));
       else if (kind === 'svg') download((name = `${fileBase(true)}.svg`), new Blob([R.exportSVG(project, exportOpts())], { type: 'image/svg+xml' }));
       else if (kind === 'png') download((name = `${fileBase(true)}.png`), await renderPNG(2));
       toast(`Exported ${name}`);
@@ -4086,6 +4189,8 @@
       focusSearch();
       return;
     }
+    const cabling = ui.workspace === 'cabling';
+    if (cabling && !(t.closest && t.closest('.menu')) && cab.onKeyDown(e, { formControl, textEntry, mod, key, letter })) return;
     if (formControl) {
       if (textEntry && (key === 'Escape' || (key === 'Enter' && t.tagName === 'INPUT'))) t.blur();
       return;
@@ -4097,21 +4202,26 @@
       else if (ui.marquee) {
         ui.marquee = null;
         hideDragFeedback();
-      } else if (ui.armed) disarm();
+      } else if (cabling && cab.cancelPending()) return;
+      else if (ui.armed) disarm();
       else if (!$$('.menu').every((m) => m.hidden)) closeMenus();
-      else if (ui.selection) clearSelection();
-      else if (ui.query) {
+      else if (cabling ? cab.hasSelection() : ui.selection) {
+        if (cabling) cab.clearSelection();
+        else clearSelection();
+      } else if (ui.query) {
         el.search.value = '';
         setQuery('');
-      } else if (ui.focusCluster) {
+      } else if (cabling) cab.clearFocus();
+      else if (ui.focusCluster) {
         ui.focusCluster = null;
         render({ inspector: false });
       }
       return;
     }
 
-    const ids = selIds();
-    const d = selectedDevice();
+    // The Racks workspace's selection only takes keys there.
+    const ids = cabling ? [] : selIds();
+    const d = cabling ? null : selectedDevice();
     if (ids.length && !mod) {
       if (key === 'Delete' || key === 'Backspace') {
         e.preventDefault();
@@ -4139,12 +4249,12 @@
         return;
       }
     }
-    if (mod && !e.shiftKey && !e.altKey && letter === 'd' && ui.selection) {
+    if (mod && !e.shiftKey && !e.altKey && letter === 'd' && ui.selection && !cabling) {
       e.preventDefault();
       const s = ui.selection;
       return s.kind === 'devices' ? duplicateDevices(s.ids) : duplicateStructure(s.kind, s.id);
     }
-    if (mod && letter === 'a' && ui.view === 'sheet') {
+    if (mod && letter === 'a' && ui.view === 'sheet' && !cabling) {
       e.preventDefault();
       return selectDevices(M.devicesWithin(project, ui.rowId).map((x) => x.id));
     }
@@ -4154,7 +4264,8 @@
       focusSearch();
     } else if (key === '[') stepRow(-1);
     else if (key === ']') stepRow(1);
-    else if (letter === 'm') setView(ui.view === 'map' ? 'sheet' : 'map');
+    else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
+    else if (letter === 'm' && !cabling) setView(ui.view === 'map' ? 'sheet' : 'map');
     else if (key === '+' || key === '=') setZoom(ui.zoom * 1.2);
     else if (key === '-' || key === '_') setZoom(ui.zoom / 1.2);
     else if (key === '0') fitZoom('sheet');
@@ -4220,7 +4331,9 @@
   ui.theme = detectTheme();
   bootPlan();
   render();
-  if (prefs.zoom) {
+  // Opened in Cabling, the Racks sheet keeps its zoom for later.
+  if (prefs.zoom && ui.workspace === 'cabling' && !zoomable()) ui.zoom = clamp(prefs.zoom, 0.1, 3);
+  else if (prefs.zoom) {
     setZoom(prefs.zoom, null, false);
     scrollToOrigin();
   } else fitWidth();

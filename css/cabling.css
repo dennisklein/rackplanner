@@ -1,0 +1,270 @@
+/* The Cabling workspace: its switch in the top bar, the cable and network panel, the schedule, its inspectors and dialogs. On the tokens of css/app.css. */
+
+/* ------------------------------------------------------------ chrome */
+
+.ws-switch { flex: none; height: 34px; background: var(--surface); }
+.ws-switch > button { gap: 6px; padding: 0 12px; font-weight: 500; }
+.ws-switch .ws-label { display: inline; padding: 0; color: inherit; font-size: inherit; cursor: inherit; }
+.cab-toggle { background: var(--surface); --seg-pad: 10px; }
+:root { --warn: #a86d06; --warn-icon: #d08a0c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --warn: #e8a93a; --warn-icon: #f0b545; }
+}
+:root[data-theme="dark"] { --warn: #e8a93a; --warn-icon: #f0b545; }
+.ic.is-warn { color: var(--warn-icon); }
+.ic.is-info { color: var(--ink-3); }
+.ic.is-ok { color: var(--ok); }
+
+/* ------------------------------------------------------------ left panel */
+
+.cab-card {
+  position: relative;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 6px 8px;
+  padding: 10px 10px 9px; color: inherit;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); text-align: left; cursor: pointer;
+  transition: border-color .12s, box-shadow .12s, background-color .12s;
+}
+.cab-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-1); }
+.cab-card.is-armed { border-color: var(--tape-edge); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--tape-edge); }
+.cab-card .part-art { height: 44px; }
+.cab-card .part-art svg { width: 100%; max-width: 188px; height: 44px; }
+.sw.sw-net { height: 5px; border-radius: 3px; box-shadow: none; }
+.kicker .sw.sw-net { width: 14px; height: 5px; }
+
+/* ------------------------------------------------------------ stage */
+
+/* A view of HTML (the schedule) fills the stage and scrolls inside itself. */
+.canvas[data-cab] { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.cab-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cab-empty {
+  margin: auto; max-width: 380px; padding: 32px 24px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--ink-2);
+}
+.cab-empty > .ic { width: 28px; height: 28px; color: var(--ink-3); }
+.cab-empty h2 { font: 600 20px/1.1 var(--font-display); color: var(--ink); }
+.cab-empty p { font-size: 13.5px; }
+
+/* ------------------------------------------------------------ schedule */
+
+.sc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sc-tools { display: flex; align-items: flex-end; gap: 10px; padding: 16px 18px 10px; flex-wrap: wrap; }
+/*
+ * The title takes the room left by the buttons. Its sub line keeps one line
+ * where its longest text fits ("n shown" added), and else takes two lines
+ * whatever it says: whole, and the header keeps its height while the count
+ * of cables shown changes.
+ */
+.sc-tools .fm-title { flex: 1 1 240px; min-width: 0; container-type: inline-size; }
+.sc-tools .fm-title > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container (max-width: 520px) {
+  .sc-tools .fm-title > p { white-space: normal; min-height: 2lh; }
+}
+.sc-tools > :not(.fm-title) { flex: none; }
+.sc-tools .seg { height: 30px; background: var(--surface); }
+.sc-tools .seg > button { font-size: 13px; padding: 0 10px; max-width: 160px; }
+/* A long row name is cut short inside its button (a flex box, which cannot end in an ellipsis itself); not a span of the seg's radios. */
+.sc-tools .seg .sc-scope-name { display: block; min-width: 0; padding: 0; color: inherit; font-size: inherit; cursor: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-filters { display: flex; align-items: center; gap: 6px; padding: 0 18px 10px; flex-wrap: wrap; }
+.sc-search { position: relative; display: flex; align-items: center; margin-right: 6px; }
+.sc-search > .ic { position: absolute; left: 8px; color: var(--ink-3); pointer-events: none; }
+.sc-search input {
+  height: 28px; width: 200px; padding: 0 8px 0 28px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); font-size: 13px;
+}
+.sc-search input:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+.sc-nets { gap: 6px; }
+.chip-net span { height: 26px; font-size: 12.5px; padding: 0 9px 0 7px; color: var(--ink-3); }
+.chip-net input:checked + span { border-color: var(--line-strong); box-shadow: none; font-weight: 500; color: var(--ink); background: var(--surface); }
+.chip-net input:not(:checked) + span { border-style: dashed; background: transparent; }
+.chip-net input:not(:checked) + span .sw { opacity: .35; }
+.chip-net .sw { width: 12px; height: 4px; border-radius: 2px; box-shadow: none; }
+/* While a network is in focus the chips show it alone, and wait. */
+.chip-net input:disabled + span { cursor: default; }
+.chip-net input:disabled + span:hover { border-color: var(--line-strong); }
+.sc-unfocus { height: 26px; font-size: 12.5px; }
+.sc-group-by select { height: 28px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); font-size: 13px; width: auto; }
+.sc-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--line); background: var(--surface); overscroll-behavior: contain; overflow-anchor: none; }
+
+.sched { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.sched th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left;
+  font-weight: 500; font-size: 11.5px; color: var(--ink-3); padding: 7px 6px; border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.sched td { padding: 0 6px; height: 29px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.sched tbody tr[data-cable] { cursor: pointer; }
+.sched tbody tr[data-cable]:hover td { background: var(--surface-2); }
+.sched td.mono { font-family: var(--font-mono); font-size: 12px; }
+.sched td small { color: var(--ink-3); }
+.sched .sc-check { width: 30px; padding-left: 14px; padding-right: 4px; }
+.sched .sc-check input { margin: 0; accent-color: var(--ink); vertical-align: middle; cursor: pointer; }
+/* The whole cell toggles its checkbox; on a touch screen, where it is the way to pick several cables, the box is bigger too. */
+.sched td.sc-check, .sched th.sc-check { cursor: pointer; }
+@media (pointer: coarse) {
+  .sched .sc-check input { width: 18px; height: 18px; }
+}
+.sched .sc-pos { color: var(--ink-3); }
+.sched .sc-arrow { color: var(--ink-3); padding: 0 2px; width: 14px; }
+.sched .sc-num { text-align: right; }
+.sched .sc-num.is-auto { font-style: italic; color: var(--ink-2); }
+.sched .sc-end > div, .sched .sc-pos > div { line-height: 20px; }
+.sched td.sc-end, .sched td.sc-pos { padding-top: 4px; padding-bottom: 4px; }
+.sc-dev {
+  border: 0; padding: 0; background: none; cursor: pointer; color: var(--ink);
+  font: 600 12px/20px var(--font-mono);
+  /* As long as DEV_CHARS in js/cabling-ui.js: a longer name is cut short. */
+  display: inline-block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top;
+}
+.sc-dev:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sc-label { display: flex; align-items: center; gap: 7px; min-height: 29px; }
+.sc-net { width: 4px; height: 16px; border-radius: 2px; background: var(--c); flex: none; }
+.sched tbody tr.is-selected td { background: color-mix(in srgb, var(--tape) 18%, var(--surface)); }
+.sched tbody tr.is-selected:hover td { background: color-mix(in srgb, var(--tape) 26%, var(--surface)); }
+.sched tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--tape-edge); }
+.sc-group td { height: 34px; background: var(--surface-2); font-size: 13px; padding-left: 8px; }
+.sc-fold {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px; margin-right: 4px;
+  border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; font-size: 13px; color: var(--ink);
+}
+.sc-fold:hover { background: var(--surface-3); }
+.sc-fold .ic { color: var(--ink-3); }
+.sc-count { color: var(--ink-3); font-size: 12px; margin-right: 14px; }
+.sc-flag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.sc-flag.is-warn { color: var(--warn); }
+.sc-flag.is-info { color: var(--ink-3); }
+/* A check is cut short in its column; its title has the whole text. */
+.sc-issue .sc-flag { max-width: 140px; }
+.sc-issue .sc-flag > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long table draws the rows near the view; these stand for the others. */
+.sched tr.sc-gap td { height: 0; padding: 0; border: 0; }
+.sc-none td, td.sc-none { padding: 18px; color: var(--ink-3); font-size: 13px; white-space: normal; }
+
+/* The order list under the table. */
+.bom {
+  flex: none; max-height: 28%; overflow: auto;
+  border-top: 1px solid var(--line); background: var(--surface); padding: 10px 18px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.bom-head { display: flex; align-items: center; gap: 10px; font-size: 13px; flex-wrap: wrap; }
+.bom-head > span { color: var(--ink-3); flex: 1; min-width: 180px; }
+.bom-warn { font-style: normal; color: var(--danger); }
+.bom-types { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.bom-type { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.bom-name { font-weight: 600; white-space: nowrap; }
+.bom-name small { font: 500 11.5px/1 var(--font-mono); color: var(--ink-3); margin-left: 2px; }
+.bom-items { display: flex; flex-wrap: wrap; gap: 2px 6px; font: 400 12px/1.4 var(--font-mono); color: var(--ink-2); }
+.bom-items i { font-style: normal; color: var(--ink-3); }
+.bom-item { white-space: nowrap; }
+.bom-item b { color: var(--ink); font-weight: 600; }
+.bom-total { color: var(--ink-3); }
+.bom-type.is-optic .bom-name { font-weight: 500; }
+.bom-empty { font-size: 12.5px; color: var(--ink-3); }
+
+/* ------------------------------------------------------------ inspectors */
+
+.name-static { display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-static:hover { border-color: transparent; }
+.check-list, .end-list, .port-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.check-list { gap: 7px; font-size: 13px; color: var(--ink-2); }
+.check-list li { display: flex; gap: 8px; align-items: flex-start; }
+.check-list .ic { margin-top: 2px; }
+.check-link {
+  display: flex; gap: 8px; align-items: flex-start; width: 100%;
+  border: 0; padding: 2px 4px; margin: -2px -4px; border-radius: var(--r-sm); background: none; text-align: left; cursor: pointer; color: inherit; font-size: 13px;
+}
+.check-link:hover { background: var(--surface-2); }
+.check-link b { color: var(--ink); font-weight: 600; font-size: 12px; }
+.rack-bar.cab-bar { cursor: default; }
+.rack-bar.cab-bar:hover .rb-name { text-decoration: none; }
+
+.end-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); }
+.end-item:first-child { border-top: 0; padding-top: 0; }
+.end-tag { font: 600 10.5px/20px var(--font-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.end-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.end-main small { font-size: 11.5px; color: var(--ink-3); line-height: 1.35; }
+/* A long device name is cut short, and the port after it stays. */
+.end-dev {
+  display: flex; align-self: flex-start; max-width: 100%; min-width: 0; border: 0; padding: 0; background: none; text-align: left; cursor: pointer; color: var(--ink);
+  font: 400 12.5px/20px var(--font-mono); white-space: nowrap;
+}
+.end-dev b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.end-dev span { flex: none; white-space: pre; }
+.end-dev:hover b { text-decoration: underline; text-underline-offset: 2px; }
+.end-tr { height: 30px; font-size: 12.5px; padding: 0 6px; margin-top: 2px; }
+.end-item.is-free .end-main small { line-height: 20px; }
+
+.pl-row {
+  display: grid; grid-template-columns: 10px 82px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px;
+  padding: 6px 0; border-top: 1px solid var(--line);
+}
+.pl-row:first-child { border-top: 0; padding-top: 0; }
+.pl-jack { width: 10px; height: 10px; border-radius: 2px; background: var(--c, transparent); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
+.pl-row.is-free .pl-jack { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.pl-port, .pl-peer {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+  border: 0; padding: 2px 4px; margin: -2px -4px; border-radius: var(--r-sm); background: none; text-align: left; color: inherit;
+}
+button.pl-port, button.pl-peer { cursor: pointer; }
+button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
+.pl-port b, .pl-peer b { font: 600 12.5px/1.25 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-port small, .pl-peer small { font: 400 11px/1.3 var(--font-mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/*
+ * On two lines rather than cut: the far device and its port, the far end's
+ * place and the cable with its length, a long port spec (between the plug
+ * and the speed). A name too long for a line of its own breaks anywhere.
+ */
+.pl-peer b, .pl-peer small, .pl-port small { white-space: normal; overflow-wrap: anywhere; }
+.pl-free { color: var(--ink-3); font-size: 12.5px; }
+.pl-flag { display: flex; width: 13px; }
+.pl-row .btn.sm { height: 24px; padding: 0 8px; font-size: 12.5px; }
+
+/* ------------------------------------------------------------ dialogs */
+
+#dlg-connect { width: min(760px, calc(100vw - 32px)); }
+.cs-grid { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 10px; align-items: start; }
+.cs-side { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); min-width: 0; }
+.cs-cap { font: 600 11px/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.cs-mid { align-self: center; display: grid; place-items: center; color: var(--ink-3); }
+.cs-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; align-items: center; }
+.cs-dots { color: var(--ink-3); }
+.cs-range.is-one { grid-template-columns: minmax(0, 1fr); }
+.cs-side .check { font-size: 13px; }
+.cs-preview { max-height: 196px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); flex: none; }
+.sched-mini td { height: 27px; }
+.sched-mini tr:last-child td { border-bottom: 0; }
+.sched-mini tr.is-refused td { color: var(--ink-3); }
+.sched-mini .sc-issue { max-width: 200px; }
+
+/* ------------------------------------------------------------ responsive */
+
+/* Icons alone in the workspace switch, and the search gives way first, where the switch would crowd out the plan name. */
+@media (min-width: 961px) and (max-width: 1366px) {
+  .ws-switch .ws-label { display: none; }
+  .ws-switch > button { padding: 0 9px; }
+  .search { flex-shrink: 3; }
+}
+@media (max-width: 1180px) {
+  .ws-switch > button { padding: 0 9px; }
+  .sc-tools { padding: 12px 14px 8px; }
+  .sc-filters { padding: 0 14px 8px; }
+  .bom { padding: 8px 14px 10px; }
+}
+@media (max-width: 960px) {
+  .ws-switch { order: 2; }
+  /* The page scrolls here: the stage grows with the schedule, whose table keeps a height of its own, and the order list follows it. */
+  .stage:has(> .viewport > .canvas[data-cab]) { height: auto; }
+  .canvas[data-cab] { overflow: visible; }
+  .sc-scroll { flex: none; max-height: min(70vh, 640px); overscroll-behavior: auto; }
+  .bom { max-height: none; }
+  #cab-types { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+  .cab-card { flex: 0 0 200px; scroll-snap-align: start; }
+}
+@media (max-width: 560px) {
+  .cab-toggle { --seg-pad: 7px; }
+  .cs-grid { grid-template-columns: minmax(0, 1fr); }
+  .cs-mid { transform: rotate(90deg); }
+  .sc-tools .spacer { display: none; }
+  .sc-tools .fm-title { flex-basis: 100%; }
+  .sc-tools .fm-title > p { white-space: normal; }
+}

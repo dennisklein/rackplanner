@@ -686,6 +686,19 @@ test('undo works right after picking a cluster', async ({ page }) => {
   await expect(device(page, 'cn-001')).toHaveAttribute('aria-label', /cluster Kestrel HPC/);
 });
 
+test('arrow keys go on through the cluster chips and leave the device where it is', async ({ page }) => {
+  await device(page, 'cn-001').click();
+  const cn = () => page.evaluate(() => window.RP.app.project().devices.find((d) => d.name === 'cn-001'));
+  const loc = (await cn()).loc;
+  await page.locator('input[name="insp-cluster"]:checked').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(device(page, 'cn-001')).toHaveAttribute('aria-label', /cluster Osprey GPU/);
+  await expect(page.locator('input[name="insp-cluster"][value="c-osprey"]')).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(device(page, 'cn-001')).toHaveAttribute('aria-label', /cluster Ceph object store/);
+  expect((await cn()).loc).toEqual(loc);
+});
+
 test('exports the shown row as SVG in fallback fonts and as PNG', async ({ page }) => {
   const svg = await exportFile(page, 'svg');
   expect(svg.suggestedFilename()).toBe('hall-2-expansion-ground-floor-row-a.svg');
@@ -773,7 +786,7 @@ test.describe('offline', () => {
     // the page needs is precached: the planner opens offline from then on.
     await page.evaluate(() => navigator.serviceWorker.ready);
     const precached = await page.evaluate(async () => {
-      const keys = await (await caches.open('rackplanner-v4')).keys();
+      const keys = await (await caches.open('rackplanner-v5')).keys();
       return keys.map((r) => new URL(r.url).pathname);
     });
     const scripts = await page.evaluate(() => [...document.scripts].filter((s) => s.src).map((s) => new URL(s.src).pathname));
@@ -784,7 +797,7 @@ test.describe('offline', () => {
     expect(await page.evaluate(() => document.fonts.check('600 12px "IBM Plex Mono"'))).toBe(true);
     await page.evaluate(() => navigator.serviceWorker.ready);
     const cached = await page.evaluate(async () => {
-      const keys = await (await caches.open('rackplanner-v4')).keys();
+      const keys = await (await caches.open('rackplanner-v5')).keys();
       return keys.map((r) => new URL(r.url).pathname);
     });
     expect(cached).toEqual(expect.arrayContaining(['/index.html', '/js/app.js', '/js/cabling.js', '/js/io.js', '/css/fonts.css', '/fonts/ibm-plex-mono-latin-600-normal.woff2']));

@@ -115,6 +115,32 @@ test('cables are connected, changed and disconnected', () => {
   assert.equal(p.cables.length, 1);
 });
 
+test('many cables change at once like one at a time, with the refused ones left as they were', () => {
+  const p = plan();
+  const ib = C.addNetwork(p, { name: 'InfiniBand' });
+  const a = link(p, end('n1', 'ib0'), end('leaf1', 'p1'));
+  const b = link(p, end('n2', 'ib0'), end('leaf1', 'p2'));
+  const c = link(p, end('n3', 'ib0'), end('leaf1', 'p3'));
+  assert.deepEqual(C.updateCables(p, [a.id, b.id, c.id], { network: ib.id }), []);
+  assert.deepEqual(p.cables.map((x) => x.network), [ib.id, ib.id, ib.id]);
+  // A function gives each its own change, in the order of the ids.
+  assert.deepEqual(C.updateCables(p, [c.id, a.id], (cable, i) => ({ label: `R-${i + 1}` })), []);
+  assert.deepEqual(p.cables.map((x) => x.label), ['R-2', b.label, 'R-1']);
+  // What updateCable refuses is refused here too, for that cable only.
+  const before = JSON.stringify(C.cableById(p, b.id));
+  const refused = C.updateCables(p, [a.id, b.id, 'nope'], (cable) => (cable.id === b.id ? { b: end('leaf1', 'p1') } : { notes: 'checked' }));
+  assert.deepEqual(refused, [
+    { id: b.id, error: 'leaf1 p1 already has cable R-2' },
+    { id: 'nope', error: 'Unknown cable' },
+  ]);
+  assert.equal(JSON.stringify(C.cableById(p, b.id)), before);
+  assert.equal(C.cableById(p, a.id).notes, 'checked');
+  // Ports freed by one change are free for the next; ports taken by one are taken for the next.
+  assert.deepEqual(C.updateCables(p, [a.id, b.id], (cable) => (cable.id === a.id ? { b: end('leaf1', 'p9') } : { b: end('leaf1', 'p1') })), []);
+  assert.deepEqual(C.updateCables(p, [c.id], { b: end('leaf1', 'p9') }), [{ id: c.id, error: 'leaf1 p9 already has cable R-2' }]);
+  assert.deepEqual(C.updateCables(p, [a.id], { type: 'nope' }), [{ id: a.id, error: 'Unknown cable type “nope”' }]);
+});
+
 test('breakout cables keep their legs in place and lose only the legs of deleted devices', () => {
   const p = plan();
   const bo = link(p, end('osw', 'p1'), [end('n1', 'ib0'), end('n2', 'ib0')], { type: 'dac-osfp-2x' });
@@ -427,6 +453,22 @@ test('the order list counts stock lengths, lengths made to measure and transceiv
   const some = C.billOfMaterials(p, p.cables.filter((c) => c.network === 'n-sas'));
   assert.deepEqual(some.cables.map((x) => [x.type.id, x.lengthM, x.count]), [['sas-hd', 2, 12]]);
   assert.deepEqual(some.transceivers, []);
+});
+
+test('a context with a memo describes each cable once, and the order list, groups and filters take it', () => {
+  const p = M.createExampleProject();
+  const ctx = C.context(p, { memo: true });
+  const cable = p.cables[0];
+  const d = C.describe(p, cable, ctx);
+  assert.equal(C.describe(p, cable, ctx), d, 'the same description');
+  assert.notEqual(C.describe(p, cable, C.context(p)), d, 'a plain context keeps nothing');
+  assert.deepEqual(C.describe(p, cable, C.context(p)), d);
+  assert.equal(C.context(p).memo, null);
+  assert.deepEqual(C.billOfMaterials(p, p.cables, ctx), C.billOfMaterials(p, p.cables));
+  assert.deepEqual(C.groupCables(p, p.cables, 'type', ctx), C.groupCables(p, p.cables, 'type'));
+  const match = C.cableMatcher(p, 'ceph-01 ib', ctx);
+  assert.deepEqual(p.cables.filter(match), p.cables.filter(C.cableMatcher(p, 'ceph-01 ib')));
+  assert.equal(p.cables.filter(match).length, 2);
 });
 
 test('series of cables pair devices in rack order with ports in port order', () => {

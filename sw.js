@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const CACHE = 'rackplanner-v4';
+const CACHE = 'rackplanner-v5';
 const PREFIX = 'rackplanner-';
 
 const FONTS = [
@@ -26,12 +26,15 @@ const SHELL = [
   './',
   'index.html',
   'css/app.css',
+  'css/cabling.css',
   'css/fonts.css',
   'js/model.js',
   'js/cabling.js',
   'js/io.js',
   'js/render.js',
+  'js/cabling-render.js',
   'js/library.js',
+  'js/cabling-ui.js',
   'js/app.js',
   'manifest.webmanifest',
   'icon.svg',

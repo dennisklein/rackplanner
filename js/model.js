@@ -264,6 +264,19 @@
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   /** "1 rack", "3 racks"; `many` for irregular plurals. */
   const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + 's'}`;
+  /**
+   * The plural of a name such as a device type's label, to use inside a
+   * sentence: "48-port switch" → "48-port switches", "Compute node" →
+   * "compute nodes", "PDU" → "PDUs", "GPU server" → "GPU servers".
+   */
+  function pluralName(name) {
+    const s = String(name).trim();
+    // A capital that only starts the sentence goes; acronyms (PDU, GPU) and units (1U) keep theirs.
+    const text = /^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s;
+    if (/(s|x|z|ch|sh)$/i.test(text)) return text + (/[A-Z]$/.test(text) ? 's' : 'es');
+    if (/[^aeiou]y$/i.test(text)) return text.slice(0, -1) + 'ies';
+    return text + 's';
+  }
   const namesOf = (list) => new Set(list.map((x) => x.name));
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const orNull = (v) => (v === undefined ? null : v);
@@ -2332,6 +2345,7 @@
     clone,
     str,
     plural,
+    pluralName,
     slug,
     clampInt,
     clampNum,
