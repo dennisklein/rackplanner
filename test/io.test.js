@@ -335,6 +335,15 @@ test('files before version 4 get the standard ports and lengths, and the standar
   assert.deepEqual(p.transceivers, M.DEFAULT_TRANSCEIVERS);
   assert.deepEqual([p.networks, p.cables, p.floors[0].rowPitchM, p.floors[0].rows[0].racks[0].trayM, p.devices[0].reversed], [[], [], 3, null, false]);
 
+  // Out-of-range length settings are clamped or dropped.
+  const odd = JSON.parse(IO.serialize(M.createExampleProject()));
+  odd.floors[0].rowPitchM = -1;
+  odd.floors[0].rows[0].racks[0].trayM = 99;
+  odd.devices[0].reversed = 'yes';
+  odd.devices[1].slackM = 'x';
+  const read = IO.normalizeProject(odd).project;
+  assert.deepEqual([read.floors[0].rowPitchM, read.floors[0].rows[0].racks[0].trayM, read.devices[0].reversed, read.devices[1].slackM], [0.5, 10, false, null]);
+
   // From version 4 on, a missing list of ports means none.
   const v4 = IO.normalizeProject(Object.assign({}, raw, { version: 4 })).project;
   assert.deepEqual(M.typeOf(v4, 'compute-node').ports, []);
@@ -398,7 +407,7 @@ test('a cable schedule exports one line per cable and leg and reads back into a 
   const leg = lines.filter((l) => l.startsWith('IB-0043,'));
   assert.deepEqual(leg.map((l) => l.split(',').slice(5, 6).concat(l.split(',').slice(17, 19))), [['1/2', 'gpu-srv-01', 'ib0'], ['2/2', 'gpu-srv-01', 'ib1']]);
   assert.ok(lines.some((l) => l.startsWith('IB-0026,InfiniBand,QSFP56 DAC,,estimated,') && l.includes(',Too long,')));
-  assert.ok(lines.some((l) => l.startsWith('MGT-0041,Management,LC duplex OM4,45,set,') && l.includes('SFP+ 10G SR (auto)') && l.endsWith(',Riser to the ground floor')));
+  assert.ok(lines.some((l) => l.startsWith('MGT-0041,Management,LC duplex OM4,30,set,') && l.includes('SFP+ 10G SR (auto)') && l.endsWith(',Riser to the ground floor')));
   assert.ok(IO.isCablesCSV(csv));
   assert.ok(!IO.isCablesCSV(IO.toCSV(ex)));
 
@@ -442,6 +451,138 @@ test('a hand-made cable schedule adds what it can', () => {
   assert.deepEqual(p.cables[2].b.map((e) => e && e.port), [null, 'ib1'], 'a leg keeps its place');
   assert.throws(() => IO.importCablesCSV(p, 'A device,B device\nx,y'), /A port/);
   assert.throws(() => IO.importCablesCSV(p, 'A device,A port,B device,B port'), /no cables/);
+});
+
+test('lines with the same label and A end form a breakout, with or without a Leg', () => {
+  const run = (header, lines) => {
+    const p = M.createExampleProject();
+    p.cables = [];
+    return { p, r: IO.importCablesCSV(p, [header].concat(lines).join('\n')) };
+  };
+  const two = 'OSFP to 2 × QSFP56 DAC';
+  let { p, r } = run('Label,Cable type,A device,A port,B device,B port', [`X-1,${two},ib-leaf-b02,p1,gpu-srv-01,ib0`, `X-1,${two},ib-leaf-b02,p1,gpu-srv-01,ib1`]);
+  assert.deepEqual(r, { added: 1, warnings: [] });
+  assert.deepEqual(p.cables[0].b.map((e) => e.port), ['ib0', 'ib1'], 'legs in line order');
+  ({ p, r } = run('Label,Cable type,Leg,A device,A port,B device,B port', [`X-1,${two},,ib-leaf-b02,p1,gpu-srv-01,ib0`, `X-1,${two},1/2,ib-leaf-b02,p1,gpu-srv-01,ib1`]));
+  assert.deepEqual(r, { added: 1, warnings: [] });
+  assert.deepEqual(p.cables[0].b.map((e) => e.port), ['ib1', 'ib0'], 'a Leg keeps its place, the others take the free ones');
+  ({ p, r } = run('Label,Cable type,A device,A port,B device,B port', [`X-1,${two},ib-leaf-b02,p1,gpu-srv-01,ib0`]));
+  assert.deepEqual(p.cables[0].b.map((e) => e && e.port), ['ib0', null], 'one line of a breakout type is its first leg');
+  // A single cable type with the same A end twice is still two cables, and the second is refused.
+  ({ p, r } = run('Label,A device,A port,B device,B port', ['X-1,ib-leaf-b02,p1,gpu-srv-01,ib0', 'X-1,ib-leaf-b02,p1,gpu-srv-01,ib1']));
+  assert.deepEqual(r, { added: 1, warnings: ['Skipped cable X-1: ib-leaf-b02 p1 already has cable X-1.'] });
+});
+
+test('leg lines that cannot be placed are reported', () => {
+  const run = (lines) => {
+    const p = M.createExampleProject();
+    p.cables = [];
+    const r = IO.importCablesCSV(p, ['Label,Cable type,Leg,A device,A port,B device,B port'].concat(lines).join('\n'));
+    return { r, b: p.cables.length ? p.cables[0].b.map((e) => e && e.port) : null };
+  };
+  const row = (leg, port) => `B-1,dac-osfp-2x,${leg},ib-leaf-b02,p1,gpu-srv-01,${port}`;
+  assert.deepEqual(run([row('1/2', 'ib0'), row('1/2', 'ib1')]), { r: { added: 1, warnings: ['Skipped line 3 of cable B-1: leg 1 is given twice.'] }, b: ['ib0', null] });
+  assert.deepEqual(run([row('1/2', 'ib0'), row('3/2', 'ib1'), row('0/2', 'ib2')]), {
+    r: { added: 1, warnings: ['Skipped line 3 of cable B-1: leg 3 is not one of its 2 legs.', 'Skipped line 4 of cable B-1: leg 0 is not one of its 2 legs.'] },
+    b: ['ib0', null],
+  });
+  assert.deepEqual(run([row('1/2', 'ib0'), row('2/4', 'ib1')]), { r: { added: 1, warnings: ['Line 3 of cable B-1 says 4 legs, not 2.'] }, b: ['ib0', 'ib1'] });
+  assert.deepEqual(run([row('1/99', 'ib0')]), { r: { added: 0, warnings: ['Skipped cable B-1: OSFP to 2 × QSFP56 DAC has 2 legs, not 99.'] }, b: null }, 'the count the CSV gives');
+  assert.deepEqual(run([row('', 'ib0'), row('', 'ib1'), row('', 'ib2')]), { r: { added: 1, warnings: ['Skipped line 4 of cable B-1: its 2 legs are taken.'] }, b: ['ib0', 'ib1'] });
+});
+
+test('a cable schedule names its columns in other words', () => {
+  const p = M.createExampleProject();
+  p.cables = [];
+  const lines = ['X-1,Cat6a patch cord,cn-001,eth0,sw-mgmt-a01,swp1', 'X-2,,cn-002,eth0,sw-mgmt-a01,swp2'];
+  assert.deepEqual(IO.importCablesCSV(p, ['Cable,Cable type,From,From port,To,To port'].concat(lines).join('\n')), { added: 2, warnings: [] });
+  assert.deepEqual(p.cables.map((c) => [c.label, c.type]), [['X-1', 'cat6a'], ['X-2', null]], '“Cable” is the label next to “Cable type”');
+  p.cables = [];
+  assert.deepEqual(IO.importCablesCSV(p, 'Cable,From,From port,To,To port\nX-1,cn-001,eth0,sw-mgmt-a01,swp1'), { added: 1, warnings: [] });
+  assert.deepEqual(p.cables.map((c) => [c.label, c.type]), [['X-1', null]], 'and the label when there is no type column');
+  p.cables = [];
+  assert.deepEqual(IO.importCablesCSV(p, 'Label,Cable,From,From port,To,To port\nX-1,Cat6a patch cord,cn-001,eth0,sw-mgmt-a01,swp1'), { added: 1, warnings: [] });
+  assert.deepEqual(p.cables.map((c) => [c.label, c.type]), [['X-1', 'cat6a']], '“Cable” next to “Label” is the type');
+});
+
+test('networks are created only for the cables that are added, by the name the plan keeps', () => {
+  const p = M.createExampleProject();
+  const names = () => p.networks.map((n) => n.name);
+  const before = names();
+  const r = IO.importCablesCSV(p, ['Label,Network,A device,A port,B device,B port', 'Z-1,Foo,cn-001,eth0,sw-mgmt-a01,swp40', 'Z-2,Bar,cn-001,nope,sw-mgmt-a01,swp41', 'Z-3,Baz,cn-001,ib0,cn-001,ib0'].join('\n'));
+  assert.deepEqual(r, {
+    added: 0,
+    warnings: ['Skipped cable Z-1: cn-001 eth0 already has cable MGT-0001.', 'Skipped cable Z-2: cn-001 has no port nope.', 'Skipped cable Z-3: cn-001 ib0 already has cable IB-0001.'],
+  });
+  assert.deepEqual(names(), before, 'refused lines leave no networks behind');
+  const long = 'A network whose name is far longer than the sixty characters a plan keeps for it';
+  assert.ok(long.length > 60);
+  const csv = ['Network,A device,A port,B device,B port'].concat([1, 2, 3].map((i) => `${long},sw-mgmt-a01,swp${40 + i},sw-mgmt-a02,swp${40 + i}`)).join('\n');
+  assert.deepEqual(IO.importCablesCSV(p, csv), { added: 3, warnings: [] });
+  assert.deepEqual(names(), before.concat([long.slice(0, 60).trim()]), 'one network for every line');
+});
+
+test('cable types and transceivers are found by name before id, and “(auto)” only marks a pick', () => {
+  const ex = M.createExampleProject();
+  const byLabel = (q, l) => q.cables.find((c) => c.label === l);
+  const cat = C.addCableType(ex, { name: 'Cat6a', media: 'cat6a', connector: 'rj45', lengthsM: [1, 2] });
+  const auto = C.addCableType(ex, { name: 'Patch (auto)', media: 'cat6a', connector: 'rj45', lengthsM: [1, 2] });
+  const sr = C.addTransceiver(ex, { name: 'qsfp56-200g-sr4', connector: 'qsfp56', fiber: 'mpo', mode: 'mmf', reachM: 70 });
+  C.updateCable(ex, byLabel(ex, 'MGT-0001').id, { type: cat.id });
+  C.updateCable(ex, byLabel(ex, 'MGT-0002').id, { type: auto.id });
+  const ib = byLabel(ex, 'IB-0026');
+  C.updateCable(ex, ib.id, { type: 'mpo-om4', a: Object.assign({}, ib.a, { transceiver: sr.id }), b: Object.assign({}, ib.b, { transceiver: sr.id }) });
+  const p = M.copyLayout(ex);
+  p.devices = M.clone(ex.devices);
+  p.cableTypes = M.clone(ex.cableTypes);
+  p.transceivers = M.clone(ex.transceivers);
+  assert.deepEqual(IO.importCablesCSV(p, IO.exportCablesCSV(ex)), { added: 147, warnings: [] });
+  assert.deepEqual(['MGT-0001', 'MGT-0002', 'MGT-0003'].map((l) => byLabel(p, l).type), [cat.id, auto.id, null]);
+  assert.deepEqual([byLabel(p, 'IB-0026').a.transceiver, byLabel(p, 'IB-0026').b.transceiver], [sr.id, sr.id]);
+  // A file whose catalog uses a name twice gets a number on the second.
+  const raw = JSON.parse(IO.serialize(ex));
+  raw.cableTypes.find((t) => t.id === cat.id).name = 'QSFP56 DAC';
+  const { project, warnings } = IO.normalizeProject(raw);
+  assert.equal(M.cableTypeById(project, cat.id).name, 'QSFP56 DAC 2');
+  assert.deepEqual(warnings, ['Renamed the cable type QSFP56 DAC to QSFP56 DAC 2: the name is used twice.']);
+});
+
+test('a cable schedule keeps unused legs and tells same-named devices apart by rack', () => {
+  const ex = M.createExampleProject();
+  const byLabel = (q, l) => q.cables.find((c) => c.label === l);
+  byLabel(ex, 'IB-0043').b[0] = null;
+  byLabel(ex, 'IB-0044').b[1] = null;
+  ex.devices.find((d) => d.name === 'gpu-001').name = 'cn-001';
+  const csv = IO.exportCablesCSV(ex);
+  const p = M.copyLayout(ex);
+  p.devices = M.clone(ex.devices);
+  assert.deepEqual(IO.importCablesCSV(p, csv), { added: 147, warnings: [] });
+  for (const l of ['IB-0043', 'IB-0044']) assert.deepEqual(byLabel(p, l).b, byLabel(ex, l).b, l);
+  for (const l of ['MGT-0001', 'MGT-0013']) assert.deepEqual(byLabel(p, l).a, byLabel(ex, l).a, l);
+});
+
+test('a cable schedule at the plan’s limit reads in one pass', () => {
+  const p = M.createEmptyProject(1);
+  const t = M.addDeviceType(p, { label: 'Big', ports: [{ name: 'p', first: 1, count: 1024, connector: 'rj45' }] });
+  for (let i = 0; i < 40; i++) p.devices.push(M.newDevice({ id: `d${i}`, type: t.id, name: `d${i}`, loc: { rack: 'r1', kind: 'u', at: i + 1 } }));
+  const lines = ['A device,A port,B device,B port'];
+  for (let k = 0; k <= M.LIMITS.cables; k++) {
+    const i = Math.floor(k / 1024) * 2;
+    lines.push(`d${i},p${(k % 1024) + 1},d${i + 1},p${(k % 1024) + 1}`);
+  }
+  const start = Date.now();
+  const r = IO.importCablesCSV(p, lines.join('\n'));
+  assert.ok(Date.now() - start < 10000, `${Date.now() - start} ms: each line is checked without reading the whole plan again`);
+  assert.equal(r.added, M.LIMITS.cables);
+  assert.deepEqual(r.warnings, [`Skipped line ${M.LIMITS.cables + 2}: A plan holds ${M.LIMITS.cables} cables.`]);
+  assert.deepEqual([p.cables[0].label, p.cables[p.cables.length - 1].label], ['C-0001', `C-${M.LIMITS.cables}`]);
+
+  // The same cables in a file: the first 20 000 are kept.
+  const raw = JSON.parse(IO.serialize(p));
+  raw.cables.push({ id: 'one-more', label: 'X', a: { device: 'd38', port: 'p1000' }, b: { device: 'd39', port: 'p1000' } });
+  const read = IO.normalizeProject(raw);
+  assert.equal(read.project.cables.length, M.LIMITS.cables);
+  assert.deepEqual(read.warnings, [`Only the first ${M.LIMITS.cables} cables were kept.`]);
 });
 
 test('the order list exports as CSV', () => {

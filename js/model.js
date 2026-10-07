@@ -1213,7 +1213,7 @@
     for (const [arc, jbods] of [['arc-01', ['arc-jbod-01', 'arc-jbod-02']], ['arc-02', ['arc-jbod-03', 'arc-jbod-04']]]) {
       jbods.forEach((jbod, k) => link('n-sas', [arc, `sas${k}`], [jbod, 'sas-a']));
     }
-    link('n-mgmt', ['sw-arc-01', 'swp52'], ['sw-mgmt-b01', 'swp52'], { type: 'lc-om4', lengthM: 45, notes: 'Riser to the ground floor' });
+    link('n-mgmt', ['sw-arc-01', 'swp52'], ['sw-mgmt-b01', 'swp52'], { type: 'lc-om4', lengthM: 30, notes: 'Riser to the ground floor' });
   }
 
   /** True when the plan still equals the example (the notice flag aside). */
@@ -1916,7 +1916,8 @@
   /**
    * Hands out cable labels that continue series past the highest label of
    * each series among the plan's cables and `taken` (a Set), reading those
-   * once. Every label handed out counts as taken.
+   * once, or (with `from`) fill a series from a label given by hand. Every
+   * label handed out counts as taken.
    */
   function labeler(project, taken) {
     const used = new Set((project.cables || []).map((c) => c.label));
@@ -1938,6 +1939,13 @@
         const s = labelSeries(seed);
         const max = Math.max(inclusive ? s.num - 1 : s.num, highest.get(`${s.head}\u0000${s.tail}`) || 0);
         return take(firstFree(used, max + 1, (n) => formatSerial(s, n)));
+      },
+      /** Counts `label` as taken (a label given by hand) and returns it. */
+      take,
+      /** `seed` itself when free, else the first free label of its series after it (not past the highest). */
+      from(seed) {
+        const s = labelSeries(seed);
+        return take(firstFree(used, s.num, (n) => formatSerial(s, n)));
       },
       /** The label after `label`: IB-0009 → IB-0010 (past the highest used), uplink → uplink-2. */
       after(label) {
@@ -1996,21 +2004,64 @@
   }
 
   /**
+   * Where each port of the groups `oldPorts` goes in the groups `newPorts`:
+   * a Map from old to new port name. Groups are matched first by their
+   * pattern (swp[1-48]), then by name, then the groups left over are paired
+   * in order when as many are left on both sides (groups renamed in place).
+   * A port keeps its place in its matched group; a port without one keeps
+   * its name when that port still exists and no other port moves to it.
+   */
+  function portMoves(oldPorts, newPorts) {
+    const olds = Array.isArray(oldPorts) ? oldPorts : [];
+    const news = Array.isArray(newPorts) ? newPorts : [];
+    const match = new Map();
+    const taken = new Set();
+    const pair = (same) => {
+      olds.forEach((g, i) => {
+        if (match.has(i)) return;
+        const j = news.findIndex((h, k) => !taken.has(k) && same(g, h));
+        if (j < 0) return;
+        match.set(i, j);
+        taken.add(j);
+      });
+    };
+    pair((g, h) => portPattern(g) === portPattern(h));
+    pair((g, h) => g.name === h.name);
+    const leftOld = olds.map((g, i) => i).filter((i) => !match.has(i));
+    const leftNew = news.map((h, j) => j).filter((j) => !taken.has(j));
+    if (leftOld.length === leftNew.length) leftOld.forEach((i, k) => match.set(i, leftNew[k]));
+    const names = news.map((h) => groupNames(h));
+    const out = new Map();
+    const targets = new Set();
+    olds.forEach((g, i) => {
+      if (!match.has(i)) return;
+      groupNames(g).forEach((name, place) => {
+        const to = names[match.get(i)][place];
+        if (to === undefined) return;
+        out.set(name, to);
+        targets.add(to);
+      });
+    });
+    const after = new Set([].concat(...names));
+    for (const g of olds) for (const name of groupNames(g)) if (!out.has(name) && after.has(name) && !targets.has(name)) out.set(name, name);
+    return out;
+  }
+
+  /**
    * After the ports of a device type changed from `oldPorts`, moves the
-   * cable ends on its devices to the port at the same place (group and
-   * position in the group) and drops the ends whose place is gone.
+   * cable ends on its devices to the port at the same place (see portMoves)
+   * and drops the ends whose place is gone.
    */
   function remapPorts(project, typeId, oldPorts) {
     const type = typeOf(project, typeId);
     if (!type || !Array.isArray(project.cables)) return 0;
-    const before = new Map(expandPorts({ ports: oldPorts }).map((p) => [p.name, `${p.group}|${p.index}`]));
-    const after = new Map(expandPorts(type).map((p) => [`${p.group}|${p.index}`, p.name]));
+    const moves = portMoves(oldPorts, type.ports);
     const devices = new Set(project.devices.filter((d) => d.type === typeId).map((d) => d.id));
     for (const c of project.cables) {
       for (const x of cableEnds(c)) {
         if (!devices.has(x.end.device)) continue;
         // Port names are never empty, so prune removes an end set to ''.
-        x.end.port = after.get(before.get(x.end.port)) || '';
+        x.end.port = moves.get(x.end.port) || '';
       }
     }
     return pruneCables(project);
@@ -2361,6 +2412,7 @@
     nextLabelAfter,
     nextCableLabel,
     copyCables,
+    portMoves,
     remapPorts,
     statsByRack,
     rackStats,

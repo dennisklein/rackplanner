@@ -44,6 +44,22 @@
     return out;
   }
 
+  /** Names tell cable types and transceivers apart in cable schedules: a name used before gets a number. */
+  function uniqueNames(list, kind, warnings) {
+    const used = new Set();
+    for (const t of list) {
+      if (used.has(t.name)) {
+        const base = t.name.slice(0, 56);
+        let i = 2;
+        while (used.has(`${base} ${i}`)) i++;
+        warnings.push(`Renamed the ${kind} ${t.name} to ${base} ${i}: the name is used twice.`);
+        t.name = `${base} ${i}`;
+      }
+      used.add(t.name);
+    }
+    return list;
+  }
+
   /**
    * Builds floors, rows and racks. Returns a map from the file's rack ids to
    * the plan's. Version 1 and 2 files have a flat list of racks, which
@@ -238,8 +254,8 @@
     const rawRackTypes = legacy ? withStandard(raw.rackTypes, M.DEFAULT_RACK_TYPES, ['widthMm', 'depthMm', 'trayM', 'slackM']) : raw.rackTypes;
     const rackTypes = readTypes(rawRackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
     if (rackTypes && rackTypes.length) p.rackTypes = rackTypes;
-    p.cableTypes = readTypes(raw.cableTypes, 'cable type', 'name', M.cleanCableType, L.cableTypes, [], warnings) || p.cableTypes;
-    p.transceivers = readTypes(raw.transceivers, 'transceiver', 'name', M.cleanTransceiver, L.transceivers, [], warnings) || p.transceivers;
+    p.cableTypes = uniqueNames(readTypes(raw.cableTypes, 'cable type', 'name', M.cleanCableType, L.cableTypes, [], warnings) || p.cableTypes, 'cable type', warnings);
+    p.transceivers = uniqueNames(readTypes(raw.transceivers, 'transceiver', 'name', M.cleanTransceiver, L.transceivers, [], warnings) || p.transceivers, 'transceiver', warnings);
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
     const rackIds = readLayout(raw, p, warnings);
 
@@ -645,14 +661,25 @@
     notes: ['notes', 'note', 'comment', 'comments'],
   };
 
+  /**
+   * Which column holds what: { label: 0, type: 2, … }. Aliases are tried
+   * in rank order over all keys, and a column fills one key only, so
+   * "Cable type" is the type and "Cable" the label next to it.
+   */
   function cableColumns(header) {
     const col = {};
-    header.forEach((h, i) => {
-      const key = headerKey(h);
+    const keys = header.map((h) => headerKey(String(h == null ? '' : h)));
+    const used = new Set();
+    const ranks = Math.max(...Object.values(CABLE_HEADERS).map((a) => a.length));
+    for (let rank = 0; rank < ranks; rank++) {
       for (const [name, aliases] of Object.entries(CABLE_HEADERS)) {
-        if (col[name] === undefined && aliases.some((a) => headerKey(a) === key)) col[name] = i;
+        if (col[name] !== undefined || rank >= aliases.length) continue;
+        const i = keys.findIndex((k, j) => !used.has(j) && k === headerKey(aliases[rank]));
+        if (i < 0) continue;
+        col[name] = i;
+        used.add(i);
       }
-    });
+    }
     return col;
   }
 
@@ -666,9 +693,13 @@
   /**
    * Adds the cables of a cable schedule (the columns of exportCablesCSV;
    * A and B device and port are required) to `project`, finding devices by
-   * name. Lines with the same label and A end and a Leg like "1/2" form one
-   * breakout cable. Networks are created by name; "(auto)" or an empty cell
-   * leaves the type or transceiver to be picked. Returns { added, warnings }.
+   * name. Lines with the same label and A end form one breakout cable when
+   * they have a Leg like "1/2" or name a breakout type; legs without a Leg
+   * take the free legs in line order. A breakout takes its type, network,
+   * length and notes from its first line. Networks are created by name for
+   * the cables that are added; an empty cell, or "… (auto)" that is not a
+   * name in the catalog, leaves the type or transceiver to be picked.
+   * Returns { added, warnings }.
    */
   function importCablesCSV(project, text) {
     const C = cabling();
@@ -690,25 +721,42 @@
       const inRack = rackName && list.find((d) => lower((M.rackById(project, d.loc.rack) || {}).name) === lower(rackName));
       return inRack || list[0] || null;
     };
-    const auto = (v) => !v || lower(v).endsWith(AUTO.trim());
-    const findIn = (list, v) => list.find((x) => lower(x.name) === lower(v) || lower(x.id) === lower(v)) || null;
+    // By name as written, then by name in any case, then by id: an entry's name wins over another one's id.
+    const findIn = (list, v) => {
+      for (const same of [(x) => x.name === v, (x) => lower(x.name) === lower(v), (x) => x.id === v, (x) => lower(x.id) === lower(v)]) {
+        const hit = list.find(same);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    // { auto: true } to pick, else { item } (null when the catalog has no such entry).
+    const lookup = (list, v) => {
+      if (!v) return { auto: true };
+      const item = findIn(list, v);
+      return item || !lower(v).endsWith(AUTO.trim()) ? { item } : { auto: true };
+    };
 
-    // Lines become cables: { line, rows }, breakout legs gathered under their head.
+    // Lines become cables: { line, rows, lines, at }, breakout legs gathered under their head.
     const cables = [];
     const breakouts = new Map();
     rows.slice(1).forEach((r, i) => {
+      const line = i + 2;
       const leg = /^(\d+)\s*\/\s*(\d+)$/.exec(get(r, 'leg'));
-      if (!leg) return void cables.push({ line: i + 2, rows: [r], legs: 0 });
+      const type = lookup(project.cableTypes, get(r, 'type')).item;
+      if (!leg && !(type && type.legs > 1)) return void cables.push({ line, rows: [r], lines: [line], at: null });
       const key = [get(r, 'label'), get(r, 'aDevice'), get(r, 'aPort')].map(lower).join('\u0000');
       let c = breakouts.get(key);
       if (!c) {
-        breakouts.set(key, (c = { line: i + 2, rows: [], legs: Math.min(L.legs, Math.max(2, parseInt(leg[2], 10))), at: [] }));
+        breakouts.set(key, (c = { line, rows: [], lines: [], at: [], totals: [] }));
         cables.push(c);
       }
       c.rows.push(r);
-      c.at.push(parseInt(leg[1], 10) - 1);
+      c.lines.push(line);
+      c.at.push(leg ? parseInt(leg[1], 10) - 1 : null);
+      c.totals.push(leg ? parseInt(leg[2], 10) : null);
     });
 
+    const many = C.connector(project);
     let added = 0;
     for (const c of cables) {
       const r = c.rows[0];
@@ -724,40 +772,69 @@
         if (!d) problem = problem || `there is no device ${name || 'without a name'}`;
         const e = { device: d ? d.id : '', port };
         const tr = get(row, `${side}Transceiver`);
-        if (!auto(tr)) {
-          const t = findIn(project.transceivers, tr);
-          if (t) e.transceiver = t.id;
-          else problem = problem || `unknown transceiver “${tr}”`;
-        }
+        const t = lookup(project.transceivers, tr);
+        if (t.item) e.transceiver = t.item.id;
+        else if (!t.auto) problem = problem || `unknown transceiver “${tr}”`;
         return e;
       };
       const typeText = get(r, 'type');
-      const type = auto(typeText) ? null : findIn(project.cableTypes, typeText);
-      if (!auto(typeText) && !type) {
+      const found = lookup(project.cableTypes, typeText);
+      const type = found.item;
+      if (!found.auto && !type) {
         skip(`unknown cable type “${typeText}”`);
         continue;
       }
       const a = end(r, 'a');
       let b;
-      if (c.legs) {
-        b = Array.from({ length: c.legs }, () => null);
+      if (c.at) {
+        // The legs: as many as the first Leg says, else as the type has, else one per line.
+        const total = c.totals.find((n) => n !== null);
+        const legs = total !== undefined ? total : type && type.legs > 1 ? type.legs : c.rows.length;
+        if (type && type.legs > 1 && legs !== type.legs) {
+          skip(`${type.name} has ${type.legs} legs, not ${legs}`);
+          continue;
+        }
+        if (legs > L.legs) {
+          skip(`a breakout cable has at most ${L.legs} legs, not ${legs}`);
+          continue;
+        }
+        b = Array.from({ length: legs }, () => null);
+        const place = (k, at) => {
+          const leg = `line ${c.lines[k]}`;
+          if (at < 0 || at >= legs) return void warnings.push(`Skipped ${leg} of ${what}: leg ${at + 1} is not one of its ${legs} legs.`);
+          if (b[at]) return void warnings.push(`Skipped ${leg} of ${what}: leg ${at + 1} is given twice.`);
+          if (c.totals[k] !== null && c.totals[k] !== legs) warnings.push(`${leg[0].toUpperCase()}${leg.slice(1)} of ${what} says ${c.totals[k]} legs, not ${legs}.`);
+          b[at] = end(c.rows[k], 'b');
+        };
+        c.rows.forEach((row, k) => c.at[k] !== null && place(k, c.at[k]));
         c.rows.forEach((row, k) => {
-          if (c.at[k] >= 0 && c.at[k] < c.legs) b[c.at[k]] = end(row, 'b');
+          if (c.at[k] !== null) return;
+          const free = b.findIndex((e) => !e);
+          if (free < 0) warnings.push(`Skipped line ${c.lines[k]} of ${what}: its ${legs} legs are taken.`);
+          else place(k, free);
         });
       } else b = end(r, 'b');
       if (problem) {
         skip(problem);
         continue;
       }
-      const netName = get(r, 'network');
+      const props = { a, b, type: type ? type.id : null, label, notes: get(r, 'notes') };
+      // Checked before its network is created, so that a cable left out leaves nothing behind.
+      const refused = many.check(props);
+      if (refused) {
+        skip(refused);
+        continue;
+      }
+      // Cut to the length the plan keeps, so later lines find the network an earlier one created.
+      const netName = get(r, 'network').slice(0, 60).trim();
       let network = netName ? findIn(project.networks, netName) : null;
       if (netName && !network) {
-        network = C.addNetwork(project, { name: netName.slice(0, 60) });
+        network = C.addNetwork(project, { name: netName });
         if (!network) warnings.push(`${label ? `Cable ${label}` : `Line ${c.line}`}: a plan holds ${L.networks} networks, so it has none.`);
       }
       const metres = get(r, 'lengthM');
       const lengthM = lower(get(r, 'lengthKind')) !== 'estimated' && metres !== '' && Number.isFinite(Number(metres)) ? Number(metres) : null;
-      const result = C.connect(project, { a, b, type: type ? type.id : null, network: network ? network.id : null, label, lengthM, notes: get(r, 'notes') });
+      const result = many.add(Object.assign(props, { network: network ? network.id : null, lengthM }));
       if (result.error) skip(result.error);
       else added++;
     }

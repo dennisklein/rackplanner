@@ -552,8 +552,12 @@ test('racks, floors and devices carry their length settings', () => {
   assert.equal(M.deviceSlackM(p, M.newDevice({ type: 'reserved' })), 0);
   const copy = M.duplicateRack(p, 'r1');
   assert.deepEqual([copy.trayM, copy.slackM], [1.2, 0], 'a copied rack keeps its settings');
+  const row = M.duplicateRow(p, 'row1');
+  assert.deepEqual([row.racks[0].trayM, row.racks[0].slackM], [1.2, 0], 'so do the racks of a copied row');
   p.floors[0].rowPitchM = 2.5;
-  assert.equal(M.duplicateFloor(p, 'f1').rowPitchM, 2.5, 'so does a copied floor');
+  const floor = M.duplicateFloor(p, 'f1');
+  assert.equal(floor.rowPitchM, 2.5, 'so does a copied floor');
+  assert.deepEqual([floor.rows[0].racks[0].trayM, floor.rows[0].racks[0].slackM], [1.2, 0], 'and its racks');
 });
 
 test('the example is cabled without a refused state and with exactly the intended checks', () => {
@@ -579,7 +583,7 @@ test('the example is cabled without a refused state and with exactly the intende
   ]);
   const ex = (label) => p.cables.find((c) => c.label === label);
   assert.deepEqual(ends(p, ex('IB-0043')), ['ib-leaf-b02 p1', 'gpu-srv-01 ib0', 'gpu-srv-01 ib1'], 'breakouts from the leaf');
-  assert.equal(C.describe(p, ex('MGT-0041')).lengthM, 45, 'the riser has its length set');
+  assert.equal(C.describe(p, ex('MGT-0041')).lengthM, 30, 'the riser has its length set');
   assert.ok(M.deviceById(p, 'ex-1').reversed, 'switches are mounted back to front');
   assert.equal(M.typeOf(p, M.deviceById(p, 'ex-50').type).id, 'switch-osfp');
   assert.deepEqual(p.deviceTypes.map((t) => t.id).slice(0, 3), ['switch-rj45', 'switch-qsfp', 'switch-osfp']);
@@ -614,8 +618,11 @@ test('deleting devices, racks, rows, floors and types removes their cables', () 
   assert.ok(!p.cables.includes(servers));
 
   // A rack, a floor, a row.
+  const inR3 = C.cablesWithin(p, 'r3').length;
+  assert.ok(inR3 > 0);
+  const beforeRack = p.cables.length;
   M.removeRack(p, 'r3');
-  assert.equal(C.cablesWithin(p, 'r3').length, 0);
+  assert.equal(p.cables.length, beforeRack - inR3);
   assert.ok(p.cables.every((c) => M.cableEnds(c).every((x) => M.deviceById(p, x.end.device))));
   const n = p.cables.length;
   M.removeFloor(p, 'f2');
@@ -632,8 +639,11 @@ test('deleting devices, racks, rows, floors and types removes their cables', () 
 
   // setRowRackCount removes the racks at the end, with their cables.
   const r = M.createExampleProject();
+  const gone = new Set(C.cablesWithin(r, 'r5').concat(C.cablesWithin(r, 'r6')));
+  assert.equal(gone.size, 28, 'six GPU servers × 4 cables and the four leaf uplink breakouts');
   M.setRowRackCount(r, 'row2', 1);
-  assert.equal(C.cablesWithin(r, 'r5').length + C.cablesWithin(r, 'r6').length, 0);
+  assert.equal(r.cables.length, 147 - 28);
+  assert.ok(r.cables.every((c) => M.cableEnds(c).every((x) => M.deviceById(r, x.end.device))));
   assert.ok(r.cables.some((c) => c.label === 'MGT-0030'), 'Row A uplinks stay');
 });
 
@@ -707,6 +717,48 @@ test('changing a device type’s ports keeps cables by group and place', () => {
   assert.equal(M.pruneCables(M.clone(p)), 0);
   assert.equal(M.remapPorts(p, 'nope', old), 0);
   assert.deepEqual(C.portChangeImpact(p, 'switch-rj45', M.typeOf(p, 'switch-rj45').ports), [], 'no change, nothing lost');
+  assert.deepEqual(C.portChangeMoves(p, 'switch-rj45', M.typeOf(p, 'switch-rj45').ports), [], 'nothing moves either');
+  const q = M.createExampleProject();
+  const moved = C.portChangeMoves(q, 'switch-rj45', renamed);
+  assert.equal(moved.length, q.cables.filter((c) => M.cableEnds(c).some((x) => M.deviceById(q, x.end.device).type === 'switch-rj45')).length - lost.length, 'every other cable on these switches is on a renamed port');
+  const mgt = moved.find((x) => x.cable.label === 'MGT-0001');
+  assert.deepEqual(mgt.moves, [{ device: mgt.cable.b.device, from: 'swp1', to: 'ge-0/0/0' }]);
+});
+
+test('adding or removing a port group leaves the other groups’ cables on their ports', () => {
+  const at = (q, label, name) => {
+    const d = q.devices.find((x) => x.name === name);
+    const x = M.cableEnds(q.cables.find((c) => c.label === label)).find((e) => e.end.device === d.id);
+    return x ? x.end.port : null;
+  };
+  const p = M.createExampleProject();
+  const ports = M.clone(M.typeOf(p, 'compute-node').ports);
+  const withEth1 = [{ name: 'eth1', connector: 'rj45', speedGbps: 1, side: 'rear' }].concat(ports);
+  assert.deepEqual(C.portChangeImpact(p, 'compute-node', withEth1), []);
+  assert.deepEqual(C.portChangeMoves(p, 'compute-node', withEth1), []);
+  assert.equal(M.updateDeviceType(p, 'compute-node', { ports: withEth1 }), null);
+  assert.deepEqual(['MGT-0001', 'BMC-0001', 'IB-0001'].map((l) => at(p, l, 'cn-001')), ['eth0', 'bmc', 'ib0']);
+  const between = ports.slice(0, 2).concat([{ name: 'eth1', connector: 'sfp28', speedGbps: 25, side: 'rear' }], ports.slice(2));
+  const r = M.createExampleProject();
+  assert.equal(M.updateDeviceType(r, 'compute-node', { ports: between }), null);
+  assert.deepEqual(['MGT-0001', 'BMC-0001', 'IB-0001'].map((l) => at(r, l, 'cn-001')), ['eth0', 'bmc', 'ib0'], 'a group inserted in between');
+
+  const q = M.createExampleProject();
+  const lost = C.portChangeImpact(q, 'compute-node', ports.slice(1));
+  assert.equal(lost.length, 20);
+  assert.ok(lost.every((c) => c.network === 'n-bmc'), 'exactly the BMC cables of the 20 compute nodes');
+  assert.deepEqual(C.portChangeMoves(q, 'compute-node', ports.slice(1)), []);
+  M.updateDeviceType(q, 'compute-node', { ports: ports.slice(1) });
+  assert.deepEqual(['MGT-0001', 'IB-0001'].map((l) => at(q, l, 'cn-001')), ['eth0', 'ib0']);
+  assert.ok(!q.cables.some((c) => c.label === 'BMC-0001'));
+
+  // Groups reordered and one renamed in place; groups merged into one.
+  assert.deepEqual([...M.portMoves(ports, [ports[2], { name: 'mgmt', connector: 'rj45' }, ports[0]])], [['bmc', 'bmc'], ['eth0', 'mgmt'], ['ib0', 'ib0']]);
+  const two = [{ name: 'eth', first: 0, count: 2, connector: 'rj45' }, { name: 'eth2', connector: 'rj45' }];
+  assert.deepEqual([...M.portMoves(two, [{ name: 'eth', first: 0, count: 3, connector: 'rj45' }])], [['eth0', 'eth0'], ['eth1', 'eth1'], ['eth2', 'eth2']]);
+  // Two groups of one name are told apart by their pattern.
+  const sw = M.typeOf(q, 'switch-rj45').ports;
+  assert.deepEqual([...M.portMoves(sw, [sw[0], Object.assign({}, sw[1], { count: 2 })])].slice(-3), [['swp48', 'swp48'], ['swp49', 'swp49'], ['swp50', 'swp50']]);
 });
 
 test('cable labels continue their series', () => {

@@ -208,6 +208,9 @@ test('auto types: the closest plugs that reach, DAC before AOC, fiber with trans
   assert.equal(type(), 'dac-qsfp56');
   C.updateCable(p, ib.id, { lengthM: 8 });
   assert.equal(type(), 'aoc-qsfp56', 'too long for a DAC');
+  C.updateCable(p, ib.id, { lengthM: 150 });
+  assert.equal(type(), 'dac-qsfp56', 'nothing reaches 150 m: the first that fits');
+  assert.deepEqual(texts(p, C.cableById(p, ib.id)), ['Set to 150 m: a QSFP56 DAC reaches 3 m']);
   // Exact plugs win over the same family, whatever the catalog order.
   const q28 = C.addCableType(p, { name: 'QSFP28 DAC', media: 'dac', connector: 'qsfp28', speedGbps: 100, maxM: 5, lengthsM: [1, 2, 3, 5] });
   C.moveCableType(p, q28.id, 0);
@@ -233,6 +236,48 @@ test('auto types: the closest plugs that reach, DAC before AOC, fiber with trans
   assert.equal(d.type, null);
   assert.equal(d.lengthM, null);
   assert.deepEqual(d.issues.map((i) => [i.code, i.text, i.short]), [['type', 'No cable type in the catalog joins OSFP and RJ45', 'No cable type']]);
+});
+
+test('auto types follow the catalog order, fiber types too', () => {
+  const p = M.createExampleProject();
+  const get = (label) => C.describe(p, p.cables.find((c) => c.label === label));
+  const type = (label) => get(label).type.id;
+  assert.deepEqual([type('ST-0001'), type('IB-0001')], ['dac-sfp28', 'dac-qsfp56']);
+  C.moveCableType(p, 'lc-om4', 0);
+  assert.equal(type('ST-0001'), 'lc-om4', 'SFP28 to SFP+ over LC fiber');
+  assert.deepEqual(get('ST-0001').ends.map((e) => e.transceiver.id), ['sfp28-25g-sr', 'sfp-10g-sr']);
+  assert.equal(type('IB-0001'), 'dac-qsfp56', 'no LC transceiver fits a QSFP56 cage');
+  C.moveCableType(p, 'mpo-om4', 0);
+  assert.equal(type('IB-0001'), 'mpo-om4');
+  assert.deepEqual(get('IB-0001').ends.map((e) => e.transceiver.id), ['qsfp56-200g-sr4', 'qsfp56-200g-sr4']);
+  assert.deepEqual(get('IB-0001').issues, []);
+  // Between DACs, an exact plug still goes before the same family, but not before fiber placed ahead of both.
+  const q28 = C.addCableType(p, { name: 'QSFP28 DAC', media: 'dac', connector: 'qsfp28', speedGbps: 100, maxM: 5, lengthsM: [1, 2, 3, 5] });
+  C.moveCableType(p, q28.id, 1);
+  assert.equal(type('IB-0001'), 'mpo-om4');
+  C.moveCableType(p, 'mpo-om4', 20);
+  assert.equal(type('IB-0001'), 'dac-qsfp56');
+});
+
+test('single cable types with two different plugs fit either way round', () => {
+  const p = plan();
+  const t = C.addCableType(p, { name: 'QSFP56 to SFP28 DAC', media: 'dac', connector: 'qsfp56', connectorB: 'sfp28', speedGbps: 25, maxM: 3, lengthsM: [1, 2, 3] });
+  const c = link(p, end('sn1', 'eth1'), end('leaf1', 'p5'));
+  const r = C.resolve(p, c, 1);
+  assert.deepEqual([r.type.id, r.flip, r.fits.a, r.fits.b], [t.id, true, true, [true]]);
+  assert.deepEqual(codes(p, c), ['speed']);
+});
+
+test('fiber cables plug straight into fiber ports and need optics only at cages', () => {
+  const p = plan();
+  const box = M.addDeviceType(p, { label: 'Fiber box', ports: [{ name: 'fc', first: 1, count: 4, connector: 'lc' }] });
+  p.devices.push(M.newDevice({ id: 'f1', type: box.id, name: 'f1', loc: { rack: 'r1', kind: 'u', at: 40 } }), M.newDevice({ id: 'f2', type: box.id, name: 'f2', loc: { rack: 'r1', kind: 'u', at: 42 } }));
+  let d = C.describe(p, link(p, end('f1', 'fc1'), end('f2', 'fc1')));
+  assert.deepEqual([d.type.id, d.ends.map((e) => e.transceiver), d.issues], ['lc-om4', [null, null], []]);
+  d = C.describe(p, link(p, end('f1', 'fc2'), end('sn1', 'eth1')));
+  assert.deepEqual([d.type.id, d.ends.map((e) => e.transceiver && e.transceiver.id), d.issues], ['lc-om4', [null, 'sfp28-25g-sr'], []]);
+  d = C.describe(p, link(p, end('f1', 'fc3'), end('f2', 'fc3'), { type: 'mpo-om4' }));
+  assert.deepEqual(d.issues.map((i) => i.text), ['MPO-12 OM4 does not plug into f1 fc3 (LC duplex)', 'MPO-12 OM4 does not plug into f2 fc3 (LC duplex)']);
 });
 
 test('named fiber types get their transceivers picked within reach, or use the ones chosen', () => {
@@ -287,10 +332,21 @@ test('every check says what is wrong', () => {
   assert.deepEqual(codes(p, type), ['type']);
   const floors = link(p, end('n2', 'eth0'), end('sw6', 'swp1'));
   assert.deepEqual(C.describe(p, floors).issues.map((i) => [i.code, i.text, i.short]), [['length', 'The ends are on different floors: enter the length', 'No length']]);
-  C.updateCable(p, floors.id, { lengthM: 30 });
+  C.updateCable(p, floors.id, { lengthM: 15 });
   assert.deepEqual(codes(p, C.cableById(p, floors.id)), []);
+  // A length set by hand is checked against the stock lengths too.
+  C.updateCable(p, floors.id, { lengthM: 30 });
+  assert.deepEqual(C.describe(p, C.cableById(p, floors.id)).issues.map((i) => [i.code, i.text, i.short]), [['stock', 'Set to 30 m: the longest Cat6a patch cord is 20 m', 'No stock length']]);
   const short = link(p, end('n2', 'bmc'), end('sw1', 'swp3'), { lengthM: 0.5 });
-  assert.deepEqual(texts(p, short), [`Set to 0.5 m but needs ${Math.round(C.neededLength(p, short).m * 10) / 10} m`]);
+  assert.deepEqual(texts(p, short), [`Set to 0.5 m but needs ${Math.ceil(C.neededLength(p, short).m * 10) / 10} m`]);
+  // A few centimetres short is short: the need rounds up, as an estimated length does.
+  const ex = M.createExampleProject();
+  const up = ex.cables.find((c) => c.label === 'IB-0031');
+  assert.deepEqual([C.describe(ex, up).needM, C.describe(ex, up).lengthM], [4.82, 4.9]);
+  C.updateCable(ex, up.id, { lengthM: 4.8 });
+  assert.deepEqual(texts(ex, C.cableById(ex, up.id)), ['Set to 4.8 m but needs 4.9 m']);
+  C.updateCable(ex, up.id, { lengthM: 4.82 });
+  assert.deepEqual(texts(ex, C.cableById(ex, up.id)), []);
   const twice = link(p, end('n3', 'eth0'), end('sw1', 'swp4'), { label: 'C-0001' });
   assert.deepEqual(C.describe(p, twice).issues.map((i) => [i.code, i.text, i.short]), [['label', 'The label C-0001 is used twice', 'Label used twice']]);
   assert.deepEqual(codes(p, p.cables[0]), ['plug', 'plug', 'label'], 'both cables with the label are flagged');
@@ -302,7 +358,7 @@ test('the order list counts stock lengths, lengths made to measure and transceiv
   const counted = bom.cables.reduce((a, x) => a + x.count, 0) + bom.madeToLength.reduce((a, x) => a + x.lengths.reduce((b, l) => b + l.count, 0), 0);
   assert.equal(counted + bom.unresolved, p.cables.length);
   assert.equal(bom.unresolved, 1, 'the DAC that is too long');
-  assert.deepEqual(bom.cables.filter((x) => x.type.id === 'lc-om4').map((x) => [x.lengthM, x.count]), [[5, 1], [7, 2], [45, 1]]);
+  assert.deepEqual(bom.cables.filter((x) => x.type.id === 'lc-om4').map((x) => [x.lengthM, x.count]), [[5, 1], [7, 2], [30, 1]]);
   assert.deepEqual(bom.cables.filter((x) => x.type.id === 'dac-osfp-2x').map((x) => [x.lengthM, x.count]), [[1, 4], [1.5, 8], [3, 2]]);
   assert.deepEqual(
     bom.madeToLength.map((x) => [x.type.id, x.lengths.map((l) => [l.lengthM, l.count]), x.totalM]),
@@ -311,6 +367,13 @@ test('the order list counts stock lengths, lengths made to measure and transceiv
   assert.deepEqual(bom.transceivers.map((x) => [x.transceiver.id, x.count]), [['sfp-10g-sr', 8], ['qsfp56-200g-sr4', 24]]);
   const order = bom.cables.map((x) => p.cableTypes.indexOf(x.type));
   assert.deepEqual(order, order.slice().sort((a, b) => a - b), 'catalog order');
+  // Lengths set by hand: between stock lengths the longer one is bought; past the longest, none can be.
+  const byLabel = (l) => p.cables.find((c) => c.label === l);
+  C.updateCable(p, byLabel('MGT-0001').id, { lengthM: 4 });
+  C.updateCable(p, byLabel('IB-0001').id, { lengthM: 40 });
+  assert.deepEqual(C.describe(p, byLabel('IB-0001')).issues.map((i) => [i.code, i.text]), [['stock', 'Set to 40 m: the longest QSFP56 AOC is 30 m']]);
+  const set = C.billOfMaterials(p, [byLabel('MGT-0001'), byLabel('IB-0001')]);
+  assert.deepEqual([set.cables.map((x) => [x.type.id, x.lengthM, x.count]), set.unresolved], [[['cat6a', 5, 1]], 1]);
   const some = C.billOfMaterials(p, p.cables.filter((c) => c.network === 'n-sas'));
   assert.deepEqual(some.cables.map((x) => [x.type.id, x.lengthM, x.count]), [['sas-hd', 2, 12]]);
   assert.deepEqual(some.transceivers, []);
@@ -334,6 +397,13 @@ test('series of cables pair devices in rack order with ports in port order', () 
 
   const strict = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'bmc', to: 'sw1', toPort: 'swp7', skipUsed: false, firstLabel: 'BMC-0100' });
   assert.deepEqual(strict.map((x) => [x.ok, x.label, x.reason]), [[false, '', 'sw1 swp7 already has cable C-0002'], [true, 'BMC-0100', '']]);
+  // A first label given by hand is kept below the highest of its series, skipping the labels in use.
+  link(p, end('n1', 'ib0'), end('leaf1', 'p20'), { label: 'IB-0200' });
+  link(p, end('n2', 'ib0'), end('leaf1', 'p21'), { label: 'IB-0101' });
+  const low = C.planSeries(p, { from: ['n3', 'sn1'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', firstLabel: 'IB-0100' });
+  assert.deepEqual(low.map((x) => x.label), ['IB-0100', 'IB-0102']);
+  assert.deepEqual(C.planSeries(p, { from: ['n3'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', firstLabel: 'uplink' }).map((x) => x.label), ['uplink-0001']);
+  C.disconnect(p, p.cables.filter((c) => /^IB-/.test(c.label)).map((c) => c.id));
   const tail = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'ib0', to: 'leaf1', toPort: 'p24' });
   assert.deepEqual(tail.map((x) => [x.ok, x.reason]), [[true, ''], [false, 'No free port left on leaf1']]);
   assert.equal(C.planSeries(p, { from: ['n1'], fromPort: 'ib0', to: 'leaf1', toPort: 'p99' })[0].reason, 'leaf1 has no port p99');
@@ -437,6 +507,10 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   assert.deepEqual(C.fabric(p, 'n-ib').checks.map((x) => x.text), ['ib-leaf-a01 has no uplinks']);
   assert.ok(C.isSwitch(p, M.deviceById(p, 'ex-1')));
   assert.ok(!C.isSwitch(p, M.deviceById(p, 'ex-9')));
+  const mk = (n, face) => M.addDeviceType(p, { label: `T${n}${face}`, face, ports: [{ name: 'p', first: 1, count: n, connector: 'rj45' }] });
+  assert.ok(!C.isSwitch(p, M.newDevice({ type: mk(11, 'generic').id })), '11 ports, no switch drawing');
+  assert.ok(C.isSwitch(p, M.newDevice({ type: mk(12, 'generic').id })), '12 ports');
+  assert.ok(C.isSwitch(p, M.newDevice({ type: M.addDeviceType(p, { label: 'Q', face: 'qsfp', ports: [] }).id })), 'a switch drawing without ports');
   assert.equal(C.fabric(p, null).links.length, 0, 'every example cable has a network');
 });
 
@@ -452,6 +526,10 @@ test('cable types, transceivers and networks are kept in catalogs', () => {
   assert.equal(C.updateCableType(p, 'lc-om4', { legs: 2 }), '4 cables use this type, so it keeps one end at each side');
   assert.equal(C.updateCableType(p, 'lc-om4', { name: 'LC OM4', maxM: 400 }), null);
   assert.equal(M.cableTypeById(p, 'lc-om4').name, 'LC OM4');
+  assert.equal(C.updateCableType(p, t.id, { name: 'QSFP56 DAC' }), null);
+  assert.equal(M.cableTypeById(p, t.id).name, 'QSFP56 DAC 2', 'a name in use gets a number');
+  assert.equal(C.updateCableType(p, 'dac-qsfp56', { name: 'QSFP56 DAC', maxM: 3 }), null);
+  assert.equal(M.cableTypeById(p, 'dac-qsfp56').name, 'QSFP56 DAC', 'its own name is not in use');
   assert.equal(C.deleteCableType(p, 'mpo-om4'), '12 cables use this type');
   assert.equal(C.cableTypeUse(p, 'cat6a'), 0, 'cables picking a type do not count');
   assert.equal(C.deleteCableType(p, 'cat6a'), null);
@@ -469,8 +547,12 @@ test('cable types, transceivers and networks are kept in catalogs', () => {
   assert.equal(C.deleteTransceiver(p, 'sfp-10g-sr'), '1 cable end uses this transceiver');
   assert.equal(C.updateTransceiver(p, tr.id, { reachM: 10000 }), null);
   assert.equal(M.transceiverById(p, tr.id).reachM, 10000);
+  assert.equal(C.updateTransceiver(p, tr.id, { name: 'SFP+ 10G SR' }), null);
+  assert.equal(M.transceiverById(p, tr.id).name, 'SFP+ 10G SR 2', 'transceiver names stay unique too');
   assert.ok(C.moveTransceiver(p, tr.id, 0));
   assert.equal(C.deleteTransceiver(p, tr.id), null);
+  while (p.transceivers.length < M.LIMITS.transceivers) assert.ok(C.addTransceiver(p, {}));
+  assert.equal(C.addTransceiver(p, {}), null, 'at most 50');
 
   const n = C.addNetwork(p, { name: 'Storage fabric' });
   assert.match(n.id, /^n-/);

@@ -190,6 +190,8 @@
     const before = project.cableTypes[i];
     const next = M.cleanCableType(Object.assign({}, before, changes));
     next.id = id;
+    // Names tell types apart in cable schedules, so they stay unique.
+    next.name = uniqueName(project.cableTypes.filter((t) => t.id !== id), next.name);
     const n = cableTypeUse(project, id);
     if (n && next.legs !== before.legs) {
       return `${n} cable${n === 1 ? ' uses' : 's use'} this type, so it keeps ${before.legs === 1 ? 'one end at each side' : `${before.legs} legs`}`;
@@ -232,6 +234,7 @@
     if (i < 0) return 'Unknown transceiver';
     const next = M.cleanTransceiver(Object.assign({}, project.transceivers[i], changes));
     next.id = id;
+    next.name = uniqueName(project.transceivers.filter((t) => t.id !== id), next.name);
     project.transceivers[i] = next;
     return null;
   }
@@ -312,13 +315,14 @@
     return M.cableProblem(project, draftCable(props, ignoreCableId), M.cableContext(project, ignoreCableId));
   }
 
-  function finishCable(project, p, id) {
+  function finishCable(project, p, id, labels) {
     const network = p.network || null;
+    const given = M.str(p.label, 40);
     return {
       id,
       type: p.type || null,
       network,
-      label: M.str(p.label, 40) || M.nextCableLabel(project, network),
+      label: labels ? (given ? labels.take(given) : labels.next(M.labelSeed(project, network), true)) : given || M.nextCableLabel(project, network),
       lengthM: M.clampNum(p.lengthM, 0.1, 10000, null),
       notes: typeof p.notes === 'string' ? p.notes.slice(0, 2000) : '',
       a: M.cleanCableEnd(p.a),
@@ -336,6 +340,28 @@
     const cable = finishCable(project, props || {}, M.uid('cb'));
     project.cables.push(cable);
     return { cable };
+  }
+
+  /**
+   * connect for many cables in a row, reading the plan's ports and labels
+   * once: { check(props), add(props) }. `check` says why connect would
+   * refuse a cable (or null) and `add` adds it like connect. Nothing else
+   * may change the plan's cables in between.
+   */
+  function connector(project) {
+    const ctx = M.cableContext(project);
+    let labels = null;
+    const check = (props) => (project.cables.length >= L.cables ? `A plan holds ${L.cables} cables` : M.cableProblem(project, draftCable(props), ctx));
+    const add = (props) => {
+      const error = check(props);
+      if (error) return { error };
+      labels = labels || M.labeler(project);
+      const cable = finishCable(project, props || {}, M.uid('cb'), labels);
+      project.cables.push(cable);
+      M.claimPorts(ctx, cable);
+      return { cable };
+    };
+    return { check, add };
   }
 
   /** Changes a cable's ends, type, network, label, length or notes; refuses (with a message) what connect would. */
@@ -362,8 +388,9 @@
    * rack order, top to bottom) to the ports of device `to`, starting at
    * `toPort` and advancing `step` ports each time. With `skipUsed`, ports
    * that already have a cable are passed over. With a breakout `type`, each
-   * port of `to` is a head taking `legs` sources in a row. Labels continue
-   * from `firstLabel`, else the network's series. The plan is not changed:
+   * port of `to` is a head taking `legs` sources in a row. Labels start at
+   * `firstLabel` and take the free labels of its series after it, else
+   * continue the network's series. The plan is not changed:
    * returns [{ a, b, type, network, label, ok, reason, info }] for
    * connectSeries.
    */
@@ -399,7 +426,8 @@
       const item = { a, b, type: cable.type, network: cable.network, label: '', ok: !reason, reason: reason || '', info: '' };
       item.info = `${describeEnd(a)} → ${Array.isArray(b) ? b.map(describeEnd).join(', ') : describeEnd(b)}`;
       if (item.ok) {
-        item.label = labels.next(o.firstLabel || M.labelSeed(project, o.network), true);
+        // A first label given by hand is kept (or the next free one after it); the network's series continues past its highest.
+        item.label = o.firstLabel ? labels.from(o.firstLabel) : labels.next(M.labelSeed(project, o.network), true);
         M.claimPorts(ctx, cable);
       }
       items.push({ at, item });
@@ -433,9 +461,10 @@
   /** Adds the cables of a plan from planSeries that are ok. Returns the cables added. */
   function connectSeries(project, items) {
     const out = [];
+    const many = connector(project);
     for (const it of items) {
       if (!it.ok) continue;
-      const r = connect(project, { a: it.a, b: it.b, type: it.type, network: it.network, label: it.label });
+      const r = many.add({ a: it.a, b: it.b, type: it.type, network: it.network, label: it.label });
       if (r.cable) out.push(r.cable);
     }
     return out;
@@ -542,14 +571,26 @@
   }
 
   /**
+   * The first fit in catalog order, except that a copper or direct type
+   * whose plugs only match by family is passed over while another copper or
+   * direct type in `fits` matches more ports exactly. Fiber types keep their
+   * place: they meet cages through transceivers.
+   */
+  function firstFit(fits) {
+    const direct = (f) => mediaOf(f.type).kind !== 'fiber';
+    const most = Math.max(-1, ...fits.filter(direct).map((f) => f.score));
+    return fits.find((f) => !direct(f) || f.score === most) || null;
+  }
+
+  /**
    * The cable type and transceivers of a cable for a run of `metres` (null:
    * unknown). A named type is used as it is; otherwise the type is picked:
-   * of the single cable types that fit both ports, the one with the most
-   * exact plug matches that reaches, in catalog order; if none reaches, the
-   * same among those that fit. Returns { type, auto, flip, transceivers: { a,
-   * b: [per leg] }, fits: { a, b: [per leg] }, issues } where `fits` says
-   * which ends take their plug and issues are the plug, optics and type
-   * checks.
+   * the first single cable type in catalog order that fits both ports and
+   * reaches, else the first that fits; of copper and direct types, exact
+   * plug matches go before the same family (see firstFit). Returns { type,
+   * auto, flip, transceivers: { a, b: [per leg] }, fits: { a, b: [per leg]
+   * }, issues } where `fits` says which ends take their plug and issues are
+   * the plug, optics and type checks.
    */
   function resolve(project, cable, metres, ctx) {
     const c = ctx || context(project);
@@ -567,8 +608,7 @@
       if (t) fit = tryType(t);
     } else if (!Array.isArray(cable.b)) {
       const fits = project.cableTypes.filter((t) => t.legs === 1).map(tryType).filter((f) => f.ok);
-      const best = (list) => list.reduce((b, f) => (!b || f.score > b.score ? f : b), null);
-      fit = best(fits.filter((f) => f.reaches)) || best(fits);
+      fit = firstFit(fits.filter((f) => f.reaches)) || firstFit(fits);
     }
     const issues = [];
     if (!fit) {
@@ -669,15 +709,17 @@
       const short = optics.find((t) => t.reachM < metres);
       if (type.maxM && metres > type.maxM) issues.push({ code: 'reach', level: 'warn', text: `${lead}: ${withArticle(type.name)} reaches ${fmtM(type.maxM)}`, short: 'Too long' });
       else if (short) issues.push({ code: 'reach', level: 'warn', text: `${lead}: the ${short.name} reaches ${fmtM(short.reachM)}`, short: 'Too long' });
-      else if (lengthAuto && lengthM === null) {
+      else if (type.lengthsM.length && stockLength(type, metres) === null) {
         const longest = type.lengthsM[type.lengthsM.length - 1];
-        issues.push({ code: 'stock', level: 'warn', text: `Needs ${fmtNeed(needM)}: the longest ${type.name} is ${fmtM(longest)}`, short: 'No stock length' });
+        issues.push({ code: 'stock', level: 'warn', text: `${lead}: the longest ${type.name} is ${fmtM(longest)}`, short: 'No stock length' });
       }
     }
     if (needM === null && lengthAuto) {
       issues.push({ code: 'length', level: 'warn', text: 'The ends are on different floors: enter the length', short: 'No length' });
-    } else if (!lengthAuto && needM !== null && cable.lengthM < Math.round(needM * 10) / 10) {
-      issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs ${fmtNeed(needM)}`, short: 'Too short' });
+    } else if (!lengthAuto && needM !== null && cable.lengthM < needM - 1e-9) {
+      // The need rounded up, as an estimated length would be; never down to what the set length already is.
+      const shown = Math.ceil(needM * 10 - 1e-6) / 10;
+      issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs ${fmtNeed(shown)}`, short: 'Too short' });
     }
     const uses = cable.label ? c.labels.get(cable.label) || 0 : 0;
     if (uses > 1) {
@@ -717,8 +759,10 @@
 
   /**
    * What to order for `cables` (default: all), in catalog order: stock
-   * cables by length, cables made to length with each length and the total,
-   * and transceivers. `unresolved` counts cables without a type or length.
+   * cables by stock length (a length set between two is bought at the
+   * longer), cables made to length with each length and the total, and
+   * transceivers. `unresolved` counts cables without a type or length, or
+   * longer than their type's longest stock length.
    */
   function billOfMaterials(project, cables) {
     const stock = new Map();
@@ -732,8 +776,10 @@
     };
     for (const d of describeAll(project, cables)) {
       for (const e of d.ends) if (e.transceiver) optics.set(e.transceiver.id, (optics.get(e.transceiver.id) || 0) + 1);
-      if (!d.type || d.lengthM === null) unresolved++;
-      else bump(d.type.lengthsM.length ? stock : made, d.type.id, d.lengthM);
+      // A length set between stock lengths is bought at the next one; past the longest it cannot be.
+      const buy = d.type && d.lengthM !== null && d.type.lengthsM.length ? stockLength(d.type, d.lengthM) : d.lengthM;
+      if (!d.type || buy === null) unresolved++;
+      else bump(d.type.lengthsM.length ? stock : made, d.type.id, buy);
     }
     const byLength = (m) => [...m].sort((x, y) => x[0] - y[0]);
     return {
@@ -938,24 +984,52 @@
 
   // ------------------------------------------------------------ type ports
 
-  /**
-   * Cables that would lose an end if device type `typeId` got the port
-   * groups `newPorts`: ends keep their group and place in the group, as
-   * model.updateDeviceType does it.
-   */
-  function portChangeImpact(project, typeId, newPorts) {
+  /** Each cable as it would be if device type `typeId` got the port groups `newPorts` (null: gone), as model.updateDeviceType does it. */
+  function portChangeAfter(project, typeId, newPorts) {
     const type = M.typeOf(project, typeId);
-    if (!type || type.variable) return [];
+    if (!type || type.variable) return null;
     const work = Object.assign({}, project, {
       deviceTypes: project.deviceTypes.map((t) => (t.id === typeId ? Object.assign({}, t, { ports: M.cleanPorts(newPorts) }) : t)),
       cables: M.clone(project.cables),
     });
     M.remapPorts(work, typeId, type.ports || []);
-    const after = new Map(work.cables.map((c) => [c.id, c]));
+    return new Map(work.cables.map((c) => [c.id, c]));
+  }
+
+  /**
+   * Cables that would lose an end if device type `typeId` got the port
+   * groups `newPorts`: ends keep their group and place in the group (see
+   * model.portMoves).
+   */
+  function portChangeImpact(project, typeId, newPorts) {
+    const after = portChangeAfter(project, typeId, newPorts);
+    if (!after) return [];
     return project.cables.filter((c) => {
       const n = after.get(c.id);
       return !n || M.cableEnds(n).length < M.cableEnds(c).length;
     });
+  }
+
+  /**
+   * Cables that keep their ends but would have one on another port name if
+   * device type `typeId` got the port groups `newPorts`: [{ cable, moves:
+   * [{ device, from, to }] }], so that renamed or moved ports can be named
+   * before the change.
+   */
+  function portChangeMoves(project, typeId, newPorts) {
+    const after = portChangeAfter(project, typeId, newPorts);
+    if (!after) return [];
+    const out = [];
+    for (const c of project.cables) {
+      const n = after.get(c.id);
+      if (!n || M.cableEnds(n).length < M.cableEnds(c).length) continue;
+      const moved = M.cableEnds(n);
+      const moves = M.cableEnds(c)
+        .map((x, i) => ({ device: x.end.device, from: x.end.port, to: moved[i].end.port }))
+        .filter((m) => m.from !== m.to);
+      if (moves.length) out.push({ cable: c, moves });
+    }
+    return out;
   }
 
   return {
@@ -994,6 +1068,7 @@
     deleteNetwork,
     checkConnect,
     connect,
+    connector,
     updateCable,
     disconnect,
     planSeries,
@@ -1010,6 +1085,7 @@
     isSwitch,
     fabric,
     portChangeImpact,
+    portChangeMoves,
     remapPortsForType: M.remapPorts,
   };
 });
