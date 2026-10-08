@@ -172,6 +172,24 @@
     const B = hexToRgb(b);
     return rgbToHex(A.map((v, i) => v + (B[i] - v) * t));
   }
+  /** WCAG relative luminance of a #rrggbb color. */
+  function luminance(hex) {
+    const [r, g, b] = hexToRgb(hex).map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  /** WCAG contrast ratio of two #rrggbb colors (1 to 21). */
+  function contrast(a, b) {
+    const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+    return (x + 0.05) / (y + 0.05);
+  }
+  /** The ink for text on fill `bg`: white or `dark`, whichever stands out more. */
+  function inkOn(bg, dark) {
+    const ink = dark || '#10151b';
+    return contrast('#ffffff', bg) >= contrast(ink, bg) ? '#ffffff' : ink;
+  }
 
   /** Derives the full device color scheme from a cluster's base color. */
   function schemeFor(color, theme) {
@@ -1207,6 +1225,8 @@
     THEMES,
     FONTS,
     mix,
+    contrast,
+    inkOn,
     schemeFor,
     fitText,
     formatPower,

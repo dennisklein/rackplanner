@@ -277,3 +277,13 @@ test('PNG exports raster at twice the size where the browser canvas allows it, s
   assert.ok(a >= 1 && 12000 * a * 12000 * a <= 16384 * 16384);
   assert.equal(R.pngScale(40000, 100), null);
 });
+
+test('contrast and inkOn follow WCAG: dark ink on light fills, white on dark ones', () => {
+  assert.equal(Math.round(R.contrast('#ffffff', '#000000')), 21);
+  assert.equal(R.contrast('#777777', '#777777'), 1);
+  assert.equal(R.contrast('#ffffff', '#ddab32').toFixed(2), R.contrast('#ddab32', '#ffffff').toFixed(2));
+  assert.equal(R.inkOn('#ddab32'), '#10151b', 'amber');
+  assert.equal(R.inkOn('#4eaf66', '#07090c'), '#07090c', 'green, with the ink given');
+  assert.equal(R.inkOn('#1f3a8a'), '#ffffff', 'a dark blue keeps white');
+  for (const bg of ['#ddab32', '#4eaf66', '#447ddf', '#d33c3c', '#f06464', '#98a1ac', '#2d67c9']) assert.ok(R.contrast(R.inkOn(bg), bg) >= 4.5, bg);
+});

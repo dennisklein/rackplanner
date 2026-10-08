@@ -559,6 +559,7 @@
     el.svg.setAttribute('viewBox', `0 0 ${out.width} ${out.height}`);
     el.svg.setAttribute('aria-label', `Rack elevation of ${out.layout.floor.name}, ${out.layout.row.name}`);
     el.svg.innerHTML = out.body + '<g id="ghost-layer"></g>';
+    delete el.svg.dataset.drawn;
     applyZoom();
     // Keep keyboard focus on the redrawn device only while it stays selected;
     // otherwise restoring it would select it again.
@@ -1818,15 +1819,46 @@
     }
   }
 
+  /**
+   * The width inside the stage's padding, which drawings are fitted to.
+   * Kept from the stage's ResizeObserver, which reads it once the browser
+   * has laid the page out anyway; read now (a layout) only before the
+   * first report, or while the observer has a change still to report.
+   */
+  const canvasBox = { width: null, padX: null, stale: true };
+  function canvasWidth() {
+    const cs = getComputedStyle(el.canvas);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    if (canvasBox.stale || canvasBox.width === null || padX !== canvasBox.padX) {
+      canvasBox.width = el.canvas.clientWidth;
+      canvasBox.padX = padX;
+      canvasBox.stale = false;
+    }
+    return canvasBox.width - padX;
+  }
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      // Called once layout is done: reading the size here costs nothing.
+      canvasBox.width = el.canvas.clientWidth;
+      const cs = getComputedStyle(el.canvas);
+      canvasBox.padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      canvasBox.stale = false;
+    }).observe(el.canvas);
+    window.addEventListener('resize', () => (canvasBox.stale = true));
+  }
+
   // Fit the sheet's width, but never so small that labels become unreadable,
-  // and show it from the top left.
+  // and show it from the top left. The zoom is set without reading the
+  // layout of the drawing just drawn (setZoom keeps a point in place, which
+  // needs it), so the browser lays it out once, at the zoom it ends at.
   function fitWidth() {
     if (!zoomable()) return;
-    fitZoom('width', false);
-    if (ui.zoom < 0.5) setZoom(0.5, null, false);
+    const cw = canvasWidth();
+    ui.zoom = clamp(Math.round(clamp(Math.min(1, cw / ui.sceneW), 0.5, 3) * 1000) / 1000, 0.1, 3);
+    applyZoom();
     scrollToOrigin();
     // A Cabling drawing still too wide may show its middle instead (the fabric's switches).
-    if (ui.workspace === 'cabling') cab.afterFit();
+    if (ui.workspace === 'cabling') cab.afterFit(cw);
   }
 
   function scrollToOrigin() {
@@ -2361,16 +2393,37 @@
     el.search.removeAttribute('aria-activedescendant');
   }
 
+  /**
+   * The drawing's highlight of what the search matches. In Cabling, on a
+   * large plan, it follows typing once typing pauses, as the schedule's
+   * filter does: each keystroke would draw the whole elevation or fabric
+   * again. The list of results follows each keystroke.
+   */
+  let searchStageTimer = null;
+  function flushSearchStage() {
+    if (!searchStageTimer) return;
+    clearTimeout(searchStageTimer);
+    searchStageTimer = null;
+    renderStage();
+  }
   function setQuery(q) {
     ui.query = q;
     ui.searchActive = q.trim() ? 0 : -1;
     ui.searchOpen = !!q.trim();
     if (ui.searchOpen) renderSearchResults();
     else closeSearch();
-    renderStage();
+    clearTimeout(searchStageTimer);
+    searchStageTimer = null;
+    if (q.trim() && ui.workspace === 'cabling' && project.cables.length > 400) {
+      searchStageTimer = setTimeout(() => {
+        searchStageTimer = null;
+        renderStage();
+      }, 150);
+    } else renderStage();
   }
 
   function chooseResult(it) {
+    flushSearchStage();
     closeSearch();
     if (ui.workspace === 'cabling') {
       el.search.blur();
@@ -2397,7 +2450,10 @@
       renderSearchResults();
     }
   });
-  el.search.addEventListener('blur', () => setTimeout(() => document.activeElement !== el.search && closeSearch(), 120));
+  el.search.addEventListener('blur', () => {
+    flushSearchStage();
+    setTimeout(() => document.activeElement !== el.search && closeSearch(), 120);
+  });
   el.search.addEventListener('keydown', (e) => {
     const n = ui.searchItems.length;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -2407,6 +2463,7 @@
       renderSearchResults();
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      flushSearchStage();
       const it = ui.searchItems[Math.max(0, ui.searchActive)];
       if (ui.searchOpen && it) chooseResult(it);
     } else if (e.key === 'Escape') {
@@ -2429,12 +2486,47 @@
 
   // --------------------------------------------------------------- dialogs
 
+  /** A selector that finds an element again once its part of the page is drawn anew: its id, else its first data attribute. */
+  function selectorOf(node) {
+    if (!node || node === document.body || !node.getAttribute) return null;
+    if (node.id) return `#${CSS.escape(node.id)}`;
+    const attr = [...node.attributes].find((x) => x.name.startsWith('data-'));
+    return attr ? `[${attr.name}="${CSS.escape(attr.value)}"]` : null;
+  }
+
+  /**
+   * Opens a modal dialog. Closed, it gives keyboard focus back to what
+   * opened it; when a change made in it drew that part of the page anew
+   * (a network renamed, a cable connected), to the element that stands for
+   * it now (found by its id or data attribute), else to the one the dialog
+   * names in its data-return-focus.
+   */
   function openDialog(dlg) {
     closeMenus();
     closeSearch();
-    if (!dlg.open) dlg.showModal();
+    if (!dlg.open) {
+      dlg.dataset.opener = selectorOf(document.activeElement) || '';
+      delete dlg.dataset.returnFocus;
+      dlg.showModal();
+    }
     hostToasts();
   }
+  $$('dialog').forEach((dlg) =>
+    dlg.addEventListener('close', () => {
+      // After the close handlers, which may draw the page again.
+      setTimeout(() => {
+        const a = document.activeElement;
+        if ((a && a !== document.body) || $('dialog[open]')) return;
+        for (const sel of [dlg.dataset.opener, dlg.dataset.returnFocus]) {
+          const t = sel && document.querySelector(sel);
+          if (t && !t.disabled && t.getClientRects().length) {
+            t.focus({ preventScroll: true });
+            return;
+          }
+        }
+      });
+    })
+  );
 
   // Close on Cancel buttons and on a click on the backdrop.
   $$('dialog').forEach((dlg) => {
@@ -2815,6 +2907,14 @@
     cat.sub = 'general';
     selectCatalogItem(id || null);
     openDialog($('#dlg-catalog'));
+    // Keyboard focus starts on the tab shown, not on the first tab whatever it is.
+    $(`#cat-tab-${cat.tab}`).focus();
+    revealCatalogItem();
+  }
+  /** Scrolls the list to its selected item, when it is out of view. */
+  function revealCatalogItem() {
+    const item = $('#cat-list .cat-item[aria-selected="true"]');
+    if (item) item.scrollIntoView({ block: 'nearest' });
   }
 
   function selectCatalogItem(id) {
@@ -2838,6 +2938,8 @@
     // Only the catalog's own tabs: the device type's General | Ports switch is no tab.
     for (const b of $$('#dlg-catalog .dlg-head [role="tab"]')) {
       b.setAttribute('aria-selected', String(b.dataset.tab === cat.tab));
+      // One stop for Tab: arrow keys go from tab to tab.
+      b.tabIndex = b.dataset.tab === cat.tab ? 0 : -1;
       // On a phone the tabs scroll sideways: keep the selected one in sight.
       if (b.dataset.tab === cat.tab && $('#dlg-catalog').open) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
@@ -2854,7 +2956,7 @@
           `<button type="button" role="option" class="cat-item" data-id="${esc(t.id)}" aria-selected="${t.id === cat.id}">` +
           `<span class="cat-grip" title="Drag to reorder" aria-hidden="true">${icon('grip', 'ic-sm')}</span>` +
           `${tab.art(t)}<span class="cat-meta"><span class="cat-name">${esc(tab.name(t))}</span><span class="cat-sub">${esc(tab.sub(t))}</span></span>` +
-          `<span class="cat-count" title="${esc(tab.useText(n))}">${n}</span></button>`
+          `<span class="cat-count" title="${esc(tab.useText(n, t.id))}">${n}</span></button>`
         );
       })
       .join('');
@@ -2913,7 +3015,7 @@
   function catActions(list, t, n, attrs) {
     return (
       `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
-      `<div class="cat-actions">${orderButtons(list, t.id)}<span class="sec-hint">${esc(catTab().useText(n))}</span><span class="spacer"></span>` +
+      `<div class="cat-actions">${orderButtons(list, t.id)}<span class="sec-hint">${esc(catTab().useText(n, t.id))}</span><span class="spacer"></span>` +
       `<button type="button" class="btn sm danger-text" id="cat-delete"${attrs || ''}>${icon('trash')}Delete ${catTab().noun}</button></div>`
     );
   }
@@ -3354,8 +3456,13 @@
       name: (t) => t.name,
       sub: cableSub,
       art: cableArt,
-      use: (id) => C.cableTypeUse(project, id),
-      useText: (n) => (n ? `${plural(n, 'cable')} name${n === 1 ? 's' : ''} this type` : 'No cable names this type'),
+      // Cables of the type, named or picked by Auto, as the Cables panel counts them; only those that name it keep it from being deleted.
+      use: (id) => cab.useCounts().types.get(id) || 0,
+      useText: (n, id) => {
+        const named = C.cableTypeUse(project, id);
+        if (!n && !named) return 'No cable uses this type';
+        return `${plural(n, 'cable')} ${n === 1 ? 'uses' : 'use'} this type; ${named ? `${named} by name` : 'Auto picked it for all of them'}`;
+      },
       form: cableTypeForm,
       update: C.updateCableType,
       move: C.moveCableType,
@@ -3371,8 +3478,13 @@
       name: (t) => t.name,
       sub: transceiverSub,
       art: transceiverArt,
-      use: (id) => C.transceiverUse(project, id),
-      useText: (n) => (n ? `${plural(n, 'cable end')} name${n === 1 ? 's' : ''} this transceiver` : 'No cable end names this transceiver'),
+      // Cable ends with the transceiver, named or picked, as the order list counts them.
+      use: (id) => cab.useCounts().transceivers.get(id) || 0,
+      useText: (n, id) => {
+        const named = C.transceiverUse(project, id);
+        if (!n && !named) return 'No cable end uses this transceiver';
+        return `${plural(n, 'cable end')} ${n === 1 ? 'uses' : 'use'} this transceiver; ${named ? `${named} by name` : 'picked for all of them'}`;
+      },
       form: transceiverForm,
       update: C.updateTransceiver,
       move: C.moveTransceiver,
@@ -3592,12 +3704,27 @@
     if (!item || cat.skipClick) return;
     selectCatalogItem(item.dataset.id);
   });
-  $$('#dlg-catalog .dlg-head [role="tab"]').forEach((b) =>
-    b.addEventListener('click', () => {
-      cat.tab = b.dataset.tab;
-      selectCatalogItem(null);
-    })
-  );
+  /** Shows another tab of the catalog: its list opens at the top, on its first item. */
+  function setCatalogTab(tab) {
+    const other = tab !== cat.tab;
+    cat.tab = tab;
+    selectCatalogItem(null);
+    if (other) $('#cat-list').scrollTop = 0;
+    revealCatalogItem();
+  }
+  $$('#dlg-catalog .dlg-head [role="tab"]').forEach((b) => b.addEventListener('click', () => setCatalogTab(b.dataset.tab)));
+  // Arrow keys, Home and End move between the tabs, as a tab list's do.
+  $('#dlg-catalog .dlg-head [role="tablist"]').addEventListener('keydown', (e) => {
+    const tabs = $$('[role="tab"]', e.currentTarget);
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const next = tabs[(to + tabs.length) % tabs.length];
+    setCatalogTab(next.dataset.tab);
+    next.focus();
+  });
   $('#menu-cat-new').addEventListener('click', (e) => {
     const item = e.target.closest('[data-template]');
     if (!item) return;
@@ -3653,11 +3780,16 @@
     flushPersist();
     const prev = planId;
     const id = lib.add(p);
-    if (!id) toast('The browser storage is full, so this plan is not saved. Delete old plans or export this one.', { warn: true });
     lib.setCurrent(id);
+    // Opening a plan clears the toasts of the one before: the warning comes after.
     openPlan(id, p);
     render();
     fitWidth();
+    if (!id) {
+      toast('The browser storage is full, so this plan is not saved. Delete old plans or export this one.', { warn: true });
+      // Said once: the first edit, which tries to save it again, does not say it twice.
+      storageWarned = true;
+    }
     const initial = IO.serialize(p, { compact: true });
     toast(message || `Started ${p.name}`, {
       action: prev ? 'Back' : null,
@@ -4159,8 +4291,40 @@
   function hostToasts() {
     const host = $$('dialog[open]').pop() || document.body;
     if (el.toasts.parentNode !== host) host.appendChild(el.toasts);
+    placeToastsSoon();
   }
   $$('dialog').forEach((dlg) => dlg.addEventListener('close', hostToasts));
+
+  /**
+   * In a dialog, the toasts keep clear of its footer: where they would
+   * cover its buttons (a dialog as tall as a phone's screen), they sit just
+   * above it. Placed once the dialog has its content, and again when it
+   * changes size.
+   */
+  function placeToasts() {
+    const dlg = el.toasts.parentNode;
+    const foot = dlg && dlg.tagName === 'DIALOG' && dlg.open ? $('.dlg-foot', dlg) : null;
+    el.toasts.style.bottom = '';
+    if (!foot || !el.toasts.children.length) return;
+    const f = foot.getBoundingClientRect();
+    const t = el.toasts.getBoundingClientRect();
+    if (t.bottom > f.top && t.top < f.bottom) el.toasts.style.bottom = `${Math.round(window.innerHeight - f.top + 8)}px`;
+  }
+  let toastFrame = 0;
+  function placeToastsSoon() {
+    if (toastFrame) return;
+    toastFrame = requestAnimationFrame(() => {
+      toastFrame = 0;
+      placeToasts();
+    });
+  }
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      if (el.toasts.parentNode && el.toasts.parentNode.tagName === 'DIALOG') placeToastsSoon();
+    });
+    $$('dialog').forEach((dlg) => ro.observe(dlg));
+  }
+  window.addEventListener('resize', placeToastsSoon);
 
   function toast(message, opts) {
     const o = opts || {};
@@ -4188,6 +4352,7 @@
     hostToasts();
     el.toasts.appendChild(t);
     while (el.toasts.children.length > 3) el.toasts.firstElementChild.remove();
+    placeToastsSoon();
     timer = setTimeout(dismiss, o.action ? 6000 : o.warn ? 5000 : 3200);
   }
 
@@ -4352,6 +4517,8 @@
     const remeasure = () => {
       measureCache.clear();
       partsKey = null;
+      // A drawing kept as it is while nothing it shows changes is drawn again with the new widths.
+      delete el.svg.dataset.drawn;
       renderParts();
       renderStage();
     };

@@ -277,7 +277,9 @@ and the row picker are shared; everything else is the workspace's own.
 - **Views**: Elevation, Port map, Schedule, Fabric.
 - **Connecting**: click a free port, then another (or drag from one to the
   other); for a breakout, the head first and then each leg. Esc cancels.
-  **Connect series** pairs many devices with many ports at once.
+  **Connect series** pairs many devices with many ports at once, passing
+  over ports that are in use or that no cable type joins to the devices'
+  port (an RJ45 series stops at a switch's SFP+ cages).
 - **Inspector**: the row's cabling when nothing is selected; a device with
   its ports, mounting and slack; a port; a cable with its ends,
   transceivers, type, network, length, label, notes and checks; several
@@ -288,7 +290,8 @@ and the row picker are shared; everything else is the workspace's own.
 The current row from the front or the rear (from the rear, the racks run
 right to left). Every device shows the ports on that side of the rack, cabled
 ones in their network's color. Cables run from the port into the cable
-manager (copper on the left, the rest on the right), along the tray above
+manager (copper cables, from an RJ45 port, on the left; fiber and direct
+cables on the right; one lane per network on each side), along the tray above
 the racks to other racks, and to an exit at the end of the tray for other
 rows. A selected device, port or cable is drawn bold with the far ends
 named.
@@ -308,7 +311,7 @@ underneath.
 ### Fabric
 
 One network as a graph: core switches, leaves and nodes, with nodes that
-have the same links grouped. Each leaf shows its ports in use and its
+have the same links grouped. Every box is a button, for the keyboard too. Each leaf shows its ports in use and its
 oversubscription (down links to up links, red above 3 : 1). Switches are the
 devices whose type has at least 12 ports or a switch drawing; leaves are
 switches with links to nodes.

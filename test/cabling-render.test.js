@@ -813,3 +813,71 @@ test('the cables of a 1U server rise no higher than its top edge', () => {
     }
   }
 });
+
+test('copper cables run down the left cable manager and the others down the right, whatever their network', () => {
+  const lanes = (p) => {
+    const out = CR.elevation(p, { side: 'rear' });
+    /** Whether the cable labelled `label` turns into a lane left of its first end's device. */
+    return (label) => {
+      const c = p.cables.find((x) => x.label === label);
+      const d = new RegExp(`data-cable="${c.id}"[^>]*>(?:<path[^>]*/>)*?<path d="M[\\d.]+ [\\d.]+V[\\d.]+H([\\d.]+)`).exec(out.body);
+      const dev = out.layout.devices.get(c.a.device);
+      assert.ok(d && dev, label);
+      return +d[1] < dev.x ? 'left' : 'right';
+    };
+  };
+  const p = M.createExampleProject();
+  const side = lanes(p);
+  // The Management network is mostly copper, with LC fiber uplinks between its switches.
+  assert.equal(C.describe(p, p.cables.find((c) => c.label === 'MGT-0030')).type.media, 'om4');
+  assert.deepEqual(['MGT-0001', 'MGT-0030', 'MGT-0031'].map(side), ['left', 'right', 'right']);
+  // Without networks, copper still runs left and the rest right.
+  const bare = M.createExampleProject();
+  bare.networks = [];
+  for (const c of bare.cables) c.network = null;
+  const bareSide = lanes(bare);
+  assert.deepEqual(['MGT-0001', 'MGT-0030', 'IB-0001'].map(bareSide), ['left', 'right', 'right']);
+  assert.ok(CR.elevation(bare, { side: 'rear' }).body.includes('Copper runs down the left cable managers, fiber and direct cables down the right.'));
+});
+
+test('port numbers and the oversubscription badge read well on their fills in both themes', () => {
+  for (const theme of ['light', 'dark']) {
+    const T = R.THEMES[theme];
+    const p = M.createExampleProject();
+    const cards = CR.portMap(p, p.devices.map((d) => d.id), { theme });
+    let cabled = 0;
+    for (const card of cards) {
+      for (const [, inner] of card.body.matchAll(/<g class="port" data-port="[^"]+"[^>]*>(.*?)<\/g>/g)) {
+        const fills = [...inner.matchAll(/<rect [^>]*?fill="(#[0-9a-f]{6})"(?![^>]*fill-opacity="0")/g)].map((m) => m[1]);
+        const ink = /<text [^>]*fill="(#[0-9a-f]{6})"/.exec(inner)[1];
+        if (ink === T.ink3) continue;
+        const bg = fills[0] === T.portMetal ? fills[1] : fills[0];
+        cabled++;
+        assert.ok(R.contrast(ink, bg) >= 4.4, `${theme}: ${ink} on ${bg} is ${R.contrast(ink, bg).toFixed(2)}:1`);
+      }
+    }
+    assert.ok(cabled > 100, 'cabled ports were checked');
+    // An oversubscribed leaf: 12 × 200G down, 2 × 200G up.
+    const leaf = byName(p, 'ib-leaf-a01');
+    C.disconnect(p, p.cables.filter((c) => c.a.device === leaf.id && ['p23', 'p24'].includes(c.a.port)).map((c) => c.id));
+    const box = new RegExp(`data-leaf="${leaf.id}">(.*?)</g>`).exec(CR.fabric(p, 'n-ib', { theme }).body)[1];
+    const badge = new RegExp(`fill="${T.bad}"/><text [^>]*fill="(#[0-9a-f]{6})"`).exec(box);
+    assert.ok(badge, `${theme}: the badge is red`);
+    assert.ok(R.contrast(badge[1], T.bad) >= 4.5, `${theme}: ${badge[1]} on ${T.bad}`);
+  }
+});
+
+test('interactive fabric boxes are named buttons for the keyboard', () => {
+  const p = M.createExampleProject();
+  const out = CR.fabric(p, 'n-ib', { interactive: true });
+  assertWellFormed(wrap(out), 'fabric');
+  const boxes = [...out.body.matchAll(/<g class="fb-box" ([^>]*)>/g)].map((m) => m[1]);
+  assert.equal(boxes.length, out.cores.length + out.leaves.length + out.groups.length);
+  for (const attrs of boxes) assert.ok(/tabindex="0" role="button" aria-label="[^"]+"/.test(attrs), attrs);
+  const leaf = byName(p, 'ib-leaf-a01');
+  assert.ok(out.body.includes(`aria-label="ib-leaf-a01, A01 · U`), 'a leaf is named with its place');
+  assert.ok(new RegExp(`data-leaf="${leaf.id}" tabindex="0" role="button" aria-label="[^"]*oversubscription 3:1"`).test(out.body));
+  assert.ok(out.body.includes('aria-label="cn-001 … 012, 12 × '), 'a node group is named with its nodes');
+  assert.ok(!CR.fabric(p, 'n-ib', {}).body.includes('tabindex'), 'not when the drawing is not interactive');
+  assert.ok(!CR.exportSVG('fabric', p, { networkId: 'n-ib' }).includes('tabindex'), 'nor in exports');
+});

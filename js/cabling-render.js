@@ -134,31 +134,22 @@
 
   // ------------------------------------------------------------- networks
 
-  /**
-   * Per network id ('' for cables without one): color, name and whether it
-   * is copper (most of its cables start at an RJ45 port), which decides the
-   * cable manager its cables run down.
-   */
+  /** Per network id ('' for cables without one): color, name and its place in the plan's order of networks. */
   function networkInfo(project, ctx, T) {
-    const tally = new Map();
-    for (const c of project.cables) {
-      const k = c.network && ctx.networks.has(c.network) ? c.network : '';
-      const t = tally.get(k) || { rj45: 0, all: 0 };
-      const p = C.portOf(project, c.a, ctx);
-      if (p && M.connectorById(p.connector).family === 'rj45') t.rj45++;
-      t.all++;
-      tally.set(k, t);
-    }
     const info = new Map();
     const order = project.networks.map((n) => n.id).concat(['']);
     order.forEach((id, i) => {
       const n = id ? ctx.networks.get(id) : null;
-      const t = tally.get(id) || { rj45: 0, all: 0 };
-      info.set(id, { id, order: i, name: n ? n.name : 'No network', color: n ? n.color : T.unassigned, copper: t.all > 0 && t.rj45 * 2 > t.all });
+      info.set(id, { id, order: i, name: n ? n.name : 'No network', color: n ? n.color : T.unassigned });
     });
     return info;
   }
   const netKey = (ctx, c) => (c.network && ctx.networks.has(c.network) ? c.network : '');
+  /** True for a copper cable (its first end is an RJ45 port), which runs down the left cable manager; the others run down the right. */
+  const isCopper = (project, ctx, c) => {
+    const p = C.portOf(project, c.a, ctx);
+    return !!p && M.connectorById(p.connector).family === 'rj45';
+  };
 
   /** Ids of the cables a selection picks: { kind: 'device', id|deviceId } | { kind: 'port', deviceId, port } | { kind: 'cable', id } | { kind: 'cables', ids }. */
   function selectedCables(project, sel, idx) {
@@ -224,9 +215,17 @@
     const uBottom = top0 + maxU * U;
     const trayX = MX - 8;
     const trayEnd = MX + racks.length * RW + Math.max(0, racks.length - 1) * GAP + 8;
-    // Lanes in the managers: copper on the left as seen, the rest on the right, nearest the bay first.
-    const leftNets = [...nets.values()].filter((n) => n.copper).map((n) => n.id);
-    const rightNets = [...nets.values()].filter((n) => !n.copper).map((n) => n.id);
+    // Lanes in the managers, one per network and side: copper cables on the
+    // left as seen, the rest on the right, nearest the bay first. The lanes
+    // follow the cables of the whole plan, so they stay put from row to row.
+    // A lane is named by its network and side: "<network>|L" or "<network>|R".
+    const copper = new Map(project.cables.map((c) => [c, isCopper(project, ctx, c)]));
+    const laneKey = (c) => `${netKey(ctx, c)}|${copper.get(c) ? 'L' : 'R'}`;
+    const usedLanes = new Set(project.cables.map(laneKey));
+    const ordered = [...nets.keys()];
+    const leftNets = ordered.map((id) => `${id}|L`).filter((k) => usedLanes.has(k));
+    const rightNets = ordered.map((id) => `${id}|R`).filter((k) => usedLanes.has(k));
+    const onLeft = (lane) => lane.endsWith('|L');
     const laneStep = (n) => (n > 1 ? Math.min(7, 13 / (n - 1)) : 0);
     const lay = racks.map((rack, i) => {
       const x = MX + i * (RW + GAP);
@@ -244,21 +243,21 @@
         band: [[], []],
         leaders: [],
       };
-      L.laneX = (net) => {
-        const left = nets.get(net).copper;
+      L.laneX = (lane) => {
+        const left = onLeft(lane);
         const list = left ? leftNets : rightNets;
-        const k = Math.max(0, list.indexOf(net));
+        const k = Math.max(0, list.indexOf(lane));
         return left ? L.bayX - RAIL - 5 - k * laneStep(list.length) : L.rmX + 5 + k * laneStep(list.length);
       };
       // Side slots sit in the right manager seen from the front, the left one
-      // from the rear. A side device's cables of a network whose lane is in
-      // the other manager run down a lane outside the slot instead, and over
-      // the tray to the other manager, rather than across the bay.
+      // from the rear. A side device's cables whose lane is in the other
+      // manager run down a lane outside the slot instead, and over the tray
+      // to the other manager, rather than across the bay.
       const slotLeft = side === 'rear';
-      L.sideLaneX = (net) => {
-        if (nets.get(net).copper === slotLeft) return L.laneX(net);
+      L.sideLaneX = (lane) => {
+        if (onLeft(lane) === slotLeft) return L.laneX(lane);
         const list = slotLeft ? rightNets : leftNets;
-        const k = Math.max(0, list.indexOf(net));
+        const k = Math.max(0, list.indexOf(lane));
         const step = list.length > 1 ? Math.min(1.5, 3 / (list.length - 1)) : 0;
         return slotLeft ? L.lmX + 1.5 + k * step : L.rmX + MGR - 1.5 - k * step;
       };
@@ -399,7 +398,7 @@
     {
       const groups = new Map();
       for (const c of cables) {
-        const lr = nets.get(netKey(ctx, c)).copper ? 'L' : 'R';
+        const lr = copper.get(c) ? 'L' : 'R';
         for (const x of M.cableEnds(c)) {
           const A = anchors.get(`${x.end.device}|${x.end.port}`);
           if (!A || A.dev.dense || A.dev.onSide) continue;
@@ -418,27 +417,27 @@
       }
     }
 
-    /** The lane of a device's cables of network `net`. */
-    const laneOf = (dev, net) => (dev.onSide ? dev.rack.sideLaneX(net) : dev.rack.laneX(net));
+    /** Where lane `lane` (see laneKey) runs for a device's cables. */
+    const laneOf = (dev, lane) => (dev.onSide ? dev.rack.sideLaneX(lane) : dev.rack.laneX(lane));
     /**
      * Where the cable of an end on the other side of the rack meets the
      * device: at its edge facing the lane, along the first unit (a side
      * device: along its top end), on the ear, clear of the name.
      */
-    const stubAt = (dev, net) => {
+    const stubAt = (dev, lane) => {
       const r = dev.rect;
-      const left = laneOf(dev, net) < r.x + r.w / 2;
+      const left = laneOf(dev, lane) < r.x + r.w / 2;
       return { left, x: left ? r.x : r.x + r.w, y: dev.onSide ? r.y + 6 : r.y + Math.min(r.h / 2, U / 2) };
     };
 
     /** From an end into its lane: { start (path from the end), finish (path back to the end), y (height in the lane), lx, stub }. */
-    const leg = (E, net) => {
-      const lx = laneOf(E.dev, net);
+    const leg = (E, lane) => {
+      const lx = laneOf(E.dev, lane);
       if (E.kind === 'hidden') {
         // The cable runs dashed from the rail over the ear, and its tag sits
         // above that, ending before the device's name begins: on a device in
         // the bay across its top edge, between the rail's unit numbers.
-        const at = stubAt(E.dev, net);
+        const at = stubAt(E.dev, lane);
         const out = at.x + (at.left ? -STUB_OUT : STUB_OUT);
         const inner = at.x + (at.left ? STUB_IN : -STUB_IN);
         const tagY = E.dev.onSide ? at.y - 13 : E.dev.top - 5.5;
@@ -458,6 +457,7 @@
     let farW = 0;
     for (const c of cables) {
       const net = netKey(ctx, c);
+      const lane = laneKey(c);
       const head = endInfo(c, c.a);
       const legs = M.legsOf(c).map((e) => (e ? endInfo(c, e) : null));
       const ds = [];
@@ -471,8 +471,8 @@
         if (!here.length) continue;
         let d;
         if (here.length === 2) {
-          const a = leg(pair[0], net);
-          const b = leg(pair[1], net);
+          const a = leg(pair[0], lane);
+          const b = leg(pair[1], lane);
           // In one rack down a shared lane; else (other racks, or a side
           // device's lane in the other manager) over the tray.
           if (pair[0].dev.rack === pair[1].dev.rack && Math.abs(a.lx - b.lx) < 0.05) d = `${a.start}V${r1(b.y)}${b.finish}`;
@@ -481,7 +481,7 @@
         } else {
           const E = here[0];
           const F2 = pair.find((x) => x.kind === 'out');
-          const a = leg(E, net);
+          const a = leg(E, lane);
           if (a.stub) stubs.push(a.stub);
           d = `${a.start}V${r1(trayLane(net))}H${r1(trayEnd)}`;
           exitKeys.add(F2.exit);
@@ -1039,10 +1039,12 @@
       if (hit && !sel.has(p.name) && o.focus !== null && net !== o.focus) op = 0.2;
       else if (hit && !sel.has(p.name) && o.anyLit && !isLit) op = 0.35;
       const fade = op < 1 ? ` opacity="${op}"` : '';
+      // The number goes in white or near-black, whichever reads better on the network's color.
+      const fill = color ? R.mix(color, T.faceBase, 0.1) : null;
       ports +=
         `<g class="port" data-port="${esc(`${d.id}|${p.name}`)}"${fade}>` +
-        R.portShape(P, color ? R.mix(color, T.faceBase, 0.1) : null, t) +
-        text(P.x + P.w / 2, P.y + P.h / 2 + 3, shown, nf, color ? '#ffffff' : T.ink3, ' text-anchor="middle"') +
+        R.portShape(P, fill, t) +
+        text(P.x + P.w / 2, P.y + P.h / 2 + 3, shown, nf, fill ? R.inkOn(fill, T.deep) : T.ink3, ' text-anchor="middle"') +
         hits[i] +
         `</g>`;
       if (sel.has(p.name)) marks += `<rect x="${r1(P.x - 3)}" y="${r1(P.y - 3)}" width="${r1(P.w + 6)}" height="${r1(P.h + 6)}" rx="3" fill="none" stroke="${T.handle}" stroke-width="2.5" pointer-events="none"/>`;
@@ -1104,7 +1106,8 @@
    * measure, width (default 1000; grows to fit), grouped, selected (device
    * ids: a Set, a list or { ids }), highlight (device ids, as selected:
    * outlined unless selected), fabric (cabling.fabric of this network,
-   * when the caller has it already). Returns { width, height, body, groups:
+   * when the caller has it already), interactive (boxes are focusable
+   * buttons with a name, for the keyboard). Returns { width, height, body, groups:
    * [[device ids]] (data-group indexes them), cores, leaves, switchBox:
    * { x, y, w, h } around the switches, or null }.
    */
@@ -1264,6 +1267,8 @@
       const at = d.loc.kind === 'side' ? `V${d.loc.at + 1}` : a === b ? `U${a}` : `U${a}–${b}`;
       return r ? `${shortRack(r.rack.name)} · ${at}` : at;
     };
+    /** Interactive boxes are buttons for the keyboard too, named by `label`. */
+    const button = (label) => (o.interactive ? ` tabindex="0" role="button" aria-label="${esc(label)}"` : '');
     const box = (x, y, cluster, title, sub, extra, strong, attrs, titleMax) => {
       const cl = cluster ? M.clusterById(project, cluster) : null;
       return (
@@ -1286,7 +1291,7 @@
     };
     for (const c of fab.cores) {
       const q = pos.get(c.id);
-      s += box(q.x, q.y, c.cluster, c.name, where(c), meter(q.x, q.y, used(c), total(c)), mark([c.id]), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"`);
+      s += box(q.x, q.y, c.cluster, c.name, where(c), meter(q.x, q.y, used(c), total(c)), mark([c.id]), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"${button(`${c.name}, ${where(c)}, ${used(c)} of ${total(c)} ports in use`)}`);
     }
     for (const l of fab.leaves) {
       const q = pos.get(l.id);
@@ -1296,8 +1301,8 @@
       const bw = Math.max(40, measure(ratio, F.label.css) + 10);
       const badge =
         `<rect x="${r1(q.x + BW - 7 - bw)}" y="${r1(q.y + 22)}" width="${r1(bw)}" height="16" rx="3" fill="${warn ? T.bad : T.barTrack}"/>` +
-        text(q.x + BW - 7 - bw / 2, q.y + 33.5, ratio, F.label, warn ? '#ffffff' : T.ink, ' text-anchor="middle"');
-      s += box(q.x, q.y, l.cluster, l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, mark([l.id]), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"`);
+        text(q.x + BW - 7 - bw / 2, q.y + 33.5, ratio, F.label, warn ? R.inkOn(T.bad, T.deep) : T.ink, ' text-anchor="middle"');
+      s += box(q.x, q.y, l.cluster, l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, mark([l.id]), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"${button(`${l.name}, ${where(l)}, ${r && r.ratio !== null ? `oversubscription ${ratio}` : 'no uplinks'}${warn ? ' (warning)' : ''}`)}`);
     }
     groups.forEach((g, gi) => {
       const p = gpos[gi];
@@ -1307,7 +1312,7 @@
       const ids = g.devices.map((d) => d.id);
       const sub = g.devices.length > 1 ? `${g.devices.length} × ${type ? type.label : g.type}` : where(g.devices[0]);
       const third = cl ? text(p.x + 13, p.y + 49, R.fitText(cl.name, F.head, BW - 20, measure), F.head, R.mix(cl.color, T.ink, 0.25)) : '';
-      const attrs = `data-group="${gi}"${ids.length === 1 ? ` data-dev="${esc(ids[0])}"` : ''}`;
+      const attrs = `data-group="${gi}"${ids.length === 1 ? ` data-dev="${esc(ids[0])}"` : ''}${button(`${rangeName(names)}, ${sub}${cl ? `, ${cl.name}` : ''}`)}`;
       s += box(p.x, p.y, g.cluster, rangeName(names), sub, third, mark(ids), attrs);
     });
     s += pills;

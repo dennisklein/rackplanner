@@ -6,7 +6,7 @@
 .ws-switch > button { gap: 6px; padding: 0 12px; font-weight: 500; }
 .ws-switch .ws-label { display: inline; padding: 0; color: inherit; font-size: inherit; cursor: inherit; }
 .cab-toggle { background: var(--surface); --seg-pad: 10px; }
-:root { --warn: #a86d06; --warn-icon: #d08a0c; }
+:root { --warn: #8a5700; --warn-icon: #d08a0c; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --warn: #e8a93a; --warn-icon: #f0b545; }
 }
@@ -44,6 +44,7 @@
 .cab-empty > .ic { width: 28px; height: 28px; color: var(--ink-3); }
 .cab-empty h2 { font: 600 20px/1.1 var(--font-display); color: var(--ink); }
 .cab-empty p { font-size: 13.5px; }
+.cab-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 
 /* ------------------------------------------------------------ drawings */
 
@@ -143,7 +144,7 @@
 
 /* ------------------------------------------------------------ schedule */
 
-.sc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sc { flex: 1; min-height: 0; display: flex; flex-direction: column; container: sched / inline-size; }
 .sc-tools { display: flex; align-items: flex-end; gap: 10px; padding: 16px 18px 10px; flex-wrap: wrap; }
 /*
  * The title takes the room left by the buttons. Its sub line keeps one line
@@ -201,6 +202,15 @@
   .sched .sc-check input { width: 18px; height: 18px; }
 }
 .sched .sc-pos { color: var(--ink-3); }
+/*
+ * A schedule narrower than its columns (a 1280 or 1366 px laptop) shows
+ * each end's position under it, not in a column of its own, so that the
+ * Length and Check columns stay in view.
+ */
+@container sched (max-width: 830px) {
+  .sched .sc-pos { display: none; }
+  .sched .sc-end > div[data-at]::after { content: attr(data-at); display: block; padding-bottom: 2px; font: 400 11px/14px var(--font-mono); color: var(--ink-3); }
+}
 .sched .sc-arrow { color: var(--ink-3); padding: 0 2px; width: 14px; }
 .sched .sc-num { text-align: right; }
 .sched .sc-num.is-auto { font-style: italic; color: var(--ink-2); }
@@ -339,6 +349,10 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
   .ws-switch .ws-label { display: none; }
   .ws-switch > button { padding: 0 9px; }
   .search { flex-shrink: 3; }
+}
+/* A short laptop screen keeps more of its height for the table than for the order list. */
+@media (min-width: 961px) and (max-height: 820px) {
+  .bom { max-height: 20%; }
 }
 @media (max-width: 1180px) {
   .ws-switch > button { padding: 0 9px; }

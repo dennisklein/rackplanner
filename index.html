@@ -152,7 +152,7 @@
         <h2>Cables</h2>
         <button class="btn sm subtle" id="btn-cab-catalog" type="button" title="Edit the cable types and transceivers"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
       </div>
-      <p class="sec-hint">Pick a cable, then click two ports. Or drag from one port to another.</p>
+      <p class="sec-hint"><span class="hint-pointer">Pick a cable, then click two ports. Or drag from one port to another.</span><span class="hint-touch">Pick a cable, then tap two ports, one after the other.</span></p>
       <div class="parts" id="cab-types" role="radiogroup" aria-label="Cable type for new cables"></div>
     </section>
     <section class="panel-sec bin-clusters" id="cab-nets-sec" hidden>
@@ -207,7 +207,7 @@
         <button type="button" data-cab-side="front" aria-pressed="false" title="The racks seen from the front">Front</button>
         <button type="button" data-cab-side="rear" aria-pressed="true" title="The racks seen from the rear, right to left">Rear</button>
       </div>
-      <p class="cab-note" id="cab-note" hidden>Line width grows with the number of links. The badge on each leaf is down links to up links, red above 3 : 1; the bar is its ports in use.</p>
+      <p class="cab-note" id="cab-note" hidden>Line width grows with the number of links.<span id="cab-note-leaf"> The badge on each leaf is down links to up links, red above 3 : 1; the bar is its ports in use.</span></p>
       <div class="zoom" id="zoom" role="group" aria-label="Zoom">
         <button class="btn icon sm" id="btn-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
         <button class="zoom-level" id="btn-zoom-reset" type="button" title="Zoom to 100% (1)">100%</button>
@@ -571,12 +571,12 @@
         </div>
       </div>
       <div class="cs-preview" id="cs-preview"><table class="sched sched-mini"><tbody id="cs-rows"></tbody></table></div>
-      <p class="preview-line" id="cs-summary"></p>
+      <p class="preview-line" id="cs-summary" aria-live="polite"></p>
     </div>
     <footer class="dlg-foot">
       <span class="spacer"></span>
       <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" class="btn primary" id="cs-submit">Connect</button>
+      <button type="submit" class="btn primary" id="cs-submit" aria-describedby="cs-summary">Connect</button>
     </footer>
   </form>
 </dialog>

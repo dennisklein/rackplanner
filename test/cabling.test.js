@@ -511,6 +511,62 @@ test('series of cables pair devices in rack order with ports in port order', () 
   assert.equal(M.pruneCables(M.clone(p)), 0);
 });
 
+test('a series passes over ports no cable joins to its devices', () => {
+  const p = plan();
+  // switch-rj45 has RJ45 ports swp1-48 and SFP+ cages swp49-52.
+  const rj45 = C.planSeries(p, { from: ['n1', 'n2', 'n3', 'sn1'], fromPort: 'eth0', to: 'sw1', toPort: 'swp47' });
+  assert.deepEqual(rj45.map((x) => [x.info, x.ok, x.reason]), [
+    ['n1 eth0 → sw1 swp47', true, ''],
+    ['n2 eth0 → sw1 swp48', true, ''],
+    ['n3 eth0', false, 'No free port left on sw1 that fits RJ45'],
+    ['sn1 eth0', false, 'No free port left on sw1 that fits RJ45'],
+  ], 'the series stops at the cages instead of running into them');
+  const typed = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'bmc', to: 'sw1', toPort: 'swp48', type: 'cat6a' });
+  assert.deepEqual(typed.map((x) => [x.ok, x.reason]), [[true, ''], [false, `No free port left on sw1 that fits ${M.cableTypeById(p, 'cat6a').name}`]]);
+
+  // A switch with one RJ45 port, OSFP uplinks and QSFP56 down links, as in a leaf with a management port.
+  const leaf = M.addDeviceType(p, {
+    label: 'Mixed leaf',
+    face: 'qsfp',
+    ports: [
+      { name: 'mgmt', first: 0, count: 1, connector: 'rj45', speedGbps: 1, side: 'front' },
+      { name: 'up', first: 1, count: 2, connector: 'osfp', speedGbps: 400, side: 'front' },
+      { name: 'p', first: 1, count: 4, connector: 'qsfp56', speedGbps: 200, side: 'front' },
+    ],
+  });
+  p.devices.push(M.newDevice({ id: 'mix', type: leaf.id, name: 'mix', loc: { rack: 'r1', kind: 'u', at: 40 }, reversed: true }));
+  assert.equal(M.layoutProblem(p), null);
+  const bmc = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'bmc', to: 'mix', toPort: 'mgmt0' });
+  assert.deepEqual(bmc.map((x) => [x.info, x.ok, x.reason]), [
+    ['n1 bmc → mix mgmt0', true, ''],
+    ['n2 bmc', false, 'No free port left on mix that fits RJ45'],
+  ]);
+  const ib = C.planSeries(p, { from: ['n1', 'n2', 'n3'], fromPort: 'ib0', to: 'mix', toPort: 'mgmt0' });
+  assert.deepEqual(ib.map((x) => x.info), ['n1 ib0 → mix up1', 'n2 ib0 → mix up2', 'n3 ib0 → mix p1'], 'the RJ45 port is passed over; MPO fiber joins QSFP56 and OSFP through transceivers');
+  const strict = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'eth0', to: 'mix', toPort: 'mgmt0', skipUsed: false });
+  assert.deepEqual(strict.map((x) => [x.ok, x.reason]), [[true, ''], [false, 'No free port left on mix that fits RJ45']], 'also when used ports are not skipped');
+  for (const x of rj45.concat(typed, bmc, ib)) {
+    if (x.ok) assert.ok(!C.describe(p, Object.assign({ id: null, label: x.label }, x)).issues.some((i) => i.code === 'type' || i.code === 'plug'), x.info);
+  }
+  C.connectSeries(p, ib);
+  assert.deepEqual(p.cables.map((c) => c.b.port), ['up1', 'up2', 'p1']);
+});
+
+test('joins says whether a cable can join two ports', () => {
+  const p = plan();
+  const ctx = C.context(p);
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'swp1')), true);
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'swp49'), null, ctx), false, 'no type joins RJ45 and SFP+');
+  assert.equal(C.joins(p, end('n1', 'ib0'), end('leaf1', 'p1')), true);
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('osw', 'p1')), false, 'no type joins RJ45 and OSFP');
+  assert.equal(C.joins(p, end('n1', 'ib0'), end('osw', 'p1'), 'dac-osfp-2x'), true, 'the head of the breakout');
+  assert.equal(C.joins(p, end('n1', 'ib0'), end('leaf1', 'p1'), 'dac-osfp-2x'), false);
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'swp49'), 'cat6a'), false);
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'swp49'), M.cableTypeById(p, 'lc-om4')), true, 'fiber meets a cage through a transceiver');
+  assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'nope')), false);
+  assert.equal(C.joins(p, end('n1', 'nope'), end('sw1', 'swp1')), false);
+});
+
 test('routes and groups follow the plan', () => {
   const p = M.createExampleProject();
   const route = (label) => C.routeOf(p, p.cables.find((c) => c.label === label));

@@ -426,7 +426,9 @@
    * that already have a cable are passed over. With a breakout `type`, each
    * port of `to` is a head taking `legs` sources in a row. Labels start at
    * `firstLabel` and take the free labels of its series after it, else
-   * continue the network's series. The plan is not changed:
+   * continue the network's series. Ports of `to` that no cable can join
+   * to the source (see joins) are passed over like used ones, so a run of
+   * RJ45 ports does not spill into the cages after it. The plan is not changed:
    * returns [{ a, b, type, network, label, ok, reason, info }] for
    * connectSeries.
    */
@@ -443,16 +445,30 @@
     const ids = new Set([].concat(o.from || []));
     const sources = M.sortedDevices(project).filter((d) => ids.has(d.id) && d.id !== o.to);
     const busy = (device, port) => ctx.used.get(`${device}|${port}`);
+    const rctx = context(project);
     let pi = o.toPort ? ports.findIndex((p) => p.name === o.toPort) : 0;
     const noTarget = !target ? 'Pick the device to connect to' : pi < 0 ? `${target.name} has no port ${o.toPort}` : `No free port left on ${target.name}`;
     if (pi < 0) pi = ports.length;
+    // Free ports passed over because no cable joins them to the source: the reason the series ran out, when it did.
+    let unfit = false;
 
-    const nextTargetPort = () => {
-      while (pi < ports.length && o.skipUsed && busy(target.id, ports[pi].name)) pi += step;
-      if (pi >= ports.length) return null;
-      const p = ports[pi];
-      pi += step;
-      return p;
+    /** The next port of the target for source device `src`, or null when none is left. */
+    const nextTargetPort = (src) => {
+      for (; pi < ports.length; pi += step) {
+        const p = ports[pi];
+        if (o.skipUsed && busy(target.id, p.name)) continue;
+        if (!joins(project, { device: src.id, port: o.fromPort }, { device: target.id, port: p.name }, type, rctx)) {
+          unfit = true;
+          continue;
+        }
+        pi += step;
+        return p;
+      }
+      return null;
+    };
+    const srcConn = (d) => {
+      const pt = endPort(rctx, { device: d.id, port: o.fromPort });
+      return pt ? connLabel(pt.connector) : o.fromPort;
     };
     const describeEnd = (e) => (e ? `${ctx.devices.get(e.device).name} ${e.port}` : '–');
     // Items are listed in the order of their (first) source.
@@ -486,8 +502,9 @@
     const chunk = legs || 1;
     for (let i = 0; i < ready.length; i += chunk) {
       const group = ready.slice(i, i + chunk);
-      const p = target && nextTargetPort();
-      if (!p) group.forEach((x) => refuse(x.at, x.d, noTarget));
+      const p = target && nextTargetPort(group[0].d);
+      const none = unfit ? `No free port left on ${target.name} that fits ${type ? type.name : srcConn(group[0].d)}` : noTarget;
+      if (!p) group.forEach((x) => refuse(x.at, x.d, none));
       else if (legs) plan(group[0].at, { device: target.id, port: p.name }, Array.from({ length: legs }, (_, k) => (group[k] ? end(group[k].d) : null)));
       else plan(group[0].at, end(group[0].d), { device: target.id, port: p.name });
     }
@@ -688,6 +705,24 @@
       fits: { a: !!fit && fit.a.ok, b: M.legsOf(cable).map((e, i) => !!fit && !!fit.b[i] && fit.b[i].ok) },
       issues,
     };
+  }
+
+  /**
+   * True when a cable can join port end `a` to port end `b` ({ device,
+   * port }). With a cable `type` (an id or the type itself), when a plug of
+   * it fits the port of `b` (the head's plug, for a breakout); transceivers
+   * are not asked for, as a fiber type meets a cage of any family through
+   * one. Without, when resolve finds a single cable type of the catalog
+   * that fits both ports: the cable would not warn "No cable type".
+   */
+  function joins(project, a, b, type, ctx) {
+    const c = ctx || context(project);
+    const t = typeof type === 'string' ? c.cableTypes.get(type) : type;
+    const port = endPort(c, b);
+    if (!port) return false;
+    if (!t) return !!endPort(c, a) && !!resolve(project, { a, b, type: null }, null, c).type;
+    const plugs = t.legs > 1 ? [t.connector] : [t.connector, t.connectorB];
+    return plugs.some((plug) => endFit(c, t, plug, port, null).code !== 'plug');
   }
 
   // ----------------------------------------------------------------- checks
@@ -1150,6 +1185,7 @@
     neededLength,
     stockLength,
     resolve,
+    joins,
     describe,
     describeAll,
     billOfMaterials,

@@ -535,7 +535,8 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .insp-note { color: var(--ink-2); font-size: 13.5px; }
 .hint-touch { display: none; }
 @media (hover: none) {
-  .hint-pointer, .keys-sec { display: none; }
+  /* As specific as .insp-sec, which comes later and would show the shortcuts again. */
+  .hint-pointer, .insp-sec.keys-sec, .keys-sec { display: none; }
   .hint-touch { display: inline; }
   /* No hover to reveal that titles are editable: outline them faintly. */
   .plan-name, .name-input { border-color: var(--line); }
@@ -584,6 +585,8 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 }
 .contents button:hover { background: var(--surface-2); }
 .contents .u { font: 500 11.5px/1 var(--font-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* A list whose first column is wider than its least (places in a rack, cable types) gives it the width of its longest, so that every row lines up. */
+.contents[style*="--u-w"] .u { width: var(--u-w); white-space: nowrap; }
 .contents .nm { font: 500 13px/1.2 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contents .sw { width: 14px; height: 10px; }
 .empty-note { color: var(--ink-3); font-size: 13px; }

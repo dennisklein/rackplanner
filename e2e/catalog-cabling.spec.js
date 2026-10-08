@@ -184,11 +184,16 @@ test('cable types are added from templates, sold in stock lengths or made to len
 
   // Types that cables name stay; others go, with Undo.
   await page.click('.cat-item[data-id="dac-osfp-2x"]');
-  await expect(page.locator('.cat-actions .sec-hint')).toHaveText(/^\d+ cables name this type$/);
+  await expect(page.locator('.cat-actions .sec-hint')).toHaveText(/^\d+ cables use this type; \d+ by name$/);
   await page.click('#cat-delete');
   await expect(page.locator('#cat-error')).toContainText('cables use this type');
   await expect(page.locator('.cat-item[data-id="dac-osfp-2x"]')).toHaveCount(1);
+  // A type that Auto picks for cables, which no cable names, counts them as the Cables panel does; it can go.
   await page.click('.cat-item[data-id="cat6a"]');
+  const cat6a = String(await plan(page, (p) => p.cables.filter((c) => (window.RP.cabling.describe(p, c).type || {}).id === 'cat6a').length));
+  expect(Number(cat6a)).toBeGreaterThan(0);
+  await expect(page.locator('.cat-item[data-id="cat6a"] .cat-count')).toHaveText(cat6a);
+  await expect(page.locator('.cat-actions .sec-hint')).toHaveText(`${cat6a} cables use this type; Auto picked it for all of them`);
   await page.click('#cat-delete');
   await expect(page.locator('.cat-item[data-id="cat6a"]')).toHaveCount(0);
   await undoToast(page).click();
@@ -212,7 +217,7 @@ test('transceivers are added from templates and edited', async ({ page }) => {
   await page.click('[data-cat-move="-1"]');
   const ids = await plan(page, (p) => p.transceivers.map((t) => t.id));
   expect(ids[ids.length - 2]).toBe(await plan(page, (p) => p.transceivers.find((t) => t.name === 'QSFP28 100G LR4 2').id));
-  await expect(page.locator('.cat-actions .sec-hint')).toHaveText('No cable end names this transceiver');
+  await expect(page.locator('.cat-actions .sec-hint')).toHaveText('No cable end uses this transceiver');
   await page.click('#cat-delete');
   expect(await plan(page, (p) => p.transceivers.some((t) => t.name === 'QSFP28 100G LR4 2'))).toBe(false);
 });
