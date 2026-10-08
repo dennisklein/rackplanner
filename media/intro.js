@@ -360,6 +360,9 @@
     const typed = t >= SEARCH_CLEAR ? '' : SEARCH.slice(0, clamp(Math.floor((t - SEARCH_AT) / 0.13) + 1, 0, SEARCH.length));
     if (floorMap.typed.textContent !== typed) floorMap.typed.textContent = typed;
     floorMap.ph.style.display = typed ? 'none' : '';
+    // The placeholder follows the workspace, as the app's does.
+    const ph = t >= CABLING + CAB_FLIP && t < CABLING + CAB_OUT ? 'Search devices, cables' : 'Search devices, racks';
+    if (floorMap.ph.textContent !== ph) floorMap.ph.textContent = ph;
     const searching = t > SEARCH_AT - 0.3 && t < CATALOG;
     floorMap.search.classList.toggle('on', searching);
     floorMap.caret.style.opacity = searching && Math.floor(t * 2.6) % 2 === 0 ? 1 : 0;
@@ -386,7 +389,7 @@
 
   const CHIPS = [
     ['Breakout cables', '#3aa655'],
-    ['Transceivers and fiber', '#5b8def'],
+    ['Optics and fiber', '#5b8def'],
     ['Cable order list', '#e05a47'],
     ['Port maps', '#b0569e'],
     ['Undo and redo', '#2f6fdb'],
@@ -495,7 +498,7 @@
       c.subEl.style.transform = `translateY(${(1 - k) * 24}px)`;
     }
     c.items.forEach((item, i) => {
-      const k = prog(t, c.in + 0.35 + i * 0.07, 0.5, c.extra === 'chips' ? ease.back : ease.expo);
+      const k = prog(t, c.in + 0.35 + i * (c.extra === 'chips' ? 0.045 : 0.07), 0.5, c.extra === 'chips' ? ease.back : ease.expo);
       item.style.opacity = clamp(k * 1.5);
       item.style.transform = c.extra === 'chips' ? `translateY(${(1 - k) * 40}px) scale(${0.85 + 0.15 * k})` : `translateX(${(1 - k) * -40}px)`;
     });
@@ -825,7 +828,7 @@
       l.el.style.visibility = k > 0 ? 'visible' : 'hidden';
       l.el.style.strokeDashoffset = r2((l.len + 1) * (1 - k));
     }
-    for (const l of cab.labels) l.el.setAttribute('opacity', r2(prog(f, l.y < cab.labelSplit ? 0.5 : 0.8, 0.3)));
+    for (const l of cab.labels) l.el.setAttribute('opacity', r2(prog(f, l.y < cab.labelSplit ? 0.8 : 1.1, 0.3)));
     // The switches and nodes, drifting a little closer.
     const v = cab.fview;
     const w = v.w * lerp(1.07, 1, prog(f, 0, 1.8, ease.out));

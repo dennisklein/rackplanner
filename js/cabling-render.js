@@ -537,11 +537,12 @@
       if (o.interactive && !strong) g += hitPath(q);
       return g + `</g>`;
     };
-    // The selected device's outline goes under the cables and their tags.
+    // The selected device's outline goes under the cables and their tags,
+    // inside the bay so it leaves the unit numbers on the rails readable.
     const sel = o.selected || null;
     if (sel && sel.kind === 'device' && devRects.has(sel.deviceId || sel.id)) {
       const r = devRects.get(sel.deviceId || sel.id);
-      s += `<rect x="${r1(r.x - 2)}" y="${r1(r.y - 2)}" width="${r1(r.w + 4)}" height="${r1(r.h + 4)}" rx="3" fill="none" stroke="${T.select}" stroke-width="2" pointer-events="none"/>`;
+      s += `<rect x="${r1(r.x + 1)}" y="${r1(r.y - 2)}" width="${r1(r.w - 2)}" height="${r1(r.h + 4)}" rx="3" fill="none" stroke="${T.select}" stroke-width="2" pointer-events="none"/>`;
     }
     for (const q of paths) if (!hot.has(q.c.id)) s += cableSvg(q, false);
     if (o.interactive) for (const q of paths) if (hot.has(q.c.id)) s += `<g class="cable-hit" data-cable="${esc(q.c.id)}">${hitPath(q)}</g>`;
