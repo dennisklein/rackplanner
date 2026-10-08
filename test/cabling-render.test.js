@@ -592,6 +592,33 @@ test('the port map brings the network in focus and the cables searched for forwa
   assert.ok(ports(CR.portMap(p, ids, { highlight: new Set([elsewhere]) })).every((x) => x.op === null));
 });
 
+test('the fabric shortens a range by its first name, keeping the end of the range', () => {
+  const p = M.createExampleProject();
+  const out = CR.fabric(p, 'n-sas', { grouped: true });
+  const titles = [...out.body.matchAll(/<g class="fb-box"[^>]*><rect[^>]*\/><rect[^>]*\/><text[^>]*>([^<]*)/g)].map((m) => m[1]);
+  assert.ok(titles.includes('jbod-01 … 04'));
+  const arc = titles.find((x) => x.startsWith('arc-jb'));
+  assert.ok(/^arc-jb\S*…01 … 04$/.test(arc), arc);
+  assert.ok(!titles.some((x) => x.includes('… …')));
+});
+
+test('links between nodes nest as arcs, each with its count at its own apex', () => {
+  const p = M.createExampleProject();
+  const out = CR.fabric(p, 'n-sas', { grouped: false });
+  assertWellFormed(wrap(out), 'fabric');
+  const pills = [...out.body.matchAll(/<rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="15" rx="7.5"[^>]*\/><text[^>]*>([^<]*)/g)].map((m) => ({ x: +m[1], y: +m[2], w: +m[3], h: 15, label: m[4] }));
+  const links = C.fabric(p, 'n-sas').links;
+  assert.equal(pills.length, links.length, 'a label per pair of devices');
+  for (let i = 0; i < pills.length; i++) for (let j = i + 1; j < pills.length; j++) assert.ok(!overlaps(pills[i], pills[j], 0), `${JSON.stringify(pills[i])} on ${JSON.stringify(pills[j])}`);
+  // No two arcs share a path, and every label sits on the sheet.
+  const arcs = [...out.body.matchAll(/<path d="(M[\d.]+ [\d.]+C[^"]+)" fill="none"/g)].map((m) => m[1]);
+  assert.equal(new Set(arcs).size, arcs.length);
+  assert.ok(pills.every((x) => x.y + x.h <= out.height - 10));
+  // Selecting oss-02 lights its arcs and labels.
+  const sel = CR.fabric(p, 'n-sas', { grouped: false, selected: [byName(p, 'oss-02').id] });
+  assert.ok(sel.body.includes('opacity="0.4"'));
+});
+
 test('the fabric takes the graph it is given, outlines the devices searched for and says where its switches are', () => {
   const p = M.createExampleProject();
   const graph = C.fabric(p, 'n-ib');
@@ -679,13 +706,16 @@ test('the label of a top-of-rack switch goes no higher than the device it names'
   assert.ok(farPills(out.body).some((x) => x.label === 'sw-bmc-a01 · swp48'));
 });
 
+/** Beside a side slot, on either side of it, within `gap` px. */
+const besideSlot = (pill, slot, gap) => (pill.x >= slot.x + slot.w && pill.x <= slot.x + slot.w + gap) || (pill.x + pill.w <= slot.x && pill.x + pill.w >= slot.x - gap);
+
 test('a side device’s label beside its slot, with a leader when moved along it', () => {
   const p = M.createExampleProject();
   const bmc = byName(p, 'sw-bmc-a01');
   const out = CR.elevation(p, { rowId: 'row1', side: 'rear', selected: { kind: 'device', id: byName(p, 'cn-006').id } });
   const slot = out.layout.devices.get(bmc.id);
   const pill = farPills(out.body).find((x) => x.label === 'sw-bmc-a01 · swp6');
-  assert.ok(pill.x >= slot.x + slot.w && pill.x <= slot.x + slot.w + 20, 'towards the bay');
+  assert.ok(besideSlot(pill, slot, 20), 'beside the slot');
   assert.ok(pill.y >= slot.y - 8 && pill.y <= slot.y + slot.h, 'along the slot');
   const port = out.layout.ports.get(`${bmc.id}|swp6`);
   if (Math.abs(port.y - (pill.y + 8)) >= 5) {
@@ -695,6 +725,27 @@ test('a side device’s label beside its slot, with a leader when moved along it
     const segs = segments(lead[1]);
     assert.ok(segs.some((sg) => sg.y1 === sg.y2 && Math.abs(sg.y1 - port.y) < 0.1), 'from the port');
     assert.ok(segs.some((sg) => sg.y1 === sg.y2 && Math.abs(sg.y1 - (pill.y + 8)) < 0.1 && Math.max(sg.x1, sg.x2) === pill.x), 'to the label');
+  }
+});
+
+test('a side device’s label covers no device’s name or tag', () => {
+  // Every node cabled to the side switch sw-bmc-a01: its label goes outside
+  // the rack rather than over a 2U node's name ("cn-007", "COMPUTE · 2U").
+  const p = M.createExampleProject();
+  const bmc = byName(p, 'sw-bmc-a01');
+  const peers = p.cables.filter((c) => M.cableEnds(c).some((x) => x.end.device === bmc.id)).flatMap((c) => M.cableEnds(c).map((x) => x.end.device)).filter((id) => id !== bmc.id);
+  assert.ok(peers.length >= 20);
+  for (const id of new Set(peers)) {
+    const out = CR.elevation(p, { rowId: 'row1', side: 'rear', selected: { kind: 'device', id } });
+    const slot = out.layout.devices.get(bmc.id);
+    const pill = farPills(out.body).find((x) => x.label.startsWith('sw-bmc-a01 · '));
+    assert.ok(pill && besideSlot(pill, slot, 20), p.devices.find((d) => d.id === id).name);
+    for (const [other, r] of out.layout.devices) {
+      if (r.w < 30) continue;
+      const d = p.devices.find((x) => x.id === other);
+      const names = { x: r.x + R.geometry.LABEL_X, y: r.y + 4, w: 110, h: r.h >= 2 * 22 ? 28 : 14 };
+      assert.ok(!overlaps(pill, names, 0.5), `${pill.label} over ${d.name}`);
+    }
   }
 });
 
@@ -711,7 +762,7 @@ test('an end on the other side of a side device is named beside the slot', () =>
     const slot = out.layout.devices.get(bmc.id);
     const pill = farPills(out.body).find((x) => x.label.startsWith(`${name} · `) && x.label.endsWith('(front)'));
     assert.ok(pill, name);
-    assert.ok(pill.x >= slot.x + slot.w && pill.x <= slot.x + slot.w + 20, `${name}: beside the slot at ${pill.x}, the slot at ${slot.x}`);
+    assert.ok(besideSlot(pill, slot, 20), `${name}: beside the slot at ${pill.x}, the slot at ${slot.x}`);
     assert.ok(pill.x >= 10.5 && pill.y >= slot.y - 8 && pill.y <= slot.y + slot.h, `${name}: on the sheet, along the slot`);
   }
 });

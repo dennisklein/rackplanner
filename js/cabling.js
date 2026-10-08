@@ -425,8 +425,11 @@
    * `toPort` and advancing `step` ports each time. With `skipUsed`, ports
    * that already have a cable are passed over. With a breakout `type`, each
    * port of `to` is a head taking `legs` sources in a row. Labels start at
-   * `firstLabel` and take the free labels of its series after it, else
-   * continue the network's series. Ports of `to` that no cable can join
+   * `firstLabel` and take the free labels of its series after it (a label
+   * without a number starts a series: uplink → uplink-0001), else continue
+   * the network's series. `label` is the label of one cable given by hand:
+   * the first cable gets it as it is, even when another cable has it (that
+   * is flagged, as for any label typed), and the others go on as without it. Ports of `to` that no cable can join
    * to the source (see joins) are passed over like used ones, so a run of
    * RJ45 ports does not spill into the cages after it. The plan is not changed:
    * returns [{ a, b, type, network, label, ok, reason, info }] for
@@ -478,8 +481,12 @@
       const item = { a, b, type: cable.type, network: cable.network, label: '', ok: !reason, reason: reason || '', info: '' };
       item.info = `${describeEnd(a)} → ${Array.isArray(b) ? b.map(describeEnd).join(', ') : describeEnd(b)}`;
       if (item.ok) {
-        // A first label given by hand is kept (or the next free one after it); the network's series continues past its highest.
-        item.label = o.firstLabel ? labels.from(o.firstLabel) : labels.next(M.labelSeed(project, o.network), true);
+        // One cable's label given by hand is kept as it is. A first label of
+        // a series is kept when free, else the next free one after it (one
+        // without a number starts a series); the network's series continues
+        // past its highest.
+        const own = o.label && !items.some((x) => x.item.ok) ? M.str(o.label, 40) : '';
+        item.label = own ? labels.take(own) : o.firstLabel ? labels.from(o.firstLabel) : labels.next(M.labelSeed(project, o.network), true);
         M.claimPorts(ctx, cable);
       }
       items.push({ at, item });
@@ -985,6 +992,32 @@
     return m1 && m2 && m1[1] === m2[1] ? `${first} … ${m2[2]}` : `${first} … ${last}`;
   }
 
+  /**
+   * The links of fabric().links taken together: { n, speedGbps, totalGbps },
+   * where speedGbps is the one speed every cable runs at, or 0 when they run
+   * at different speeds (inside one link too: a pair of devices can be
+   * joined by a 1G and a 10G cable) or are not rated.
+   */
+  function linkSpeed(links) {
+    let n = 0;
+    let totalGbps = 0;
+    const speeds = new Set();
+    for (const l of links) {
+      n += l.count;
+      totalGbps += l.totalGbps;
+      for (const g of l.speedsGbps || [l.speedGbps]) speeds.add(g);
+      if (!l.speedsGbps && l.count * l.speedGbps !== l.totalGbps) speeds.add(NaN);
+    }
+    const one = speeds.size === 1 ? [...speeds][0] : 0;
+    return { n, speedGbps: one || 0, totalGbps };
+  }
+  /** "11×200G", or "3 · 600G" for links of different speeds, "2" for unrated ones; `sep` goes around the "×". */
+  function linksLabel(links, sep) {
+    const { n, speedGbps, totalGbps } = linkSpeed(links);
+    if (speedGbps) return `${n}${sep || ''}×${sep || ''}${shortSpeed(speedGbps)}`;
+    return totalGbps ? `${n} · ${shortSpeed(totalGbps)}` : `${n}`;
+  }
+
   /** Switches: device types with at least 12 ports or a switch drawing. */
   function isSwitch(project, device) {
     const t = device && M.typeOf(project, device.type);
@@ -996,8 +1029,9 @@
    * switches with links to nodes (devices that are not switches), cores
    * the other switches. Nodes with the same leaves, cluster and type form a
    * group. Returns { switches, cores, leaves, nodes, groups: [{ devices,
-   * leaves, cluster, type, links }], links: [{ a, b, count, speedGbps,
-   * totalGbps }], ratios: Map leafId → { down, up, ratio } in Gb/s, checks:
+   * leaves, cluster, type, links }], links: [{ a, b, count, speedGbps (the
+   * slowest), speedsGbps (each speed once), totalGbps }], ratios: Map
+   * leafId → { down, up, ratio } in Gb/s, checks:
    * [{ level ('warn' or 'ok'), device (the leaf it is about, if one),
    * devices (the devices it is about, if several), leaves (the leaves of
    * the nodes it is about), text }]: leaves oversubscribed or without
@@ -1084,7 +1118,7 @@
       leaves,
       nodes: byOrder(ids.filter((id) => !sw.has(id))),
       groups: [...groups.values()],
-      links: [...pairs.values()].map((p) => ({ a: p.a, b: p.b, count: p.count, speedGbps: Math.min(...p.speeds), totalGbps: p.speeds.reduce((s, g) => s + g, 0) })),
+      links: [...pairs.values()].map((p) => ({ a: p.a, b: p.b, count: p.count, speedGbps: Math.min(...p.speeds), speedsGbps: [...new Set(p.speeds)].sort((x, y) => x - y), totalGbps: p.speeds.reduce((s, g) => s + g, 0) })),
       ratios,
       checks,
     };
@@ -1151,6 +1185,8 @@
     fmtSpeed,
     shortSpeed,
     fmtRatio,
+    linkSpeed,
+    linksLabel,
     context,
     cableById,
     cableIndex,

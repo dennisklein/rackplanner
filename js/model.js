@@ -2007,7 +2007,12 @@
       },
       /** Counts `label` as taken (a label given by hand) and returns it. */
       take,
-      /** `seed` itself when free, else the first free label of its series after it (not past the highest). */
+      /**
+       * `seed` itself when free, else the first free label of its series
+       * after it (not past the highest). A seed without a number is a series
+       * to start (uplink → uplink-0001, see labelSeries), never kept as it
+       * is: a label kept as typed is take's.
+       */
       from(seed) {
         const s = labelSeries(seed);
         return take(firstFree(used, s.num, (n) => formatLabel(s, n)));

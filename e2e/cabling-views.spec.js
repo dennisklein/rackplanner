@@ -431,6 +431,43 @@ test('the fabric shows InfiniBand’s cores and leaves; a leaf shows its oversub
   await expect(page.locator('#fb-net')).toHaveValue('n-sas');
 });
 
+test('every box of the fabric is a button for the keyboard: Tab reaches it, Enter and Space select it', async ({ page }) => {
+  await page.click('#cab-toggle [data-cab-view="fabric"]');
+  await expect(page.locator('.scene .fb-box')).not.toHaveCount(0);
+  const boxes = page.locator('.scene .fb-box');
+  expect(await boxes.evaluateAll((gs) => gs.every((g) => g.getAttribute('tabindex') === '0' && g.getAttribute('role') === 'button' && g.getAttribute('aria-label')))).toBe(true);
+  // Tab from the bar above: the drawing, then its first box.
+  await page.focus('[data-fb-grouped="0"]');
+  const focused = () => page.evaluate(() => {
+    const a = document.activeElement;
+    return a.id === 'scene' ? 'scene' : a.classList.contains('fb-box') ? a.getAttribute('aria-label') : a.tagName;
+  });
+  let label = null;
+  for (let i = 0; i < 4 && !label; i++) {
+    await page.keyboard.press('Tab');
+    const f = await focused();
+    if (f !== 'scene' && f !== 'BUTTON') label = f;
+  }
+  expect(label).toMatch(/core-sw-01/);
+  await expect(page.locator('.scene .fb-box:focus')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Core switch · InfiniBand');
+  // Drawn again with the core selected, focus stays on its box, and Tab goes on to the next.
+  expect(await focused()).toBe(label);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  const leaf = await focused();
+  expect(leaf).toMatch(/^ib-leaf-/);
+  await page.keyboard.press(' ');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Leaf switch · InfiniBand');
+  expect((await ui(page)).cabSel).toEqual({ kind: 'devices', ids: [await idOf(page, leaf.split(',')[0])] });
+  // A box of nodes selects them.
+  await page.focus('.scene [data-group="0"]');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#inspector .multi-title')).toHaveText('12 devices');
+  await expect(page.locator('.scene [data-group="0"]')).toBeFocused();
+});
+
 test('PNG and SVG export the elevation and the fabric in Cabling', async ({ page }) => {
   const read = async (kind) => {
     await page.click('#btn-export');

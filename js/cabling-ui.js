@@ -485,7 +485,12 @@
     /** Whether the pointer is a finger: ports then need more room. */
     const coarse = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
-    /** The rack the port map starts at: the selected device's (its row is shown), else the first of the row shown. */
+    /**
+     * The rack the port map starts at: the selected device's (its row is
+     * shown), the end of the selected cable that it draws (a switch's, unless
+     * it shows every device; in the row shown first), else the first rack of
+     * the row shown that it draws something of.
+     */
     function startRack() {
       const s = ui.cabSel;
       let id = null;
@@ -494,24 +499,31 @@
       else if (s && s.kind === 'cables') {
         const c = cableById(s.ids[0]);
         const ends = c ? M.cableEnds(c).map((x) => x.end.device).filter(deviceById) : [];
-        const here = ends.find((dev) => fresh().ctx.racks.get(deviceById(dev).loc.rack).row.id === ui.rowId);
-        id = here || ends[0] || null;
+        const drawn = (dev) => prefs.cabPortsOf === 'all' || C.isSwitch(project(), deviceById(dev));
+        const here = (dev) => fresh().ctx.racks.get(deviceById(dev).loc.rack).row.id === ui.rowId;
+        id = ends.find((dev) => drawn(dev) && here(dev)) || ends.find(drawn) || ends.find(here) || ends[0] || null;
       }
       const d = id && deviceById(id);
       if (d) {
         followDevice(d.id);
         return d.loc.rack;
       }
-      const row = ctx.currentRow().row;
-      return row.racks.length ? row.racks[0].id : null;
+      return firstRack(ctx.currentRow().row);
     }
-    /** The port map's rack, in the row shown: the first of the row when the row changed. */
+    /** The first rack of a row that the port map draws something of (a switch, unless it shows every device), else its first rack; null without racks. */
+    function firstRack(row) {
+      if (!row.racks.length) return null;
+      const p = project();
+      const all = prefs.cabPortsOf === 'all';
+      const has = (rack) => p.devices.some((d) => d.loc.rack === rack.id && d.type !== M.RESERVED.id && (all || C.isSwitch(p, d)));
+      return (row.racks.find(has) || row.racks[0]).id;
+    }
+    /** The port map's rack, in the row shown: the first of the row it draws something of when the row changed. */
     function pmRack() {
       const p = project();
       const pos = pm.rack && M.locateRack(p, pm.rack);
       if (pos && pos.row.id === ui.rowId) return pos;
-      const row = ctx.currentRow().row;
-      pm.rack = row.racks.length ? row.racks[0].id : null;
+      pm.rack = firstRack(ctx.currentRow().row);
       return pm.rack ? M.locateRack(p, pm.rack) : null;
     }
     /** Shows another rack in the port map, and its row in the nav. */
@@ -802,6 +814,7 @@
         selected,
         highlight,
         fabric: net ? fabricOf(net) : undefined,
+        interactive: true,
       });
       fab.shown = net;
       fab.groups = out.groups;
@@ -1165,13 +1178,19 @@
       return true;
     }
 
-    // Exits of the elevation are buttons for the keyboard too.
+    // Exits of the elevation and the boxes of the fabric are buttons for the keyboard too.
     el.svg.addEventListener('keydown', (e) => {
-      if (ui.workspace !== 'cabling' || (e.key !== 'Enter' && e.key !== ' ')) return;
-      const exit = e.target.closest && e.target.closest('.exit[data-row]');
-      if (!exit) return;
+      if (ui.workspace !== 'cabling' || (e.key !== 'Enter' && e.key !== ' ') || e.repeat) return;
+      const t = e.target.closest && e.target.closest('.exit[data-row], .fb-box');
+      if (!t) return;
       e.preventDefault();
-      clickTarget({ kind: 'exit', row: exit.dataset.row });
+      if (t.classList.contains('exit')) return clickTarget({ kind: 'exit', row: t.dataset.row });
+      // The fabric is drawn again with the box selected: focus stays on the same box.
+      const attr = ['data-group', 'data-core', 'data-leaf', 'data-dev'].find((a) => t.hasAttribute(a));
+      const sel = attr && `.fb-box[${attr}="${CSS.escape(t.getAttribute(attr))}"]`;
+      clickTarget(pressTarget(t), e.shiftKey || e.ctrlKey || e.metaKey);
+      const again = sel && !t.isConnected && el.svg.querySelector(sel);
+      if (again) again.focus({ preventScroll: true });
     });
 
     // ------------------------------------------------------------ drawings: hover
@@ -2200,15 +2219,22 @@
 
     // ------------------------------------------------------------ inspectors
 
-    /** Commits `mutate(draft)`, which returns an error message (the plan stays as it is) or nothing; returns the message. */
+    /**
+     * Commits `mutate(draft)`, which returns an error message (the plan
+     * stays as it is) or nothing; returns the message. `change.made` says
+     * whether the plan changed: an edit that changes nothing records no
+     * undo step, so its toast offers no Undo (that would undo the step
+     * before it).
+     */
     function change(mutate, opts) {
       let err = null;
-      ctx.commit((p) => {
+      change.made = ctx.commit((p) => {
         err = mutate(p) || null;
         return err ? false : undefined;
-      }, opts);
+      }, opts) === true;
       return err;
     }
+    change.made = false;
     /**
      * Commits a keystroke in a cable's label or notes. On a large plan the
      * schedule and the panel follow once typing pauses, as the schedule's
@@ -2595,7 +2621,10 @@
         b[i] = null;
         return C.updateCable(p, id, { b });
       });
-      if (!err) toast(left ? `Unplugged leg ${i + 1} of ${c.label}` : `Deleted ${c.label}, its last leg unplugged`, { action: 'Undo', onAction: ctx.undo });
+      // The cable as it is now: one without a label may have been given one.
+      const now = left ? cableById(id) : null;
+      const name = (now && now.label) || c.label || 'the cable';
+      if (!err) toast(left ? `Unplugged leg ${i + 1} of ${name}` : `Deleted ${name}, its last leg unplugged`, { action: 'Undo', onAction: ctx.undo });
     }
 
     /**
@@ -2759,10 +2788,25 @@
           const refused = C.updateCables(p2, order, (c, i) => ({ label: labels[i] }));
           return refused.length ? refused[0].error : null;
         });
-        if (!err) toast(`Labeled ${labels[0]} … ${labels[labels.length - 1]}`, { action: 'Undo', onAction: ctx.undo });
+        if (err) return;
+        if (change.made) toast(`Labeled ${labels[0]} … ${labels[labels.length - 1]}`, { action: 'Undo', onAction: ctx.undo });
+        else toast(`${labels[0]} … ${labels[labels.length - 1]}: the labels are in this sequence already`);
       });
       $('#multi-clear').addEventListener('click', clearSelection);
       $('#multi-del').addEventListener('click', () => deleteCables(ids));
+    }
+
+    /**
+     * The width of the port names in a port list, in px: as wide as the
+     * longest name, so that "Ethernet1/1" to "Ethernet1/32" are not all cut
+     * to "Ethernet1…" (the CSS keeps it to part of the list's width).
+     */
+    function nameColumn(ports) {
+      const font = `600 12.5px ${getComputedStyle(document.documentElement).getPropertyValue('--font-mono') || 'monospace'}`;
+      let w = 0;
+      for (const pt of ports) w = Math.max(w, ctx.measure(pt.name, font));
+      // A little over the measure: a font still loading measures narrower than the one drawn.
+      return Math.ceil(w * 1.05) + 2;
     }
 
     /** One port of a device, as a row of its port list. */
@@ -2825,7 +2869,7 @@
             `</div></section>`) +
         `<section class="insp-sec"><h3>Ports</h3>` +
         (ports.length
-          ? `<ul class="port-list">${shown.map((pt) => portRow(d, pt, idx)).join('')}</ul>${ports.length > shown.length ? `<p class="sec-hint">and ${ports.length - shown.length} more ports</p>` : ''}`
+          ? `<ul class="port-list" style="--pl-name:${nameColumn(shown)}px">${shown.map((pt) => portRow(d, pt, idx)).join('')}</ul>${ports.length > shown.length ? `<p class="sec-hint">and ${ports.length - shown.length} more ports</p>` : ''}`
           : `<p class="empty-note">${esc(type.label)} has no ports. Give its type ports in the catalog.</p>`) +
         `</section>` +
         `<div class="insp-actions is-pinned">${showButton('device', d.id)}<button type="button" class="btn" id="cab-dev-series"${ports.length ? '' : ' disabled'}>${icon('swap')}Connect series…</button>` +
@@ -3198,7 +3242,7 @@
       const free = [...portsOf(d).values()].filter((pt) => !idx.has(`${d.id}|${pt.name}`));
       return (like && free.find((pt) => family(pt) === family(like))) || free[0] || null;
     }
-    /** A device to connect to: a switch of the same row with a free port of the family, else any such device. */
+    /** A device to connect to: a switch of the same row with a free port of the family, else any such device, else one with a free port joined to it. */
     function guessTarget(fromIds, like) {
       const first = deviceById(fromIds[0]);
       if (!first) return null;
@@ -3214,6 +3258,9 @@
         pool.find((d) => C.isSwitch(project(), d) && sameRack(d) && fits(d)) ||
         pool.find((d) => C.isSwitch(project(), d) && fits(d)) ||
         pool.find(fits) ||
+        // Else one with a free port a cable joins to it, of another family (a QSFP-DD cage for a QSFP56 port).
+        pool.find((d) => C.isSwitch(project(), d) && joiningPort(d, first, like)) ||
+        pool.find((d) => joiningPort(d, first, like)) ||
         pool[0] ||
         null
       );
@@ -3264,6 +3311,11 @@
         last.value = end.id;
         $('#cs-only').checked = sameType;
       }
+      // The cable type first: the To port prefilled is one that it joins to the From port.
+      const armed = ui.cabType !== 'auto' ? ui.cabType : '';
+      $('#cs-type').innerHTML =
+        `<option value="">Auto: by connectors and length</option>` +
+        p.cableTypes.map((t) => `<option value="${esc(t.id)}"${t.id === armed ? ' selected' : ''}>${esc(t.name)}${t.legs > 1 ? ` (head on the right, ${t.legs} devices per port)` : ''}</option>`).join('');
       cs.fromPortTouched = !!o.fromPort;
       // Toward a device given (a switch's Connect series…), the port on each is one of the family of that device's ports: a node's ib0 for a leaf, not its bmc.
       const toDev = o.to && deviceById(o.to);
@@ -3280,10 +3332,6 @@
       $('#cs-nets').innerHTML =
         `<label class="chip"><input type="radio" name="cs-net" value=""${net ? '' : ' checked'}><span><i class="sw" style="--c:var(--unassigned)"></i>None</span></label>` +
         p.networks.map((n) => `<label class="chip"><input type="radio" name="cs-net" value="${esc(n.id)}"${n.id === net ? ' checked' : ''}><span><i class="sw" style="--c:${n.color}"></i>${esc(n.name)}</span></label>`).join('');
-      const armed = ui.cabType !== 'auto' ? ui.cabType : '';
-      $('#cs-type').innerHTML =
-        `<option value="">Auto: by connectors and length</option>` +
-        p.cableTypes.map((t) => `<option value="${esc(t.id)}"${t.id === armed ? ' selected' : ''}>${esc(t.name)}${t.legs > 1 ? ` (head on the right, ${t.legs} devices per port)` : ''}</option>`).join('');
       $('#cs-label').value = '';
       ctx.openDialog(dlg);
       updateConnect();
@@ -3302,15 +3350,45 @@
       if (pt) sel.value = pt.name;
       $('#cs-only-text').textContent = `only ${M.pluralName(M.typeOf(project(), d.type).label)}`;
     }
-    function fillToPorts(preset) {
+    /**
+     * The ports of the To device; `preset` picks one. A port only kept
+     * (`keep`: the one picked before the From end changed) stays when a cable
+     * joins it to the From port, or when no free port is joined either.
+     */
+    function fillToPorts(preset, keep) {
       const d = deviceById($('#cs-to').value);
       const sel = $('#cs-to-port');
       sel.innerHTML = d ? portOptions(d, null, !cs.series) : '';
       if (!d) return;
       const fromDev = deviceById($('#cs-from').value);
       const like = fromDev ? portsOf(fromDev).get($('#cs-from-port').value) : null;
-      const pt = preset && portsOf(d).has(preset) ? portsOf(d).get(preset) : firstFreePort(d, like);
+      const joining = joiningPort(d, fromDev, like);
+      const given = preset && portsOf(d).has(preset) ? portsOf(d).get(preset) : null;
+      const joinsGiven = given && fromDev && like && C.joins(project(), { device: fromDev.id, port: like.name }, { device: d.id, port: given.name }, $('#cs-type').value || null, fresh().ctx);
+      const pt = given && (!keep || joinsGiven || !joining) ? given : joining || firstFreePort(d, like);
       if (pt) sel.value = pt.name;
+    }
+    /**
+     * The first free port of `d` that a cable joins to port `like` of
+     * `fromDev` (of the cable type picked, else any of the catalog), of the
+     * family of `like` when one is, so that the preview does not start with
+     * refusals: the QSFP-DD cage of a switch for a QSFP56 port, not the RJ45
+     * port before it. Null when none is joined.
+     */
+    function joiningPort(d, fromDev, like) {
+      if (!fromDev || !like || fromDev.id === d.id) return null;
+      const p = project();
+      const k = fresh();
+      const idx = cableIndex();
+      const type = $('#cs-type').value || null;
+      const a = { device: fromDev.id, port: like.name };
+      let other = null;
+      for (const pt of portsOf(d).values()) {
+        if (idx.has(`${d.id}|${pt.name}`) || !C.joins(p, a, { device: d.id, port: pt.name }, type, k.ctx)) continue;
+        if (family(pt) === family(like)) return pt;
+        other = other || pt;
+      }
+      return other;
     }
 
     /** The devices of the From range, top to bottom: from the first to the last picked, only of the first one's type when asked. */
@@ -3383,12 +3461,23 @@
       const submit = $('#cs-submit');
       submit.disabled = !ok;
       submit.textContent = ok > 1 ? `Connect ${ok} cables` : ok ? 'Connect 1 cable' : 'Connect';
-      const first = deviceById($('#cs-from').value);
       $('#connect-title').textContent = cs.series
-        ? `${plural(o.from.length, 'device')} from ${first ? where(first).pos.rack.name : 'this row'}`
+        ? `${plural(o.from.length, 'device')} from ${seriesPlace(o.from)}`
         : ok
           ? `${cs.items[0].label}: ${cs.items[0].info}`
           : 'Connect two ports';
+    }
+
+    /** Where the devices of a series are: "Rack A01", "Rack A01 to A03" when they span racks (in the order of the range), else "this row". */
+    function seriesPlace(ids) {
+      const racks = [];
+      for (const id of ids) {
+        const d = deviceById(id);
+        const name = d && where(d).pos.rack.name;
+        if (name && !racks.includes(name)) racks.push(name);
+      }
+      if (!racks.length) return 'this row';
+      return racks.length === 1 ? racks[0] : `${racks[0]} to ${shortRack(racks[racks.length - 1])}`;
     }
 
     /** What the preview says when it has no cable: why, when the devices picked can't be joined. */
@@ -3406,7 +3495,7 @@
         if (!cs.series || !deviceById($('#cs-from-last').value)) $('#cs-from-last').value = t.value;
         fillFromPorts();
       }
-      if (t.id === 'cs-from' || t.id === 'cs-from-port') fillToPorts($('#cs-to-port').value);
+      if (t.id === 'cs-from' || t.id === 'cs-from-port' || t.id === 'cs-type') fillToPorts($('#cs-to-port').value, true);
       if (t.id === 'cs-to') fillToPorts();
       updateConnect();
     });
@@ -3478,7 +3567,8 @@
       const first = $('#network-label').value.trim() || M.defaultFirstLabel($('#network-name').value.trim() || 'Network');
       const labels = M.labeler({ cables: [] });
       const series = [labels.next(first, true), labels.next(first, true)];
-      $('#network-label-hint').textContent = `New cables of this network continue this series: ${series.join(', ')}, …`;
+      // Each label on one line: "IB-" and "0002" apart would read as two labels.
+      $('#network-label-hint').innerHTML = `New cables of this network continue this series: ${series.map((l) => `<span class="label-eg">${esc(l)}</span>`).join(', ')}, …`;
     }
     $('#network-name').addEventListener('input', () => {
       ctx.showError('#network-error', '');

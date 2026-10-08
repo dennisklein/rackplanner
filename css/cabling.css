@@ -71,6 +71,7 @@
 .scene .exit:hover > rect:first-of-type, .scene .exit:focus-visible > rect:first-of-type { stroke: var(--ink); stroke-width: 1.5; }
 .scene [data-port]:hover > :first-child, .pm-plate [data-port]:hover > :first-child { stroke: var(--ink); stroke-width: 1.2; }
 .scene .fb-box:hover > rect:first-child { stroke: var(--ink-2); }
+.scene .fb-box:focus-visible > rect:first-child { stroke-width: 2; }
 /* The legs set of a breakout cable being made, and the line of a drag from a port. */
 .leg-ring { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 2; }
 .cab-band { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 70; pointer-events: none; overflow: visible; }
@@ -301,7 +302,8 @@
 .end-item.is-free .end-main small { line-height: 20px; }
 
 .pl-row {
-  display: grid; grid-template-columns: 10px 82px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px;
+  /* The names as wide as the longest of the list (--pl-name), at least 82 px and at most two fifths of it. */
+  display: grid; grid-template-columns: 10px min(max(82px, var(--pl-name, 82px)), 40%) minmax(0, 1fr) auto; align-items: center; gap: 4px 8px;
   padding: 6px 0; border-top: 1px solid var(--line);
 }
 .pl-row:first-child { border-top: 0; padding-top: 0; }
@@ -318,14 +320,19 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
 /*
  * On two lines rather than cut: the far device and its port, the far end's
  * place and the cable with its length, a long port spec (between the plug
- * and the speed). A name too long for a line of its own breaks anywhere.
+ * and the speed), and a port name wider than its column (whose end, the
+ * part that tells ports apart, would be cut). A name too long for a line of
+ * its own breaks anywhere.
  */
-.pl-peer b, .pl-peer small, .pl-port small { white-space: normal; overflow-wrap: anywhere; }
+.pl-port b, .pl-peer b, .pl-peer small, .pl-port small { white-space: normal; overflow-wrap: anywhere; }
 .pl-free { color: var(--ink-3); font-size: 12.5px; }
 .pl-flag { display: flex; width: 13px; }
 .pl-row .btn.sm { height: 24px; padding: 0 8px; font-size: 12.5px; }
 
 /* ------------------------------------------------------------ dialogs */
+
+/* A label of the network dialog's series, on one line (a very long one cut short). */
+.label-eg { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
 #dlg-connect { width: min(760px, calc(100vw - 32px)); }
 .cs-grid { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 10px; align-items: start; }

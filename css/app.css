@@ -539,7 +539,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
   .hint-pointer, .insp-sec.keys-sec, .keys-sec { display: none; }
   .hint-touch { display: inline; }
   /* No hover to reveal that titles are editable: outline them faintly. */
-  .plan-name, .name-input { border-color: var(--line); }
+  .plan-name, .name-input:not(.name-static) { border-color: var(--line); }
 }
 .insp-sec { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .insp-sec + .insp-sec { border-top: 1px solid var(--line); }

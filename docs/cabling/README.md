@@ -263,7 +263,10 @@ Refusals aside, problems are warnings that stay until fixed:
   and notes. **Open** reads it back into the current plan by device names,
   told apart by the floor, row, rack and position given (and the name as
   written before another case); a name it cannot tell apart is skipped
-  with a warning.
+  with a warning. Hand-made schedules work too: a plain **Length** (or
+  **Cable length**) column of numbers is metres, a decimal comma or a
+  trailing "m" is read, and a length it cannot read is estimated with a
+  warning.
 - **PNG and SVG** of the cabling elevation and the fabric.
 
 ## 2. The Cabling workspace
@@ -311,7 +314,11 @@ underneath.
 ### Fabric
 
 One network as a graph: core switches, leaves and nodes, with nodes that
-have the same links grouped. Every box is a button, for the keyboard too. Each leaf shows its ports in use and its
+have the same leaves, cluster and type grouped. Every box is a button, for
+the keyboard too. Links are labelled "8×100G", or "2 · 11G" (count and total)
+when they run at different speeds, also between the same two devices. Links
+between nodes (SAS) are arcs below them that nest, each with its own label.
+Each leaf shows its ports in use and its
 oversubscription (down links to up links, red above 3 : 1). Switches are the
 devices whose type has at least 12 ports or a switch drawing; leaves are
 switches with links to nodes.

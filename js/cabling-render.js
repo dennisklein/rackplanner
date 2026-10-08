@@ -11,7 +11,8 @@
  *
  * Interactive elements carry data attributes for event delegation:
  * data-dev="<device id>" on device groups, data-port="<device id>|<port>"
- * on ports (with a hit area of at least 10 × 10 px), data-cable="<cable
+ * on ports (with a hit area of up to 10 × 10 px, cut to half the gap to a
+ * neighbouring port), data-cable="<cable
  * id>" on cables (a visible path and a wide transparent one to hit),
  * data-row="<row id>" (or data-floor) on exits to other rows and floors,
  * and data-leaf / data-core / data-group in the fabric.
@@ -48,7 +49,7 @@
   const EXIT_MAX = 300;
   const LEGEND_H = 74;
   const LEGEND_LINE = 22;
-  const HIT = 10; // smallest hit area of a port
+  const HIT = 10; // the hit area a port aims for; hitRects cuts it to half the gap to a neighbour
   // An end on the other side of the rack: a dashed stub from the rail over
   // the device's ear, and a tag that ends before the name (LABEL_X) begins.
   const STUB_OUT = 6;
@@ -621,7 +622,22 @@
     const placed = [];
     const taken = [];
     const portBoxes = [...anchors.values()].map((A) => ({ x: A.abs.x - 3, y: A.abs.y - 3, w: A.abs.w + 6, h: A.abs.h + 6 }));
-    const nameBoxes = devices.filter((v) => !v.onSide).map((v) => ({ x: v.rect.x + R.geometry.LABEL_X, y: v.rect.y + 4, w: measure(v.d.name, F.name.css), h: 14 }));
+    // Each device's name and its tag ("COMPUTE · 2U"), beside the name or
+    // below it, as render.sideFace and deviceFace draw them.
+    const nameBoxes = devices
+      .filter((v) => !v.onSide)
+      .map((v) => {
+        const x = v.rect.x + R.geometry.LABEL_X;
+        const room = v.rect.w - R.geometry.LABEL_X - 6;
+        const units = Math.round(v.rect.h / U);
+        if (units === 1 || v.type.face === 'reserved') return { x, y: v.rect.y + 4, w: Math.min(room, measure(v.d.name, (units === 1 ? F.name1 : F.name).css)), h: 14 };
+        const tag = `${v.type.tag} · ${units}U`;
+        const nw = measure(v.d.name, F.name.css);
+        const tw = measure(tag, F.tag.css) + 0.8 * tag.length;
+        // Without ports the tag may go either way (deviceFace or sideFace): both.
+        if (!v.ports.length) return { x, y: v.rect.y + 4, w: Math.min(room, nw + 8 + tw), h: 28 };
+        return units >= 3 ? { x, y: v.rect.y + 4, w: Math.min(room, Math.max(nw, tw)), h: 28 } : { x, y: v.rect.y + 4, w: Math.min(room, nw + 8 + tw), h: 14 };
+      });
     const covers = (x, y, w, b) => x < b.x + b.w && b.x < x + w && y < b.y + b.h && b.y < y + 16;
     const free = (x, y, w, avoid) => !taken.some((r) => x < r.x + r.w + 4 && r.x < x + w + 4 && y < r.y + 18 && r.y < y + 18) && !(avoid || []).some((b) => covers(x, y, w, b));
     /** The first of `tries` ([spots ([x, y]), obstacles]) free of labels and its obstacles, or null. */
@@ -714,7 +730,9 @@
       if (E.dev.onSide) {
         // Beside the slot towards the bay, at the ports' (or the stub's)
         // height or the nearest free one along the slot; else outside the
-        // rack. A leader runs from the slot's edge to a label moved along.
+        // rack. Device names are given up last: over the bay a spot clear of
+        // them is rare, as 2U nodes have their name or ports at every height.
+        // A leader runs from the slot's edge to a label moved along.
         const ys = E.kind === 'hidden' ? [stubAt(E.dev, g.net).y] : g.ends.map((x) => x.A.cy);
         const y0 = Math.min(...ys) - 8;
         const ladder = [y0];
@@ -725,7 +743,7 @@
         const outX = toBay ? r.x - 14 - lw : r.x + r.w + 14;
         const inner = along.map((y) => [inX, y]);
         const outer = onSheet(outX) ? along.map((y) => [outX, y]) : [];
-        tries = [[inner, portBoxes.concat(nameBoxes)], [inner, portBoxes], [outer, portBoxes]];
+        tries = [[inner, portBoxes.concat(nameBoxes)], [outer, portBoxes.concat(nameBoxes)], [inner, portBoxes], [outer, portBoxes]];
         leader = (x, y) => {
           if (ys.every((cy) => Math.abs(cy - (y + 8)) < 5)) return '';
           const right = x > r.x;
@@ -1097,6 +1115,25 @@
   }
 
   /**
+   * rangeName(names) fitted to `max` px: the first name is shortened in its
+   * middle, keeping its number and the end of the range ("arc-jbo…01 … 04"),
+   * before the range loses its end.
+   */
+  function fitRange(names, font, max, measure) {
+    const full = rangeName(names);
+    if (names.length < 2 || measure(full, font.css) <= max) return R.fitText(full, font, max, measure);
+    const m = /^(.*?)(\d+)$/.exec(names[0]);
+    const rest = full.slice(names[0].length);
+    if (m && m[1]) {
+      const room = max - measure(`…${m[2]}${rest}`, font.css);
+      let k = m[1].length - 1;
+      while (k > 0 && measure(m[1].slice(0, k), font.css) > room) k--;
+      if (k >= 2) return `${m[1].slice(0, k)}…${m[2]}${rest}`;
+    }
+    return R.fitText(full, font, max, measure);
+  }
+
+  /**
    * One network as a graph (cabling.fabric): tiers Core, Leaf and Nodes;
    * boxes with the cluster's stripe, the name, the position and a meter of
    * the ports in use; on leaves the oversubscription, red above 3 : 1;
@@ -1143,7 +1180,34 @@
     const W = Math.max(o.width || 1000, 96 + most * PITCH);
     const TIER = 210;
     const y0 = 52;
-    const height = Math.max(240, y0 + Math.max(1, tiers.length) * TIER - TIER + BH + 60);
+    // Links between nodes (no switch in between), one arc per pair of boxes
+    // below the node tier. Arcs nest: one over boxes another spans is drawn
+    // deeper, so no two share a line and each count sits at its own apex.
+    const groupOf = new Map();
+    groups.forEach((g, i) => g.devices.forEach((d) => groupOf.set(d.id, i)));
+    const switchIds = new Set(fab.cores.concat(fab.leaves).map((d) => d.id));
+    const arcs = (() => {
+      const pairs = new Map();
+      for (const l of fab.links) {
+        if (switchIds.has(l.a) || switchIds.has(l.b)) continue;
+        const ga = groupOf.get(l.a);
+        const gb = groupOf.get(l.b);
+        if (ga === undefined || gb === undefined || ga === gb) continue;
+        const key = ga < gb ? `${ga}|${gb}` : `${gb}|${ga}`;
+        if (!pairs.has(key)) pairs.set(key, { lo: Math.min(ga, gb), hi: Math.max(ga, gb), links: [] });
+        pairs.get(key).links.push(l);
+      }
+      const list = [...pairs.values()].sort((a, b) => a.hi - a.lo - (b.hi - b.lo) || a.lo - b.lo);
+      list.forEach((arc, i) => {
+        const under = list.slice(0, i).filter((x) => x.lo < arc.hi && arc.lo < x.hi);
+        arc.level = 1 + Math.max(0, ...under.map((x) => x.level));
+      });
+      return list;
+    })();
+    const ARC_STEP = 24; // control depth per level; the apex is 3/4 of it deeper
+    const arcDepth = (level) => 40 + (level - 1) * ARC_STEP;
+    const arcRoom = arcs.length ? Math.max(0, (3 / 4) * arcDepth(Math.max(...arcs.map((a) => a.level))) + 24 - 60) : 0;
+    const height = Math.max(240, y0 + Math.max(1, tiers.length) * TIER - TIER + BH + 60 + arcRoom);
     let s = sheetDefs(T, t) + paper(W, height, T, t);
     if (!tiers.length) {
       s += text(W / 2, height / 2, `No cables in ${net ? net.name : 'this network'}`, F.legend, T.ink3, ' text-anchor="middle"');
@@ -1168,8 +1232,6 @@
     const tierOf = new Map();
     for (const c of fab.cores) tierOf.set(c.id, 'core');
     for (const l of fab.leaves) tierOf.set(l.id, 'leaf');
-    const groupOf = new Map();
-    groups.forEach((g, i) => g.devices.forEach((d) => groupOf.set(d.id, i)));
     const linkW = (n) => r1(Math.min(9, 1 + n * 0.8));
     const anySel = sel.size > 0;
     const touches = (ids) => ids.some((id) => sel.has(id));
@@ -1179,12 +1241,7 @@
       const w = measure(label, F.label.css) + 12;
       return `<rect x="${r1(x - w / 2)}" y="${r1(y - 8)}" width="${r1(w)}" height="15" rx="7.5" fill="${T.paper}" stroke="${strong ? color : T.border}"/>` + text(x - w / 2 + 6, y + 3.4, label, F.label, strong ? T.ink : T.ink2);
     };
-    const speedLabel = (links) => {
-      const n = links.reduce((a, l) => a + l.count, 0);
-      const speeds = new Set(links.map((l) => l.speedGbps));
-      const total = links.reduce((a, l) => a + l.totalGbps, 0);
-      return speeds.size === 1 && [...speeds][0] ? `${n}×${C.shortSpeed([...speeds][0])}` : total ? `${n} · ${C.shortSpeed(total)}` : `${n}`;
-    };
+    const speedLabel = (links) => C.linksLabel(links);
 
     let links = '';
     let pills = '';
@@ -1236,25 +1293,17 @@
         pills += labelPill(x1, p.y - 16, speedLabel(ls), on);
       });
     });
-    // Links between nodes (no switch in between): arcs below the node tier.
+    // Links between nodes: the arcs, each count at its own arc's apex.
     if (nodeY) {
-      const pairs = new Map();
-      for (const l of fab.links) {
-        if (tierOf.has(l.a) || tierOf.has(l.b)) continue;
-        const ga = groupOf.get(l.a);
-        const gb = groupOf.get(l.b);
-        if (ga === undefined || gb === undefined) continue;
-        const key = ga < gb ? `${ga}|${gb}` : `${gb}|${ga}`;
-        pairs.set(key, (pairs.get(key) || 0) + l.count);
-      }
-      for (const [key, n] of pairs) {
-        const [ga, gb] = key.split('|').map(Number);
-        const a = gpos[ga];
-        const b = gpos[gb];
+      for (const arc of arcs) {
+        const a = gpos[arc.lo];
+        const b = gpos[arc.hi];
         const yb = a.y + BH;
-        if (ga === gb) continue;
-        links += `<path d="M${r1(a.x + BW / 2)} ${r1(yb)}C${r1(a.x + BW / 2)} ${r1(yb + 40)},${r1(b.x + BW / 2)} ${r1(yb + 40)},${r1(b.x + BW / 2)} ${r1(yb)}" fill="none" stroke="${color}" stroke-width="${linkW(n)}" opacity="0.75"/>`;
-        pills += labelPill((a.x + b.x) / 2 + BW / 2, yb + 30, `${n}`, false);
+        const d = arcDepth(arc.level);
+        const n = arc.links.reduce((x, l) => x + l.count, 0);
+        const on = touches(groups[arc.lo].devices.concat(groups[arc.hi].devices).map((x) => x.id));
+        links += `<path d="M${r1(a.x + BW / 2)} ${r1(yb)}C${r1(a.x + BW / 2)} ${r1(yb + d)},${r1(b.x + BW / 2)} ${r1(yb + d)},${r1(b.x + BW / 2)} ${r1(yb)}" fill="none" stroke="${color}" stroke-width="${linkW(n)}" opacity="${anySel && !on ? 0.4 : 0.75}"/>`;
+        pills += labelPill((a.x + b.x) / 2 + BW / 2, yb + (3 / 4) * d, speedLabel(arc.links), on);
       }
     }
     s += links;
@@ -1313,7 +1362,7 @@
       const sub = g.devices.length > 1 ? `${g.devices.length} × ${type ? type.label : g.type}` : where(g.devices[0]);
       const third = cl ? text(p.x + 13, p.y + 49, R.fitText(cl.name, F.head, BW - 20, measure), F.head, R.mix(cl.color, T.ink, 0.25)) : '';
       const attrs = `data-group="${gi}"${ids.length === 1 ? ` data-dev="${esc(ids[0])}"` : ''}${button(`${rangeName(names)}, ${sub}${cl ? `, ${cl.name}` : ''}`)}`;
-      s += box(p.x, p.y, g.cluster, rangeName(names), sub, third, mark(ids), attrs);
+      s += box(p.x, p.y, g.cluster, fitRange(names, F.box, BW - 20, measure), sub, third, mark(ids), attrs);
     });
     s += pills;
     const sw = [...pos.values()];

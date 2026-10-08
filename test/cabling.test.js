@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const M = require('../js/model.js');
 const C = require('../js/cabling.js');
+const CR = require('../js/cabling-render.js');
 
 const U = C.UNIT_M;
 const near = (actual, expected, msg) => assert.ok(Math.abs(actual - expected) < 0.006, `${msg || ''} ${actual} ≈ ${expected}`);
@@ -494,7 +495,20 @@ test('series of cables pair devices in rack order with ports in port order', () 
   link(p, end('n2', 'ib0'), end('leaf1', 'p21'), { label: 'IB-0101' });
   const low = C.planSeries(p, { from: ['n3', 'sn1'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', firstLabel: 'IB-0100' });
   assert.deepEqual(low.map((x) => x.label), ['IB-0100', 'IB-0102']);
-  assert.deepEqual(C.planSeries(p, { from: ['n3'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', firstLabel: 'uplink' }).map((x) => x.label), ['uplink-0001']);
+  assert.deepEqual(C.planSeries(p, { from: ['n3'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', firstLabel: 'uplink' }).map((x) => x.label), ['uplink-0001'], 'a series needs a number');
+  // One cable's label typed by hand is kept as it is: without a number, or in use (flagged when connected).
+  const one = (label) => C.planSeries(p, { from: ['n3'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', label }).map((x) => x.label);
+  assert.deepEqual(one('uplink'), ['uplink']);
+  assert.deepEqual(one('PATCH-A'), ['PATCH-A']);
+  assert.deepEqual(one('IB-0100'), ['IB-0100'], 'in use already');
+  assert.deepEqual(one('  '), one(null), 'blank: the network series');
+  assert.notEqual(one(null)[0], '');
+  const both = C.planSeries(p, { from: ['n3', 'sn1'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', label: 'uplink' }).map((x) => x.label);
+  assert.equal(both[0], 'uplink', 'the first cable gets it');
+  assert.notEqual(both[1], 'uplink', 'the next ones go on without it');
+  const kept = C.connectSeries(p, C.planSeries(p, { from: ['n3'], fromPort: 'ib0', to: 'leaf1', toPort: 'p1', label: 'uplink' }));
+  assert.deepEqual(kept.map((c) => c.label), ['uplink']);
+  C.disconnect(p, kept.map((c) => c.id));
   C.disconnect(p, p.cables.filter((c) => /^IB-/.test(c.label)).map((c) => c.id));
   const tail = C.planSeries(p, { from: ['n1', 'n2'], fromPort: 'ib0', to: 'leaf1', toPort: 'p24' });
   assert.deepEqual(tail.map((x) => [x.ok, x.reason]), [[true, ''], [false, 'No free port left on leaf1']]);
@@ -651,7 +665,7 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   );
   const id = (name) => p.devices.find((d) => d.name === name).id;
   const pair = f.links.find((l) => l.a === id('ib-leaf-a01') && l.b === id('core-sw-01'));
-  assert.deepEqual(pair, { a: id('ib-leaf-a01'), b: id('core-sw-01'), count: 2, speedGbps: 200, totalGbps: 400 });
+  assert.deepEqual(pair, { a: id('ib-leaf-a01'), b: id('core-sw-01'), count: 2, speedGbps: 200, speedsGbps: [200], totalGbps: 400 });
 
   // Half the uplinks of a leaf gone: 6:1.
   C.disconnect(p, p.cables.filter((c) => ['IB-0033', 'IB-0034'].includes(c.label)).map((c) => c.id));
@@ -671,6 +685,33 @@ test('the fabric finds leaves, cores, groups of nodes and oversubscription', () 
   assert.ok(C.isSwitch(p, M.newDevice({ type: mk(12, 'generic').id })), '12 ports');
   assert.ok(C.isSwitch(p, M.newDevice({ type: M.addDeviceType(p, { label: 'Q', face: 'qsfp', ports: [] }).id })), 'a switch drawing without ports');
   assert.equal(C.fabric(p, null).links.length, 0, 'every example cable has a network');
+});
+
+test('links of different speeds between one pair of devices are labelled by their total', () => {
+  // ceph-01's eth1 (SFP28 into an SFP+ port: 10G) moved into Management,
+  // beside its 1G eth0 to the same switch.
+  const p = M.createExampleProject();
+  const id = (name) => p.devices.find((d) => d.name === name).id;
+  const ceph = id('ceph-01');
+  const sw = id('sw-mgmt-a02');
+  const eth1 = p.cables.find((c) => M.cableEnds(c).some((x) => x.end.device === ceph && x.end.port === 'eth1'));
+  assert.ok(eth1, 'ceph-01 eth1 is cabled');
+  eth1.network = 'n-mgmt';
+  const f = C.fabric(p, 'n-mgmt');
+  const pair = f.links.find((l) => [l.a, l.b].includes(ceph) && [l.a, l.b].includes(sw));
+  assert.deepEqual([pair.count, pair.speedGbps, pair.speedsGbps, pair.totalGbps], [2, 1, [1, 10], 11]);
+  assert.deepEqual(C.linkSpeed([pair]), { n: 2, speedGbps: 0, totalGbps: 11 }, 'mixed within one link');
+  assert.equal(C.linksLabel([pair]), '2 · 11G');
+  // Links built before speedsGbps: a total that is not count × speed is mixed too.
+  assert.equal(C.linksLabel([{ count: 2, speedGbps: 1, totalGbps: 11 }]), '2 · 11G');
+  assert.equal(C.linksLabel([{ count: 2, speedGbps: 100, totalGbps: 200 }, { count: 1, speedGbps: 100, totalGbps: 100 }], ' '), '3 × 100G');
+  assert.equal(C.linksLabel([{ count: 1, speedGbps: 100, totalGbps: 100 }, { count: 1, speedGbps: 25, totalGbps: 25 }]), '2 · 125G');
+  assert.equal(C.linksLabel([{ count: 3, speedGbps: 0, speedsGbps: [0], totalGbps: 0 }]), '3', 'unrated');
+  // The fabric drawing says so too, every device and grouped.
+  const pills = (out) => [...out.body.matchAll(/height="15" rx="7.5"[^>]*\/><text[^>]*>([^<]*)/g)].map((m) => m[1]);
+  assert.ok(pills(CR.fabric(p, 'n-mgmt', { grouped: false })).includes('2 · 11G'));
+  assert.ok(!pills(CR.fabric(p, 'n-mgmt', { grouped: false })).includes('2×1G'));
+  assert.ok(pills(CR.fabric(p, 'n-mgmt', { grouped: true })).some((x) => /^\d+ · \d+G$/.test(x)), 'the ceph box adds its links up');
 });
 
 test('the fabric checks that every leaf reaches every core switch, said for one core too', () => {

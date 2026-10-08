@@ -223,7 +223,10 @@
     return text.length * size * perChar;
   }
 
-  /** Shortens text with an ellipsis until it fits `max` px. */
+  /**
+   * Shortens text with an ellipsis until it fits `max` px. Spaces and an
+   * ellipsis the cut leaves at the end go, so "a … 04" never becomes "a … …".
+   */
   function fitText(text, font, max, measure) {
     const m = measure || approxMeasure;
     if (m(text, font.css) <= max) return text;
@@ -234,7 +237,8 @@
       if (m(text.slice(0, mid) + '…', font.css) <= max) lo = mid;
       else hi = mid - 1;
     }
-    return lo > 0 ? text.slice(0, lo) + '…' : '…';
+    const kept = text.slice(0, lo).replace(/[\s…]+$/, '');
+    return kept ? kept + '…' : '…';
   }
 
   function text(x, y, str, font, fill, extra) {

@@ -654,7 +654,8 @@
     network: ['network', 'vlan'],
     // "Cable" comes last for the type, so that alone it is the label.
     type: ['cable type', 'type', 'cable model', 'cable'],
-    lengthM: ['length (m)', 'length m', 'metres', 'meters'],
+    lengthM: ['length (m)', 'length m', 'metres', 'meters', 'length (metres)', 'length (meters)', 'length in metres', 'length in meters', 'cable length', 'cable length (m)'],
+    // "Length" is the estimated/set column of exportCablesCSV, or metres when it holds numbers (see importCablesCSV).
     lengthKind: ['length'],
     leg: ['leg'],
     aDevice: ['a device', 'from device', 'from'],
@@ -673,6 +674,14 @@
     bTransceiver: ['b transceiver', 'to transceiver'],
     notes: ['notes', 'note', 'comment', 'comments'],
   };
+
+  /** "4.5", "4,5" (a decimal comma), "4.5 m" → 4.5; null when it is no length above 0. */
+  function readMetres(text) {
+    let t = String(text).trim().replace(/\s*m$/i, '');
+    if (/^\d+,\d+$/.test(t)) t = t.replace(',', '.');
+    const n = /^\d*\.?\d+$|^\d+\.$/.test(t) ? Number(t) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
 
   /**
    * Which column holds what: { label: 0, type: 2, … }. Aliases are tried
@@ -723,6 +732,11 @@
     const warnings = [];
     const lower = (v) => String(v || '').trim().toLowerCase();
     const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
+    // A plain "Length" column without a metres one holds metres when it holds anything but "estimated" and "set".
+    if (col.lengthM === undefined && col.lengthKind !== undefined && rows.slice(1).some((r) => !['', 'estimated', 'set'].includes(lower(get(r, 'lengthKind'))))) {
+      col.lengthM = col.lengthKind;
+      delete col.lengthKind;
+    }
     const byName = new Map();
     for (const d of M.sortedDevices(project)) {
       const k = lower(d.name);
@@ -877,7 +891,11 @@
         if (!network) warnings.push(`${label ? `Cable ${label}` : `Line ${c.line}`}: a plan holds ${L.networks} networks, so it has none.`);
       }
       const metres = get(r, 'lengthM');
-      const lengthM = lower(get(r, 'lengthKind')) !== 'estimated' && metres !== '' && Number.isFinite(Number(metres)) ? Number(metres) : null;
+      let lengthM = null;
+      if (metres !== '' && lower(get(r, 'lengthKind')) !== 'estimated') {
+        lengthM = readMetres(metres);
+        if (lengthM === null) notes.push(`its length “${metres}” is not a number of metres, so it is estimated`);
+      }
       const result = many.add(Object.assign(props, { network: network ? network.id : null, lengthM }));
       if (result.error) skip(result.error);
       else {

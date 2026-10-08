@@ -1757,7 +1757,16 @@
     toast(`Deleted ${devs.length === 1 ? devs[0].name : plural(devs.length, 'device')}${andCables(cables)}`, { action: 'Undo', onAction: undo });
   }
 
+  /**
+   * Replaces the plan with `next`, as one undo step; false when that
+   * changes nothing (a merge that adds nothing): no step is recorded then,
+   * and the selection and the Cabling workspace's state stay as they are.
+   */
   function replaceProject(next) {
+    const after = M.clone(next);
+    // Imports and a fresh start come checked, but no cable may point past the plan.
+    M.pruneCables(after);
+    if (JSON.stringify(after) === projectJSON) return false;
     ui.selection = null;
     ui.focusCluster = null;
     ui.hoverCluster = null;
@@ -1765,9 +1774,7 @@
     disarm();
     const ok = commit((p) => {
       Object.keys(p).forEach((k) => delete p[k]);
-      Object.assign(p, M.clone(next));
-      // Imports and a fresh start come checked, but no cable may point past the plan.
-      M.pruneCables(p);
+      Object.assign(p, after);
     });
     if (!M.rowById(project, ui.rowId)) ui.rowId = M.allRows(project)[0].row.id;
     render();
@@ -3932,8 +3939,9 @@
     $('#dlg-open').close('ok');
     const sub = `${plural(result.warnings.length, 'row')} or detail${result.warnings.length === 1 ? '' : 's'} needed attention:`;
     if (merge) {
-      replaceProject(result.project);
-      toast(`Added ${plural(result.added, 'device')} from the CSV`, { action: 'Undo', onAction: undo });
+      // A merge that adds nothing records no step: an Undo here would undo the step before it.
+      if (replaceProject(result.project)) toast(`Added ${plural(result.added, 'device')} from the CSV`, { action: 'Undo', onAction: undo });
+      else toast('No devices added from the CSV');
       reportWarnings(`Imported ${plural(result.added, 'device')}`, sub, result.warnings);
     } else {
       const base = fileName.replace(/\.[^.]+$/, '').trim();
@@ -4064,9 +4072,9 @@
       });
       if (!ok) return;
     }
-    replaceProject(M.createEmptyProject());
+    const changed = replaceProject(M.createEmptyProject());
     fitWidth();
-    toast('Started an empty plan', { action: 'Undo', onAction: undo });
+    toast('Started an empty plan', changed ? { action: 'Undo', onAction: undo } : {});
   }
 
   $('#btn-start-empty').addEventListener('click', startEmptyInPlace);

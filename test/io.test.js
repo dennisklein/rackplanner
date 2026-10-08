@@ -453,6 +453,30 @@ test('a hand-made cable schedule adds what it can', () => {
   assert.throws(() => IO.importCablesCSV(p, 'A device,A port,B device,B port'), /no cables/);
 });
 
+test('cable lengths under a plain Length header, with a decimal comma or a unit are read, and a bad one is said', () => {
+  const run = (text) => {
+    const p = M.createExampleProject();
+    p.cables = [];
+    const r = IO.importCablesCSV(p, text);
+    return { r, lengths: p.cables.map((c) => [c.label, c.lengthM]) };
+  };
+  let { r, lengths } = run(['Label,A device,A port,B device,B port,Length', 'X-1,cn-001,eth0,sw-mgmt-a01,swp1,4.5', 'X-2,cn-002,eth0,sw-mgmt-a01,swp2,7', 'X-3,cn-003,eth0,sw-mgmt-a01,swp3,'].join('\n'));
+  assert.deepEqual(r, { added: 3, warnings: [] });
+  assert.deepEqual(lengths, [['X-1', 4.5], ['X-2', 7], ['X-3', null]], 'a Length column of numbers is metres');
+  ({ r, lengths } = run(['Label,A device,A port,B device,B port,Cable length', 'X-1,cn-001,eth0,sw-mgmt-a01,swp1,4.5 m'].join('\n')));
+  assert.deepEqual(lengths, [['X-1', 4.5]], 'Cable length, with a unit');
+  ({ r, lengths } = run(['Label,A device,A port,B device,B port,Length (metres)', 'X-1,cn-001,eth0,sw-mgmt-a01,swp1,3'].join('\n')));
+  assert.deepEqual(lengths, [['X-1', 3]]);
+  ({ r, lengths } = run(['Label;A device;A port;B device;B port;Length (m);Length', 'X-1;cn-001;eth0;sw-mgmt-a01;swp1;4,5;set', 'X-2;cn-002;eth0;sw-mgmt-a01;swp2;7;set', 'X-3;cn-003;eth0;sw-mgmt-a01;swp3;abc;set', 'X-4;cn-004;eth0;sw-mgmt-a01;swp4;9;estimated'].join('\n')));
+  assert.deepEqual(lengths, [['X-1', 4.5], ['X-2', 7], ['X-3', null], ['X-4', null]], 'a decimal comma; an estimate stays one');
+  assert.deepEqual(r.warnings, ['Cable X-3: its length “abc” is not a number of metres, so it is estimated.']);
+  // The export's own Length column (estimated/set) is still that.
+  ({ r, lengths } = run(['Label,A device,A port,B device,B port,Length (m),Length', 'X-1,cn-001,eth0,sw-mgmt-a01,swp1,2.5,set', 'X-2,cn-002,eth0,sw-mgmt-a01,swp2,,'].join('\n')));
+  assert.deepEqual(lengths, [['X-1', 2.5], ['X-2', null]]);
+  ({ r, lengths } = run(['Label,A device,A port,B device,B port,Length', 'X-1,cn-001,eth0,sw-mgmt-a01,swp1,set'].join('\n')));
+  assert.deepEqual([r.warnings, lengths], [[], [['X-1', null]]], 'a Length column of kinds alone holds no metres');
+});
+
 test('lines with the same label and A end form a breakout, with or without a Leg', () => {
   const run = (header, lines) => {
     const p = M.createExampleProject();

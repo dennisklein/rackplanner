@@ -154,6 +154,9 @@ test('fitText shortens long labels with an ellipsis', () => {
   const measure = (t) => t.length * 6;
   assert.equal(R.fitText('short', R.FONTS.name, 60, measure), 'short');
   assert.equal(R.fitText('a-very-long-hostname', R.FONTS.name, 60, measure), 'a-very-lo…');
+  // A cut after a space or an ellipsis drops them: no "… …".
+  assert.equal(R.fitText('arc-jbod-01 … 04', R.FONTS.name, 6 * 15, measure), 'arc-jbod-01…');
+  assert.equal(R.fitText('ab cd', R.FONTS.name, 6 * 4, measure), 'ab…');
 });
 
 const measure6 = (t) => t.length * 6;
