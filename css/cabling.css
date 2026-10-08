@@ -6,11 +6,11 @@
 .ws-switch > button { gap: 6px; padding: 0 12px; font-weight: 500; }
 .ws-switch .ws-label { display: inline; padding: 0; color: inherit; font-size: inherit; cursor: inherit; }
 .cab-toggle { background: var(--surface); --seg-pad: 10px; }
-:root { --warn: #8a5700; --warn-icon: #d08a0c; }
+:root { --warn: #8a5700; --warn-icon: #d08a0c; --port-free: #262c33; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --warn: #e8a93a; --warn-icon: #f0b545; }
+  :root:not([data-theme="light"]) { --warn: #e8a93a; --warn-icon: #f0b545; --port-free: #0b0e12; }
 }
-:root[data-theme="dark"] { --warn: #e8a93a; --warn-icon: #f0b545; }
+:root[data-theme="dark"] { --warn: #e8a93a; --warn-icon: #f0b545; --port-free: #0b0e12; }
 .ic.is-warn { color: var(--warn-icon); }
 .ic.is-info { color: var(--ink-3); }
 .ic.is-ok { color: var(--ok); }
@@ -108,7 +108,8 @@
 .pm-legend { display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
 .pm-key { display: inline-flex; align-items: center; gap: 6px; }
 .pm-key .sw { width: 12px; height: 10px; }
-.sw.sw-free { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
+/* As a free port is drawn: render.js THEMES portHole. */
+.sw.sw-free { background: var(--port-free); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .pm-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3); display: inline-block; margin: 0 3px; }
 .pm-hint { margin-left: auto; color: var(--ink-3); }
 .pm-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 10px 0 4px; }

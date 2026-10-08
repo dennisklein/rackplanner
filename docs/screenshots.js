@@ -1,13 +1,15 @@
-// Takes the README screenshots from the example plan, and the banner that
-// links to the intro video. Run with `npm run screenshots`, or name some of
-// them: `npm run screenshots -- intro-video intro-video-dark`.
+// Takes the README screenshots from the example plan, in the Racks and the
+// Cabling workspace, and the banner that links to the intro video. Run with
+// `npm run screenshots`, or name some of them:
+// `npm run screenshots -- intro-video intro-video-dark`. PORT=… serves the
+// app on another port than 4180.
 'use strict';
 
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { chromium } = require('@playwright/test');
 
-const PORT = 4180;
+const PORT = Number(process.env.PORT) || 4180;
 const OUT = path.join(__dirname, 'screenshots');
 const VIEWPORT = { width: 1440, height: 900 };
 
@@ -77,6 +79,82 @@ async function catalog(browser) {
   await page.close();
 }
 
+/** The example plan in the Cabling workspace, on one of its views. */
+async function openCabling(browser, colorScheme, view) {
+  const page = await openApp(browser, colorScheme);
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  if (view) await page.click(`#cab-toggle [data-cab-view="${view}"]`);
+  return page;
+}
+
+/** The cabling elevation of Row A from the rear at 100%, with a compute node selected and its cables drawn bold. */
+async function cablingElevation(browser, colorScheme, name) {
+  const page = await openCabling(browser, colorScheme);
+  const id = await page.evaluate(() => window.RP.app.project().devices.find((d) => d.name === 'cn-004').id);
+  const dev = page.locator(`.scene .dev[data-dev="${id}"]`);
+  await page.click('#btn-zoom-reset');
+  // Rack A01 is on the right from the rear: scroll to it, with the tray above it in view.
+  await dev.evaluate((g) => {
+    const canvas = document.querySelector('#canvas');
+    const r = g.getBoundingClientRect();
+    const box = canvas.getBoundingClientRect();
+    canvas.scrollLeft += r.left + r.width / 2 - (box.left + box.width / 2);
+    canvas.scrollTop = 0;
+  });
+  // On its name, clear of the ports.
+  await dev.click({ position: { x: 40, y: 8 } });
+  await shot(page, name);
+  await page.close();
+}
+
+async function portMap(browser) {
+  const page = await openCabling(browser, 'light', 'ports');
+  await shot(page, 'port-map');
+  await page.close();
+}
+
+/** The cable schedule of Row A with a cable selected. */
+async function schedule(browser) {
+  const page = await openCabling(browser, 'light', 'schedule');
+  // On its label cell, clear of the checkbox.
+  await page.locator('#sc-body tr', { hasText: 'IB-0001' }).first().locator('td').nth(1).click();
+  await shot(page, 'schedule');
+  await page.close();
+}
+
+/** Connect series about to join the management ports of Row B's six PDUs to its management switch. */
+async function connectSeries(browser) {
+  const page = await openCabling(browser, 'light', 'schedule');
+  await page.click('#btn-row-next');
+  await page.click('#sc-series');
+  const id = (name) => page.evaluate((name) => window.RP.app.project().devices.find((d) => d.name === name).id, name);
+  await page.selectOption('#cs-from', await id('pdu-b01-a'));
+  await page.selectOption('#cs-from-last', await id('pdu-b03-b'));
+  await page.check('#cs-only');
+  await page.selectOption('#cs-from-port', 'mgmt');
+  await page.selectOption('#cs-to', await id('sw-mgmt-b01'));
+  await page.locator('#cs-nets label', { hasText: 'Management' }).click();
+  // Without the toast that named the row.
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await shot(page, 'connect-series');
+  await page.close();
+}
+
+async function fabric(browser) {
+  const page = await openCabling(browser, 'light', 'fabric');
+  await shot(page, 'fabric');
+  await page.close();
+}
+
+async function catalogPorts(browser) {
+  const page = await openApp(browser);
+  await page.click('#btn-catalog');
+  await page.click('.cat-item[data-id="switch-rj45"]');
+  await page.click('#cat-sub-ports');
+  await shot(page, 'catalog-ports');
+  await page.close();
+}
+
 /** The PNG export of Row B, as the app downloads it. */
 async function sheet(browser) {
   const page = await openApp(browser);
@@ -132,8 +210,8 @@ async function introVideo(browser, colorScheme, name) {
       <div class="play"><svg viewBox="0 0 10 12"><path d="M0 0L10 6 0 12z" fill="#1b1f24"/></svg></div>
       <div>
         <span class="tag">INTRO VIDEO</span>
-        <h1>Rackplanner in <em>40 seconds</em></h1>
-        <p>Place, color-code, budget, search, export and share: a quick tour.</p>
+        <h1>Rackplanner in <em>50 seconds</em></h1>
+        <p>Place, color-code, budget, search, cable, export and share: a quick tour.</p>
       </div>
     </div>`);
   await page.evaluate(() =>
@@ -151,6 +229,13 @@ const SHOTS = {
   'floor-map': floorMap,
   catalog,
   sheet,
+  'cabling-elevation': (browser) => cablingElevation(browser, 'light', 'cabling-elevation'),
+  'cabling-elevation-dark': (browser) => cablingElevation(browser, 'dark', 'cabling-elevation-dark'),
+  'port-map': portMap,
+  schedule,
+  'connect-series': connectSeries,
+  fabric,
+  'catalog-ports': catalogPorts,
   'intro-video': (browser) => introVideo(browser, 'light', 'intro-video'),
   'intro-video-dark': (browser) => introVideo(browser, 'dark', 'intro-video-dark'),
 };

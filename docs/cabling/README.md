@@ -9,7 +9,9 @@ cables the way clusters color devices; and two catalogs, **cable types** and
 **transceivers**, say what can be bought, in which lengths.
 
 This document is the design the implementation follows. It started as a
-proposal with mockups; the decisions taken on it are recorded at the end.
+proposal; the decisions taken on it are recorded at the end. The screenshots
+show the views as they are built, on the example plan; the
+[README](../../README.md#planning-the-cabling) says how to use them.
 
 ## 1. Data model
 
@@ -71,7 +73,7 @@ erDiagram
         number[] lengthsM "stock lengths; empty = made to length"
     }
     TRANSCEIVER {
-        string id PK "qsfp56-sr4, tr1, ..."
+        string id PK "qsfp56-200g-sr4, tr1, ..."
         string name "QSFP56 200G SR4"
         string connector "the cage it fits"
         string fiber "lc or mpo"
@@ -133,7 +135,7 @@ of their family, or a transceiver that fits them.
   "legs": 1, "speedGbps": 0, "maxM": 0, "lengthsM": [] }
 { "id": "dac-osfp-2x", "name": "OSFP to 2 × QSFP56 DAC", "media": "dac", "connector": "osfp", "connectorB": "qsfp56",
   "legs": 2, "speedGbps": 400, "maxM": 3, "lengthsM": [1, 1.5, 2, 2.5, 3] }
-{ "id": "qsfp56-sr4", "name": "QSFP56 200G SR4", "connector": "qsfp56", "fiber": "mpo", "mode": "mmf",
+{ "id": "qsfp56-200g-sr4", "name": "QSFP56 200G SR4", "connector": "qsfp56", "fiber": "mpo", "mode": "mmf",
   "speedGbps": 200, "reachM": 100 }
 ```
 
@@ -164,9 +166,9 @@ hand; labels used twice are flagged. Cables without a network continue
 ```json
 { "id": "cb-x1", "type": null, "network": "n-ib", "label": "IB-0001", "lengthM": null, "notes": "",
   "a": { "device": "ex-9", "port": "ib0" }, "b": { "device": "ex-2", "port": "p1" } }
-{ "id": "cb-x2", "type": "dac-osfp-2x", "network": "n-ib", "label": "IB-0040", "lengthM": null, "notes": "",
-  "a": { "device": "ex-60", "port": "p1" },
-  "b": [{ "device": "ex-48", "port": "ib0" }, { "device": "ex-48", "port": "ib1" }] }
+{ "id": "cb-x2", "type": "dac-osfp-2x", "network": "n-ib", "label": "IB-0043", "lengthM": null, "notes": "",
+  "a": { "device": "ex-50", "port": "p1" },
+  "b": [{ "device": "ex-52", "port": "ib0" }, { "device": "ex-52", "port": "ib1" }] }
 ```
 
 - `type: null` picks the type from the two ports and the length (below);
@@ -219,7 +221,8 @@ plus the slack at both ends: each end's rack slack and device slack.
 - Port height: the middle of the device, units counted from the top
   (44.45 mm each); a side slot counts at its middle.
 - Distance along the floor: between the racks' middles, rack widths added
-  up along each row, plus the floor's row pitch for every row between them.
+  up along each row, plus the floor's row pitch for each step from one end's
+  row to the other's (once between neighbouring rows).
 - A breakout's length is that of its longest leg.
 
 The cable's length is the length decided, or else the needed length rounded
@@ -234,8 +237,10 @@ Refusals aside, problems are warnings that stay until fixed:
 | A plug doesn't fit | QSFP56 DAC on an RJ45 port |
 | Optics missing | MPO fiber on a QSFP56 port, no QSFP56 MPO transceiver in the catalog |
 | Speeds differ (note) | SFP28 port on an SFP+ port: runs at 10 Gb/s |
+| Wrong optics | a transceiver chosen by hand that doesn't fit the cage or take the fiber |
 | Too long | needs 3.6 m, a QSFP56 DAC reaches 3 m; past a transceiver's reach |
 | No stock length | needs 7.3 m, the longest QSFP56 DAC is 3 m |
+| Too short | set to 2 m but needs 2.4 m |
 | No cable type fits | nothing in the catalog joins OSFP and RJ45 |
 | No length | ends on different floors and no length entered |
 | Label used twice | two cables labeled IB-0012 |
@@ -267,7 +272,8 @@ Refusals aside, problems are warnings that stay until fixed:
   **Cable length**) column of numbers is metres, a decimal comma or a
   trailing "m" is read, and a length it cannot read is estimated with a
   warning.
-- **PNG and SVG** of the cabling elevation and the fabric.
+- **PNG and SVG** of the cabling elevation and the fabric; printed sheets
+  of the cabling elevation of each row, from the front or the rear.
 
 ## 2. The Cabling workspace
 
@@ -279,7 +285,8 @@ and the row picker are shared; everything else is the workspace's own.
   pick the network of new cables.
 - **Views**: Elevation, Port map, Schedule, Fabric.
 - **Connecting**: click a free port, then another (or drag from one to the
-  other); for a breakout, the head first and then each leg. Esc cancels.
+  other); for a breakout, the head first and then each leg, and Enter or
+  Esc connects it with the legs set so far. Esc cancels before that.
   **Connect series** pairs many devices with many ports at once, passing
   over ports that are in use or that no cable type joins to the devices'
   port (an RJ45 series stops at a switch's SFP+ cages).
@@ -289,6 +296,11 @@ and the row picker are shared; everything else is the workspace's own.
   cables at once.
 
 ### Elevation
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../screenshots/cabling-elevation-dark.png">
+  <img src="../screenshots/cabling-elevation.png" alt="The cabling elevation of Row A from the rear at 100%, with compute node cn-004 selected and its cables to the switches drawn bold.">
+</picture>
 
 The current row from the front or the rear (from the rear, the racks run
 right to left). Every device shows the ports on that side of the rack, cabled
@@ -301,17 +313,25 @@ named.
 
 ### Port map
 
+![The port map of Rack A01: the management switch and the InfiniBand leaf, each port colored by network with the device at the other end written above or below it.](../screenshots/port-map.png)
+
 The faceplates of a rack's switches (or all its devices), drawn large: every
 port numbered and colored by network, with the device at the other end
 written above or below it.
 
 ### Schedule
 
+![The cable schedule of Row A grouped by route, with a cable selected and the order list underneath.](../screenshots/schedule.png)
+
 Every cable as a table, grouped by route, network, device or cable type, for
 the row, the floor or the plan, with filters, the checks, and the order list
 underneath.
 
+![Connect series joining the management ports of six PDUs to a management switch, with the cables it will make.](../screenshots/connect-series.png)
+
 ### Fabric
+
+![The InfiniBand fabric of the example: two core switches, five leaves with their oversubscription, and boxes of nodes.](../screenshots/fabric.png)
 
 One network as a graph: core switches, leaves and nodes, with nodes that
 have the same leaves, cluster and type grouped. Every box is a button, for
@@ -331,6 +351,8 @@ switches with links to nodes.
 - Racks, rack types and floors get their length settings.
 - The catalog gets a **Ports** tab on device types, length settings on rack
   types, and **Cable types** and **Transceivers** tabs.
+
+![The catalog's Ports tab of the 48-port switch: its front and rear drawn, and its port groups as patterns.](../screenshots/catalog-ports.png)
 
 ## 3. Decisions
 
