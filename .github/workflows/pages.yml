@@ -55,7 +55,7 @@ jobs:
             media/rackplanner-intro.mp4
             media/rackplanner-intro.webm
             media/rackplanner-intro.jpg
-          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/intro.js', 'media/record.js', 'js/model.js', 'js/io.js', 'js/render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
+          key: intro-video-${{ runner.os }}-${{ hashFiles('media/intro.html', 'media/intro.js', 'media/record.js', 'js/model.js', 'js/io.js', 'js/render.js', 'js/cabling.js', 'js/cabling-render.js', 'css/fonts.css', 'fonts/**', 'package-lock.json') }}
       - name: Install dependencies, Chromium and ffmpeg
         if: steps.cache.outputs.cache-hit != 'true'
         run: |

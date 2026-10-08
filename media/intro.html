@@ -111,7 +111,7 @@
   .btn.icon { width: 34px; padding: 0; justify-content: center; color: var(--ink-2); }
   .btn.on { background: var(--surface-3); border-color: var(--ink-3); }
   .tb-search {
-    width: 236px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface);
+    width: 196px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface);
     display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden;
   }
   .tb-search.on { border-color: var(--tape); box-shadow: 0 0 0 2px rgb(242 194 48 / 0.25); }
@@ -131,6 +131,8 @@
   .tabs span, .seg span { padding: 7px 12px; color: var(--ink-2); font-weight: 500; white-space: nowrap; }
   .tabs span + span, .seg span + span { border-left: 1px solid var(--line-strong); }
   .tabs span.on, .seg span.on { background: var(--ink); color: var(--surface); }
+  .seg.ws span { display: flex; align-items: center; gap: 6px; padding: 7px 11px; }
+  .seg.ws svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .picker { display: flex; align-items: center; gap: 6px; }
   .picker .arrow {
     width: 30px; height: 34px; border: 1px solid var(--line-strong); border-radius: 7px;
@@ -144,6 +146,8 @@
   #sheetArea { position: absolute; left: 0; top: 107px; width: 1048px; height: 803px; overflow: hidden; background: #161b21; }
   #sheetArea > * { position: absolute; left: 0; top: 0; }
   #sheetArea svg.sheet { width: 1048px; height: 803px; display: block; }
+  #sheetC, #sheetF { background: #161b21; }
+  #sheetF { transform-origin: 50% 50%; }
 
   /* Floor map, after the app's own. */
   #floormap { width: 1048px; height: 803px; padding: 26px 34px; }
@@ -299,9 +303,9 @@
     padding: 8px 12px 7px; border-radius: 4px; background: var(--bad); color: #1a0d0d; font: 600 18px/1 var(--font-mono); letter-spacing: 0.06em;
   }
 
-  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 640px; }
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; width: 640px; margin-top: 34px; }
   .chip {
-    display: flex; align-items: center; gap: 14px; height: 70px; padding: 0 20px; border: 1px solid var(--line-strong); border-radius: 10px;
+    display: flex; align-items: center; gap: 14px; height: 58px; padding: 0 20px; border: 1px solid var(--line-strong); border-radius: 10px;
     background: var(--surface); font: 500 25px/1.1 var(--font-ui); white-space: nowrap;
   }
   .chip i { width: 20px; height: 20px; border-radius: 4px; flex: none; }
@@ -334,7 +338,8 @@
     <div class="topbar">
       <span id="tbBrandSpace"></span>
       <span class="tb-name">Hall 2 expansion</span>
-      <div class="tb-search" id="tbSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><span class="ph">Search devices, racks, rows</span><span class="typed"></span><span class="caret"></span></div>
+      <div class="seg ws"><span id="wsRacks" class="on"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8 7h8M8 11h8M8 15h8"/></svg>Racks</span><span id="wsCab"><svg viewBox="0 0 24 24"><path d="M5 3v3M9 3v3"/><path d="M3 6h8v3a4 4 0 0 1-8 0z"/><path d="M7 13v2.5a4.5 4.5 0 0 0 9 0V9a3 3 0 0 1 6 0"/></svg>Cabling</span></div>
+      <div class="tb-search" id="tbSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><span class="ph">Search devices, racks</span><span class="typed"></span><span class="caret"></span></div>
       <span class="btn icon"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></span>
       <span class="btn icon"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></span>
       <span class="btn">Plans</span>
@@ -345,12 +350,15 @@
       <div class="tabs"><span class="on">Ground floor</span><span>First floor</span></div>
       <div class="picker"><span class="arrow">‹</span><span class="row"><i id="rowA">Row A</i><i id="rowB">Row B</i></span><span class="arrow">›</span></div>
       <span class="spacer"></span>
-      <div class="seg"><span id="segElev" class="on">Elevation</span><span id="segMap">Floor map</span></div>
+      <div class="seg" id="segRacks"><span id="segElev" class="on">Elevation</span><span id="segMap">Floor map</span></div>
+      <div class="seg" id="segCab" style="display:none"><span id="cabElev" class="on">Elevation</span><span>Port map</span><span>Schedule</span><span id="cabFab">Fabric</span></div>
     </div>
     <div id="sheetArea">
       <svg id="sheetA" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
       <svg id="sheetB" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
       <div id="floormap"></div>
+      <svg id="sheetC" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+      <svg id="sheetF" class="sheet" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
     <div id="scrim"></div>
     <div id="catalog">
@@ -405,6 +413,8 @@
 <script src="../js/model.js"></script>
 <script src="../js/io.js"></script>
 <script src="../js/render.js"></script>
+<script src="../js/cabling.js"></script>
+<script src="../js/cabling-render.js"></script>
 <script src="intro.js"></script>
 </body>
 </html>

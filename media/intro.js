@@ -1,10 +1,12 @@
 /*
- * Rackplanner intro video: 40 seconds of motion graphics.
+ * Rackplanner intro video: 50 seconds of motion graphics in eight chapters,
+ * from placing devices to cabling them and sharing the plan.
  *
  * Every frame is a pure function of time: render(t) poses the whole stage at
  * time t of the story, so frames can be drawn in any order, and PACE says how
- * much video each part of the story gets. The racks, devices, CSV and share
- * link come from the app's own code and its example plan. media/record.js
+ * much video each part of the story gets. The racks, devices, cabling
+ * drawings, CSV and share link come from the app's own code and its example
+ * plan; everything that needs drawing is drawn once at the start. media/record.js
  * steps through the frames and encodes them; opened in a browser, the page
  * plays in real time (?t=12.5 holds the frame 12.5 s into the video).
  */
@@ -14,9 +16,10 @@
   const M = RP.model;
   const R = RP.render;
   const IO = RP.io;
+  const CR = RP.cablingRender;
 
-  const STORY = 27.5; // the story's own seconds, which everything below is timed in
-  const LENGTH = 40; // seconds of video
+  const STORY = 33.9; // the story's own seconds, which everything below is timed in
+  const LENGTH = 50; // seconds of video
   const URL_SCHEME = 'https://';
   const URL_HOST = 'dennisklein.github.io/rackplanner/';
   const DATE = '2026-10-03';
@@ -31,9 +34,10 @@
   const COPY_Y = 236;
   const BRAND_TB = 0.6;
   const CATALOG = 15.0; // the catalog dialog opens
-  const SHARE = 18.85; // the export menu opens
-  const WIPE = 23.9; // the stripes sweep in
-  const OUTRO = 24.4; // ... and cover the screen: the closing page takes over
+  const CABLING = 18.85; // the Cabling chapter begins
+  const SHARE = 25.25; // the export menu opens
+  const WIPE = 30.3; // the stripes sweep in
+  const OUTRO = 30.8; // ... and cover the screen: the closing page takes over
 
   // ------------------------------------------------------------- easing
 
@@ -65,9 +69,10 @@
     [9.35, 10.0, 1.1], [10.0, 11.85, 1.5], [11.85, 12.3, 1.6], // B03 fills up and goes over budget
     [12.3, 12.95, 1.1], [12.95, 14.55, 1.3], [14.55, 14.85, 5], // the floor map and its search
     [14.85, 15.5, 1.1], [15.5, 18.3, 1.35], // the catalog
-    [18.3, 19.1, 1.1], [19.1, 21.9, 1.3], [21.9, 22.0, 10], // export and share
-    [22.0, 23.65, 1.15], [23.65, 23.9, 8], // everything else
-    [23.9, 24.9, 1.1], [24.9, 25.8, 1.15], [25.8, STORY, 0], // the stripes; try it now
+    [18.3, 19.2, 1.1], [19.2, 21.6, 1.35], [21.6, 23.0, 1.5], [23.0, 24.7, 1.3], // cables draw in; cn-004; the fabric
+    [24.7, 25.5, 1.1], [25.5, 28.3, 1.3], [28.3, 28.4, 10], // export and share
+    [28.4, 30.05, 1.15], [30.05, 30.3, 12], // everything else
+    [30.3, 31.3, 1.1], [31.3, 32.2, 1.15], [32.2, STORY, 0], // the stripes; try it now
   ];
   const last = PACE[PACE.length - 1];
   last[2] = (LENGTH - PACE.slice(0, -1).reduce((v, [a, b, f]) => v + (b - a) * f, 0)) / (last[1] - last[0]);
@@ -194,7 +199,9 @@
   function faceOf(d) {
     let f = faceCache.get(d.id);
     if (!f) {
-      f = R.renderPreview(M.typeOf(example, d.type), THEME, colorOf(d), d.name, measure, d.height).body.replace(/<defs>[\s\S]*?<\/defs>/, '');
+      // Reversed devices show their rear, as they do once they land.
+      const type = M.typeOf(example, d.type);
+      f = R.renderPreview(type, THEME, colorOf(d), d.name, measure, d.height, d.reversed && type.face !== 'reserved' ? 'rear' : undefined).body.replace(/<defs>[\s\S]*?<\/defs>/, '');
       faceCache.set(d.id, f);
     }
     return f;
@@ -217,6 +224,13 @@
       s.base.innerHTML = R.renderScene(plan, { rowId, theme: THEME, measure, date: DATE }).body;
       s.layout = R.rowLayout(plan, rowId);
       s.devs = [...s.base.querySelectorAll('.dev')].map((g) => [g, ALL.find((d) => d.id === g.getAttribute('data-id'))]);
+      // A side device dims by opacity like the rest; an opaque slot behind it
+      // keeps the empty slot's caption from showing through.
+      for (const [g, d] of s.devs) {
+        if (!d || d.loc.kind !== 'side') continue;
+        const r = R.locRect(plan, d.loc, d.type, d.height, s.layout);
+        g.insertAdjacentHTML('beforebegin', `<rect x="${r2(r.x)}" y="${r2(r.y)}" width="${r2(r.w)}" height="${r2(r.h)}" rx="1.5" fill="${T.channelSlot}"/>`);
+      }
     }
     let rings = '';
     let flying = '';
@@ -339,19 +353,27 @@
     }
   }
 
-  function drawFloorMap(t) {
-    const typed = SEARCH.slice(0, clamp(Math.floor((t - SEARCH_AT) / 0.13) + 1, 0, SEARCH.length));
-    floorMap.typed.textContent = typed;
+  // The search is typed on the floor map and cleared on the way into Cabling.
+  const SEARCH_CLEAR = CABLING + 0.1; // = CABLING + CAB_FLIP, the switch to the Cabling workspace
+  /** The toolbar's search box at time t (any t: frames can be drawn in any order). */
+  function drawSearch(t) {
+    const typed = t >= SEARCH_CLEAR ? '' : SEARCH.slice(0, clamp(Math.floor((t - SEARCH_AT) / 0.13) + 1, 0, SEARCH.length));
+    if (floorMap.typed.textContent !== typed) floorMap.typed.textContent = typed;
     floorMap.ph.style.display = typed ? 'none' : '';
     const searching = t > SEARCH_AT - 0.3 && t < CATALOG;
     floorMap.search.classList.toggle('on', searching);
     floorMap.caret.style.opacity = searching && Math.floor(t * 2.6) % 2 === 0 ? 1 : 0;
-    const dim = prog(t, SEARCH_AT + 0.4, 0.3, ease.inOut);
+  }
+
+  function drawFloorMap(t) {
+    // The matches stand out until the search is cleared, fading back as Cabling fades in.
+    const cleared = 1 - prog(t, SEARCH_CLEAR, 0.35, ease.inOut);
+    const dim = prog(t, SEARCH_AT + 0.4, 0.3, ease.inOut) * cleared;
     for (const [b, d] of floorMap.blocks) b.style.opacity = matches(d) ? 1 : 1 - 0.8 * dim;
     floorMap.hits.forEach((h, i) => {
       const k = prog(t, SEARCH_AT + 0.45 + i * 0.06, 0.4, ease.back);
       h.style.transform = `scale(${k})`;
-      h.style.opacity = clamp(k * 3);
+      h.style.opacity = clamp(k * 3) * cleared;
     });
     floorMap.rows.forEach((row, i) => {
       const k = prog(t, 12.65 + i * 0.1, 0.5, ease.expo);
@@ -363,6 +385,10 @@
   // ------------------------------------------------------- copy blocks
 
   const CHIPS = [
+    ['Breakout cables', '#3aa655'],
+    ['Transceivers and fiber', '#5b8def'],
+    ['Cable order list', '#e05a47'],
+    ['Port maps', '#b0569e'],
     ['Undo and redo', '#2f6fdb'],
     ['CSV import', '#0f9d8a'],
     ['Duplicate anything', '#e56b1f'],
@@ -379,9 +405,10 @@
     { tag: '02 · CLUSTERS', lines: ['See what works', '<em>together.</em>'], sub: 'Color-coded clusters stand out in every rack.', in: 6.55, out: 9.25, extra: 'clusters' },
     { tag: '03 · BUDGETS', lines: ['Stay within', '<em>budget.</em>'], sub: 'Space, power and weight, tracked per rack.', in: 9.55, out: 12.3, extra: 'card' },
     { tag: '04 · OVERVIEW', lines: ['From floors', 'to <em>devices.</em>'], sub: 'Floors, rows, a live floor map and search across the whole plan.', in: 12.6, out: 14.85 },
-    { tag: '05 · CATALOG', lines: ['Your hardware,', 'your <em>catalog.</em>'], sub: 'Edit device and rack types: height, drawing, power, weight and budgets.', in: CATALOG + 0.15, out: SHARE - 0.35 },
-    { tag: '06 · SHARE', lines: ['Print it.', '<em>Share it.</em>'], sub: 'Export PNG, SVG, PDF and CSV, or send a link that carries the whole plan.', in: SHARE + 0.05, out: SHARE + 3.15 },
-    { tag: '07 · AND MORE', lines: ['Everything', '<em>built in.</em>'], in: SHARE + 3.45, out: Infinity, extra: 'chips' },
+    { tag: '05 · CATALOG', lines: ['Your hardware,', 'your <em>catalog.</em>'], sub: 'Edit device and rack types: height, drawing, power, weight and budgets.', in: CATALOG + 0.15, out: CABLING - 0.35 },
+    { tag: '06 · CABLING', lines: ['Every port,', 'every <em>cable.</em>'], sub: 'Ports on every device. Cables routed, measured, checked and counted.', in: CABLING + 0.05, out: SHARE - 0.35 },
+    { tag: '07 · SHARE', lines: ['Print it.', '<em>Share it.</em>'], sub: 'Export PNG, SVG, PDF and CSV, or send a link that carries the whole plan.', in: SHARE + 0.05, out: SHARE + 3.15 },
+    { tag: '08 · AND MORE', lines: ['Everything', '<em>built in.</em>'], in: SHARE + 3.45, out: Infinity, extra: 'chips' },
   ];
 
   function buildCopy() {
@@ -621,6 +648,191 @@
     cat.catDone.style.transform = press ? 'scale(0.94)' : '';
   }
 
+  // ----------------------------------------------------------- cabling
+
+  // Row A from the rear: the cables draw themselves in, network by network,
+  // each lighting up its ports as it arrives, while the camera eases toward
+  // Rack A01. Then cn-004 is selected, its cables bold and their far ends
+  // named, and the InfiniBand fabric builds up, tier by tier. Times are
+  // seconds after CABLING.
+  const CAB_FLIP = 0.1; // into the Cabling workspace
+  // Rack A03's storage networks go first, while the whole row is still in view.
+  const NET_START = { 'n-mgmt': 0.4, 'n-sas': 0.55, 'n-stor': 0.75, 'n-bmc': 0.95, 'n-ib': 1.1 };
+  const NET_SPREAD = 0.45; // a network's cables set off within this
+  const DRAW = 0.4; // a cable's run from end to end
+  const SELECT = 2.85; // cn-004 is selected
+  const FABRIC = 4.15; // the Fabric view
+  const FABRIC_NET = 'n-ib';
+  const CAB_OUT = SHARE - CABLING - 0.45; // back to the Racks workspace and the floor map
+  const cab = { cables: [], ports: [], links: [], boxes: [], labels: [] };
+
+  /** The starting point of an SVG path's data. */
+  const startOf = (d) => {
+    const m = /^M\s*(-?[\d.]+)[ ,](-?[\d.]+)/.exec(d);
+    return { x: Number(m[1]), y: Number(m[2]) };
+  };
+  /** A group and its middle, which it pops in about. */
+  const popBox = (g) => {
+    const b = g.getBBox();
+    return { g, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+  };
+
+  function buildCabling() {
+    const opts = { rowId: 'row1', side: 'rear', theme: THEME, measure };
+    const sc = CR.elevation(example, opts);
+    const picked = CR.elevation(example, Object.assign({ selected: { kind: 'device', id: byName.get('cn-004').id } }, opts));
+    cab.svg = $('#sheetC');
+    cab.svg.innerHTML = `<g>${sc.body}</g><g>${picked.body.replace(/<defs>[\s\S]*?<\/defs>/, '')}</g><g></g>`;
+    [cab.base, cab.picked, cab.over] = cab.svg.children;
+
+    // Cameras: the whole row, Rack A01's top (the last rack seen from the rear), cn-004 and its far ends.
+    const G = CR.geometry;
+    const a01 = sc.layout.devices.get(byName.get('sw-mgmt-a01').id);
+    const a01x = G.MX + (example.floors[0].rows[0].racks.length - 1) * (G.RW + G.GAP) + G.RW / 2;
+    const cn = sc.layout.devices.get(byName.get('cn-004').id);
+    const whole = { cx: sc.width / 2, top: 0, w: sc.height * ASPECT };
+    const top = { cx: a01x, top: a01.y - 150, w: 760 };
+    // cn-004 framed with the names of its cables' far ends, wherever the app puts them.
+    const node = { cx: a01x, top: cn.y - 250, w: 600 };
+    const far = cab.picked.querySelector('g.far-ends');
+    const fe = far && far.getBBox();
+    if (fe && fe.width) {
+      const lo = Math.min(fe.x - 16, node.cx - node.w / 2);
+      const hi = Math.max(fe.x + fe.width + 16, node.cx + node.w / 2);
+      node.top = Math.min(node.top, fe.y - 16);
+      node.w = Math.max(hi - lo, (fe.y + fe.height + 16 - node.top) * ASPECT);
+      node.cx = (lo + hi) / 2;
+    }
+    cab.cam = [[1.6, whole], [2.8, top], [SELECT + 0.1, top], [SELECT + 1.0, node]];
+
+    // Each cable sets off with its network, top to bottom; its first port
+    // lights up as it leaves, the others as it arrives.
+    const byId = new Map(example.cables.map((c) => [c.id, c]));
+    const groups = [...cab.base.querySelectorAll('g.cable')].map((g) => {
+      const c = byId.get(g.getAttribute('data-cable'));
+      const [path, ...rest] = g.children;
+      return { g, c, path, rest, from: startOf(path.getAttribute('d')), color: path.getAttribute('stroke') };
+    });
+    const portAt = new Map();
+    const portEls = new Map([...cab.base.querySelectorAll('g.port')].map((g) => [g.getAttribute('data-port'), g]));
+    for (const net of new Set(groups.map((q) => q.c.network))) {
+      const list = groups.filter((q) => q.c.network === net).sort((a, b) => a.from.y - b.from.y || b.from.x - a.from.x);
+      const t0 = NET_START[net] === undefined ? 1.9 : NET_START[net];
+      list.forEach((q, i) => {
+        q.start = t0 + (list.length > 1 ? (NET_SPREAD * i) / (list.length - 1) : 0);
+        q.len = q.path.getTotalLength();
+        q.path.style.strokeDasharray = `${r2(q.len + 1)} ${r2(q.len + 1)}`;
+        cab.cables.push(q);
+        const ends = M.cableEnds(q.c).map((x) => `${x.end.device}|${x.end.port}`).filter((k) => portEls.has(k));
+        const dist = (k) => {
+          const r = sc.layout.ports.get(k);
+          return Math.hypot(r.x + r.w / 2 - q.from.x, r.y + r.h / 2 - q.from.y);
+        };
+        const first = ends.slice().sort((a, b) => dist(a) - dist(b))[0];
+        for (const k of ends) {
+          const at = k === first ? q.start + 0.04 : q.start + DRAW;
+          if (!portAt.has(k) || portAt.get(k).at > at) portAt.set(k, { at, color: q.color });
+        }
+      });
+    }
+    for (const [k, p] of portAt) cab.ports.push(Object.assign({ el: portEls.get(k), rect: sc.layout.ports.get(k) }, p));
+
+    // The fabric: switches pop in tier by tier, links grow down from them, then the link labels.
+    const fb = CR.fabric(example, FABRIC_NET, { theme: THEME, measure });
+    cab.fsvg = $('#sheetF');
+    cab.fsvg.innerHTML = fb.body;
+    let backdrop = true;
+    for (const el of [...cab.fsvg.children]) {
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'defs') continue;
+      // The view shows only the switches and nodes: no sheet frame cutting across it, no tier names.
+      if (backdrop && ((tag === 'rect' && el.getAttribute('fill') === 'none') || tag === 'text')) el.style.display = 'none';
+      if (tag === 'path') {
+        backdrop = false;
+        const from = startOf(el.getAttribute('d'));
+        const len = el.getTotalLength();
+        el.style.strokeDasharray = `${r2(len + 1)} ${r2(len + 1)}`;
+        cab.links.push({ el, len, from });
+      } else if (el.classList.contains('fb-box')) {
+        backdrop = false;
+        const tier = el.hasAttribute('data-core') ? 0 : el.hasAttribute('data-leaf') ? 1 : 2;
+        cab.boxes.push(Object.assign(popBox(el), { tier }));
+      } else if (!backdrop) {
+        cab.labels.push({ el, y: Number(el.getAttribute('y')) || 0 });
+      }
+    }
+    // Uplinks leave the core first, then the node links leave the leaves.
+    const tops = [...new Set(cab.links.map((l) => l.from.y))].sort((a, b) => a - b);
+    const tierIndex = [0, 0, 0];
+    for (const b of cab.boxes) b.i = tierIndex[b.tier]++;
+    cab.links.forEach((l) => (l.tier = tops.indexOf(l.from.y)));
+    const linkIndex = [0, 0];
+    for (const l of cab.links) l.i = linkIndex[l.tier]++;
+    const mid = cab.boxes.filter((b) => b.tier === 1).map((b) => b.cy);
+    // What the view frames: all the boxes, 30 px clear of the sheet's sides at the end of the drift.
+    const bb = cab.boxes.map((b) => b.g.getBBox());
+    const x0 = Math.min(...bb.map((b) => b.x));
+    const x1 = Math.max(...bb.map((b) => b.x + b.width));
+    const y0 = Math.min(...bb.map((b) => b.y));
+    const y1 = Math.max(...bb.map((b) => b.y + b.height));
+    cab.fview = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: ((x1 - x0) * SHEET_W) / (SHEET_W - 60) };
+    cab.labelSplit = mid.length ? Math.min(...mid) : fb.height / 2;
+  }
+
+  const BOX_AT = [0.1, 0.35, 0.6]; // core, leaves, nodes pop in
+  const LINK_AT = [0.2, 0.5]; // uplinks, node links start
+  function drawCabling(s) {
+    for (const q of cab.cables) {
+      const k = prog(s, q.start, DRAW, ease.inOut);
+      q.g.style.visibility = k > 0 ? 'visible' : 'hidden';
+      const off = r2((q.len + 1) * (1 - k));
+      if (q.off !== off) {
+        q.off = off;
+        q.path.style.strokeDashoffset = off;
+      }
+      const tail = prog(s, q.start + DRAW * 0.8, 0.2);
+      for (const r of q.rest) r.style.opacity = tail;
+    }
+    let rings = '';
+    for (const p of cab.ports) {
+      const k = prog(s, p.at, 0.25);
+      const f = k >= 1 ? '' : `grayscale(${r2(1 - k)}) brightness(${r2(0.55 + 0.45 * k)})`;
+      if (p.f !== f) {
+        p.f = f;
+        p.el.style.filter = f;
+      }
+      if (s > p.at && s < p.at + 0.45) {
+        const g = 1 + 7 * prog(s, p.at, 0.45);
+        const r = p.rect;
+        rings += `<rect x="${r2(r.x - g)}" y="${r2(r.y - g)}" width="${r2(r.w + 2 * g)}" height="${r2(r.h + 2 * g)}" rx="${r2(1.5 + g / 2)}" fill="none" stroke="${p.color}" stroke-width="1.6" opacity="${r2(1 - prog(s, p.at, 0.45, (x) => x))}"/>`;
+      }
+    }
+    cab.over.innerHTML = rings;
+    fade(cab.picked, prog(s, SELECT, 0.3, ease.inOut));
+    const cam = track(cab.cam, s);
+    cab.svg.setAttribute('viewBox', `${r2(cam.cx - cam.w / 2)} ${r2(cam.top)} ${r2(cam.w)} ${r2(cam.w / ASPECT)}`);
+  }
+
+  function drawFabric(s) {
+    const f = s - FABRIC;
+    for (const b of cab.boxes) {
+      const k = prog(f, BOX_AT[b.tier] + b.i * 0.05, 0.4, ease.back);
+      b.g.setAttribute('opacity', r2(clamp(k * 2)));
+      b.g.setAttribute('transform', `translate(${r2(b.cx)} ${r2(b.cy)}) scale(${r2(0.7 + 0.3 * k)}) translate(${r2(-b.cx)} ${r2(-b.cy)})`);
+    }
+    for (const l of cab.links) {
+      const k = prog(f, LINK_AT[l.tier] + l.i * 0.025, 0.35, ease.inOut);
+      l.el.style.visibility = k > 0 ? 'visible' : 'hidden';
+      l.el.style.strokeDashoffset = r2((l.len + 1) * (1 - k));
+    }
+    for (const l of cab.labels) l.el.setAttribute('opacity', r2(prog(f, l.y < cab.labelSplit ? 0.5 : 0.8, 0.3)));
+    // The switches and nodes, drifting a little closer.
+    const v = cab.fview;
+    const w = v.w * lerp(1.07, 1, prog(f, 0, 1.8, ease.out));
+    const h = w / ASPECT;
+    cab.fsvg.setAttribute('viewBox', `${r2(v.cx - w / 2)} ${r2(v.cy - h / 2)} ${r2(w)} ${r2(h)}`);
+  }
+
   // ------------------------------------------------------ share, export
 
   // The export menu opens; each pick drops its file on the desk, the last copies a link.
@@ -797,18 +1009,37 @@
         sheets.B.svg.style.transform = `translateX(${r2(SHEET_W * (1 - slide))}px) scale(${r2(1 - 0.3 * mapIn)})`;
       }
       fade(sheets.B.svg, slide > 0 ? 1 - mapIn : 0);
-      fade(floorMap.el, prog(t, 12.6, 0.3, ease.inOut));
+      // Cabling: Row A's cables over the floor map, then the fabric; the floor map is back for the share.
+      const s = t - CABLING;
+      const cabIn = prog(s, CAB_FLIP, 0.35, ease.inOut);
+      const fabIn = prog(s, FABRIC, 0.35, ease.inOut);
+      const cabOut = prog(s, CAB_OUT, 0.3, ease.inOut);
+      fade(cab.svg, fabIn < 1 ? cabIn : 0);
+      if (cabIn > 0 && fabIn < 1) drawCabling(s);
+      fade(cab.fsvg, fabIn * (1 - cabOut));
+      cab.fsvg.style.transform = `scale(${r2(1.04 - 0.04 * fabIn)})`;
+      if (fabIn > 0 && cabOut < 1) drawFabric(s);
+      fade(floorMap.el, cabIn >= 1 && cabOut <= 0 ? 0 : prog(t, 12.6, 0.3, ease.inOut));
+      drawSearch(t);
       if (t > 12.5) {
         floorMap.el.style.transform = `scale(${r2(1.12 - 0.12 * prog(t, 12.6, 0.6, ease.expo))})`;
         drawFloorMap(t);
       }
-      // Toolbar follows: Row A → Row B, Elevation → Floor map.
-      const rk = prog(t, 9.45, 0.35, ease.inOut);
-      els.rowA.style.transform = `translateY(${-rk * 36}px)`;
-      els.rowB.style.transform = `translateY(${(1 - rk) * 36}px)`;
+      // Toolbar follows: Row A → Row B, Elevation → Floor map; the Cabling
+      // workspace with its own views, on Row A, and back.
+      const rk = prog(t, 9.45, 0.35, ease.inOut) - prog(s, CAB_FLIP, 0.35, ease.inOut) + prog(s, CAB_OUT, 0.35, ease.inOut);
+      els.rowA.style.transform = `translateY(${r2(-rk * 36)}px)`;
+      els.rowB.style.transform = `translateY(${r2((1 - rk) * 36)}px)`;
       const map = t >= 12.55;
       els.segElev.classList.toggle('on', !map);
       els.segMap.classList.toggle('on', map);
+      const cabling = s >= CAB_FLIP && s < CAB_OUT;
+      els.wsRacks.classList.toggle('on', !cabling);
+      els.wsCab.classList.toggle('on', cabling);
+      els.segRacks.style.display = cabling ? 'none' : '';
+      els.segCab.style.display = cabling ? '' : 'none';
+      els.cabElev.classList.toggle('on', s < FABRIC);
+      els.cabFab.classList.toggle('on', s >= FABRIC);
     }
 
     for (const c of COPY) drawCopy(c, t);
@@ -867,7 +1098,7 @@
     await Promise.all(faces.map((f) => document.fonts.load(f, 'Aa0·…›″').catch(() => null)));
     await document.fonts.ready;
 
-    for (const id of ['grid', 'tagline', 'underline', 'panel', 'toast', 'outro', 'strip', 'urlWrap', 'bandY', 'bandB', 'bandT', 'rowA', 'rowB', 'segElev', 'segMap', 'btnExport']) els[id] = $(`#${id}`);
+    for (const id of ['grid', 'tagline', 'underline', 'panel', 'toast', 'outro', 'strip', 'urlWrap', 'bandY', 'bandB', 'bandT', 'rowA', 'rowB', 'segElev', 'segMap', 'btnExport', 'wsRacks', 'wsCab', 'segRacks', 'segCab', 'cabElev', 'cabFab']) els[id] = $(`#${id}`);
     share.href = `${URL_SCHEME}${URL_HOST}#plan=${await IO.encodeShare(FINAL)}`;
     els.try = $('#outro .try');
     els.note = $('#outro .note');
@@ -879,6 +1110,7 @@
     buildFloorMap();
     buildCopy();
     buildCatalog();
+    buildCabling();
     buildShare();
     buildOutro();
 
