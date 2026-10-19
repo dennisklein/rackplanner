@@ -290,3 +290,43 @@ test('contrast and inkOn follow WCAG: dark ink on light fills, white on dark one
   assert.equal(R.inkOn('#1f3a8a'), '#ffffff', 'a dark blue keeps white');
   for (const bg of ['#ddab32', '#4eaf66', '#447ddf', '#d33c3c', '#f06464', '#98a1ac', '#2d67c9']) assert.ok(R.contrast(R.inkOn(bg), bg) >= 4.5, bg);
 });
+
+test('bare faces drop the drawing and give the name the whole face', () => {
+  const p = M.createExampleProject();
+  const sw = M.typeOf(p, 'switch-qsfp');
+  const srv = M.typeOf(p, 'compute-node');
+  const sc = R.schemeFor('#2f6fdb', 'light');
+  const m = (t) => 6 * t.length;
+  const long = 'a-rather-long-hostname-01';
+  const full = R.deviceFace(sw, long, sc, 'light', m, 1, { color: '#2f6fdb' });
+  const bare = R.deviceFace(sw, long, sc, 'light', m, 1, { color: '#2f6fdb', bare: true });
+  assert.ok(bare.length < full.length, 'no ports, bays or LED');
+  assert.ok(bare.includes(long), 'the name is not shortened');
+  assert.ok(!full.includes(long), 'the full face shortens it');
+  assert.ok(bare.includes(sc.face), 'the cluster color stays');
+  const two = R.deviceFace(srv, 'cn-001', sc, 'light', m, 2, { bare: true });
+  assert.ok(two.includes('COMPUTE · 2U'), '2U and taller keep the type tag');
+  assert.ok(!R.deviceFace(sw, 'sw', sc, 'light', m, 1, { bare: true }).includes('SWITCH'), '1U shows the name only');
+});
+
+test('bare side faces leave out ports, fans and power supplies', () => {
+  const p = M.createExampleProject();
+  const sw = M.typeOf(p, 'switch-qsfp');
+  const sc = R.schemeFor(null, 'light');
+  const m = (t) => 6 * t.length;
+  const rear = R.sideFace(sw, 'sw-01', sc, 'light', m, 1, 'rear', { bare: true });
+  assert.equal(rear, R.sideFace(sw, 'sw-01', sc, 'light', m, 1, 'rear', { bare: true, ports: false }));
+  assert.ok(rear.length < R.sideFace(sw, 'sw-01', sc, 'light', m, 1, 'rear', {}).length);
+});
+
+test('the bare option reaches sheet, ghosts and export', () => {
+  const p = M.createExampleProject();
+  const d = p.devices.find((x) => M.typeOf(p, x.type).face !== 'reserved');
+  const a = R.renderScene(p, { rowId: M.locateRack(p, d.loc.rack).row.id });
+  const b = R.renderScene(p, { rowId: M.locateRack(p, d.loc.rack).row.id, bare: true });
+  assert.ok(b.body.length < a.body.length);
+  const g = (bare) => R.renderGhost(p, d.type, d.loc, true, { name: 'ghost-device-name-01', bare });
+  assert.ok(g(true).length < g(false).length);
+  const row = M.locateRack(p, d.loc.rack).row.id;
+  assert.ok(R.exportSVG(p, { rowId: row, bare: true }).length < R.exportSVG(p, { rowId: row }).length);
+});

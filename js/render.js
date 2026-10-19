@@ -551,7 +551,8 @@
    * Front of a device of `type` named `name`, `hU` units tall (the type's
    * height unless it is reserved space). `extra`: { color, powerW } for
    * reserved space, and `u` and `width` for a face drawn at another scale
-   * than the Racks sheet's (20 px units, 240 px wide).
+   * than the Racks sheet's (20 px units, 240 px wide). `extra.bare` leaves
+   * out the drawing so the name can use the whole face.
    */
   function deviceFace(type, name, sc, theme, measure, hU, extra) {
     const T = THEMES[theme] || THEMES.light;
@@ -560,13 +561,18 @@
     if (type.face === 'reserved') return reservedFace(type, name, extra && extra.color, T, measure, units, extra && extra.powerW, g);
     const w = g.w;
     const h = units * g.u;
+    const bare = !!(extra && extra.bare);
     let s = bodyShell(sc, w, h, units, g.u);
-    const [draw, panel] = FACE_ART[type.face] || FACE_ART.generic;
-    s += draw(sc, h, units, theme, g);
-    if (panel && units >= 3) s += panel(sc, h);
+    if (!bare) {
+      const [draw, panel] = FACE_ART[type.face] || FACE_ART.generic;
+      s += draw(sc, h, units, theme, g);
+      if (panel && units >= 3) s += panel(sc, h);
+    }
 
-    const labelMax = DETAIL_X - LABEL_X - 6;
-    if (units === 1) {
+    const labelMax = bare ? w - EAR - 6 - LABEL_X : DETAIL_X - LABEL_X - 6;
+    if (bare && units === 1) {
+      s += text(LABEL_X, h / 2 + 4.2, fitText(name, FONTS.name, labelMax, measure), FONTS.name, sc.text);
+    } else if (units === 1) {
       if (type.face !== 'blank' && type.face !== 'patch') s += `<circle cx="${DETAIL_X - 5}" cy="${h / 2}" r="1.4" fill="${sc.led}"/>`;
       s += text(LABEL_X, h / 2 + 3.9, fitText(name, FONTS.name1, labelMax - 5, measure), FONTS.name1, sc.text);
     } else {
@@ -745,8 +751,8 @@
     if (type.face === 'reserved') return reservedFace(type, name, o.color, T, measure, units, o.powerW, g);
     const w = g.w;
     const h = units * g.u;
-    const ports = o.layout || portLayout(type, side, units, w, { u: g.u });
-    const psu = side === 'rear' && hasPower(type);
+    const ports = o.bare ? [] : o.layout || portLayout(type, side, units, w, { u: g.u });
+    const psu = !o.bare && side === 'rear' && hasPower(type);
     let s = bodyShell(sc, w, h, units, g.u);
     // What the label must keep clear of on its line.
     let clear = w - EAR - 6;
@@ -754,7 +760,7 @@
       s += powerSupplies(sc, w, h, units, g);
       clear = psuX(w) - 6;
     }
-    const fans = !ports.length && isSwitchType(type);
+    const fans = !o.bare && !ports.length && isSwitchType(type);
     // The tag goes below the name when the second unit is free, else beside it.
     const tagBelow = units >= 3 || (!ports.length && !fans);
     if (fans) {
@@ -762,7 +768,9 @@
       s += fanRow(sc, units === 1 ? DETAIL_X : LABEL_X + 4, clear - 4, top, h - 3);
       if (units === 1) clear = DETAIL_X - 4;
     }
-    if (units === 1) {
+    if (o.bare && units === 1) {
+      s += text(LABEL_X, h / 2 + 4.2, fitText(name, FONTS.name, clear - LABEL_X - 4, measure), FONTS.name, sc.text);
+    } else if (units === 1) {
       for (const p of ports) clear = Math.min(clear, p.x - 4);
       s += text(LABEL_X, h / 2 + 3.9, fitText(name, FONTS.name1, Math.max(10, clear - LABEL_X - 4), measure), FONTS.name1, sc.text);
     } else {
@@ -920,7 +928,7 @@
       for (const f of M.FIELDS) if (d[f.key]) lines.push(`${f.label}: ${d[f.key]}`);
       s += `<title>${esc(lines.join('\n'))}</title>`;
     } else s += '>';
-    s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0 }, d.reversed);
+    s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare }, d.reversed);
     if (o.interactive) {
       const w = rect.rotated ? rect.h : rect.w;
       const h = rect.rotated ? rect.w : rect.h;
@@ -1114,7 +1122,7 @@
       const sc = schemeFor(it.color || null, theme);
       // A device taller than 1U cannot be drawn into a side slot; only mark the slot.
       if (!(it.loc.kind === 'side' && hU !== 1)) {
-        s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${faceOf(type, it.name || type.label, sc, theme, measure, hU, { color: it.color }, it.reversed)}</g>`;
+        s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${faceOf(type, it.name || type.label, sc, theme, measure, hU, { color: it.color, bare: o.bare }, it.reversed)}</g>`;
       }
       if (!ok) s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r.w}" height="${r.h}" fill="${T.bad}" fill-opacity="0.18"/>`;
       s += `<rect x="${r1(r.x - 1.5)}" y="${r1(r.y - 1.5)}" width="${r.w + 3}" height="${r.h + 3}" rx="2.5" fill="none" stroke="${color}" stroke-width="2"/>`;
