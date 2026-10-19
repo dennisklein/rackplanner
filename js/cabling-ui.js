@@ -34,7 +34,8 @@
 
   /**
    * Builds the workspace. `ctx` (from app.js): project() → the open plan;
-   * ui, prefs, savePrefs; el (svg, canvas, inspector, armedHint, zoom,
+   * view() → the id of the view whose clusters color the devices; ui,
+   * prefs, savePrefs; el (svg, canvas, inspector, armedHint, zoom,
    * floormap); commit(mutate, opts), commitAdd(make), undo(); render(opts),
    * renderStage(), renderInspector() (keeps focus on a field drawn again);
    * setRow(rowId, opts), currentRow(); toast(msg, opts),
@@ -412,6 +413,7 @@
         focusNetwork: drawnFocus(),
         pending: ui.pending,
         highlight: searchHits(),
+        view: ctx.view(),
       });
       Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
       setScene(out, `Cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
@@ -556,7 +558,7 @@
 
     function portCard(d, plate, current, faded) {
       const type = M.typeOf(project(), d.type);
-      const cl = M.clusterById(project(), d.cluster);
+      const cl = M.clusterOf(project(), d, ctx.view());
       const ports = portsOf(d);
       const idx = cableIndex();
       let used = 0;
@@ -776,12 +778,14 @@
       }
       return k.busiest;
     }
-    /** C.fabric of a network (NONE: the cables without one), once per plan. */
+    /** C.fabric of a network (NONE: the cables without one), once per plan and view. */
     function fabricOf(net) {
       const k = fresh();
+      const view = ctx.view();
+      const key = `${net}|${view}`;
       if (!k.fabrics) k.fabrics = new Map();
-      if (!k.fabrics.has(net)) k.fabrics.set(net, C.fabric(project(), net === NONE ? null : net));
-      return k.fabrics.get(net);
+      if (!k.fabrics.has(key)) k.fabrics.set(key, C.fabric(project(), net === NONE ? null : net, view));
+      return k.fabrics.get(key);
     }
 
     /** Devices at the ends of cables. */
@@ -804,7 +808,7 @@
       const selected = s && s.kind === 'devices' ? s.ids : s && s.kind === 'port' ? [s.device] : s && s.kind === 'cables' ? endDevices(s.ids) : [];
       const hits = searchHits();
       const highlight = hits ? endDevices(hits) : null;
-      const key = [net, prefs.cabGrouped, ui.theme, selected.slice().sort().join('\u0000'), highlight ? highlight.slice().sort().join('\u0000') : '-'].join('|');
+      const key = [net, ctx.view(), prefs.cabGrouped, ui.theme, selected.slice().sort().join('\u0000'), highlight ? highlight.slice().sort().join('\u0000') : '-'].join('|');
       renderFabricBar(net);
       if (fabricDrawn && fabricDrawn.project === p && fabricDrawn.key === key && el.svg.dataset.drawn === 'fabric') return;
       const out = CR.fabric(p, net === NONE ? null : net, {
@@ -815,6 +819,7 @@
         highlight,
         fabric: net ? fabricOf(net) : undefined,
         interactive: true,
+        view: ctx.view(),
       });
       fab.shown = net;
       fab.groups = out.groups;
@@ -2850,7 +2855,7 @@
     function deviceInspector(d) {
       const p = project();
       const type = M.typeOf(p, d.type);
-      const cl = M.clusterById(p, d.cluster);
+      const cl = M.clusterOf(p, d, ctx.view());
       const w = where(d);
       const ports = [...portsOf(d).values()];
       const idx = cableIndex();
@@ -2975,7 +2980,7 @@
       const sorted = M.sortedDevices(Object.assign({}, project(), { devices: devs }));
       const rows = sorted
         .map((d) => {
-          const cl = M.clusterById(project(), d.cluster);
+          const cl = M.clusterOf(project(), d, ctx.view());
           return (
             `<li><button type="button" data-cab-select-device="${esc(d.id)}" title="${esc(where(d).full)}">` +
             `<span class="u">${esc(where(d).short)}</span><span class="sw" style="--c:${cl ? cl.color : 'var(--unassigned)'}"></span><span class="nm">${esc(d.name)}</span></button></li>`
@@ -3786,12 +3791,12 @@
       const p = project();
       if (ui.cabView === 'elevation') {
         const side = prefs.cabSide;
-        return { svg: CR.exportSVG('elevation', p, { rowId: ctx.currentRow().row.id, side, measure: ctx.measure }), file: `${ctx.fileBase(true)}-cabling-${side}`.slice(0, 120) };
+        return { svg: CR.exportSVG('elevation', p, { rowId: ctx.currentRow().row.id, side, measure: ctx.measure, view: ctx.view() }), file: `${ctx.fileBase(true)}-cabling-${side}`.slice(0, 120) };
       }
       if (ui.cabView === 'fabric') {
         const net = fabricNetwork();
         const name = net === NONE || !net ? 'no-network' : M.slug(netName(net)) || 'network';
-        return { svg: CR.exportSVG('fabric', p, { networkId: net === NONE ? null : net, grouped: prefs.cabGrouped, measure: ctx.measure }), file: `${ctx.fileBase()}-${name}-fabric`.slice(0, 120) };
+        return { svg: CR.exportSVG('fabric', p, { networkId: net === NONE ? null : net, grouped: prefs.cabGrouped, measure: ctx.measure, view: ctx.view() }), file: `${ctx.fileBase()}-${name}-fabric`.slice(0, 120) };
       }
       return null;
     }

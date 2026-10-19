@@ -6,7 +6,7 @@ const M = require('../js/model.js');
 
 function project(devices) {
   const p = M.createEmptyProject();
-  p.clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
+  p.views[0].clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
   let n = 0;
   for (const [type, rack, kind, at, name, extra] of devices || []) {
     p.devices.push(M.newDevice(Object.assign({ id: `d${++n}`, type, name: name || `dev-${n}`, loc: { rack, kind, at } }, extra)));
@@ -16,7 +16,7 @@ function project(devices) {
 
 test('a new plan has one floor with one row of three 47U racks and the standard catalog', () => {
   const p = M.createEmptyProject();
-  assert.equal(p.version, 4);
+  assert.equal(p.version, 5);
   assert.deepEqual(p.floors, [
     {
       id: 'f1',
@@ -847,4 +847,99 @@ test('a layout copy keeps the catalogs but no cables or networks', () => {
   const r = M.createExampleProject();
   r.networks[0].color = '#000000';
   assert.ok(!M.isPristineExample(r));
+});
+
+// -------------------------------------------------------------------- views
+
+test('a new plan has one view, and every view groups the same devices in clusters of its own', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }], ['compute-node', 'r1', 'u', 3, 'cn-2']]);
+  assert.deepEqual(p.views.map((v) => [v.id, v.name]), [['v1', 'Default']]);
+  const [a, b] = p.devices;
+  assert.equal(M.clusterOf(p, a).name, 'Alpha', 'without a view id, the first view');
+  assert.equal(M.clusterIdOf(p, b), null);
+
+  const ib = M.addView(p, 'InfiniBand');
+  assert.deepEqual([ib.id, ib.name, ib.clusters], ['v2', 'InfiniBand', []]);
+  assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a new view starts unassigned');
+  ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
+  M.setClusterOf(p, b, 'v2', 'c2');
+  assert.deepEqual([M.clusterIdOf(p, a, 'v1'), M.clusterIdOf(p, b, 'v1'), M.clusterIdOf(p, b, 'v2')], ['c1', null, 'c2']);
+  assert.equal(M.clusterById(p, 'c2').name, 'HDR', 'cluster ids are unique across views');
+  assert.equal(M.viewOfCluster(p, 'c2'), ib);
+  assert.equal(M.clusterIdOf(p, a, 'nope'), 'c1', 'an unknown view id falls back to the first view');
+  M.setClusterOf(p, a, 'v2', 'c1');
+  assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a cluster of another view does not count');
+  M.setClusterOf(p, b, 'v2', null);
+  assert.deepEqual(b.groups, {});
+
+  assert.equal(M.nextClusterName(p, 'v2'), 'Cluster 2');
+  assert.notEqual(M.nextClusterColor(p, 'v2'), '#d64545');
+  assert.equal(M.nextViewName(p), 'View 3');
+});
+
+test('a copied view has its own clusters with the same devices in them', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }], ['compute-node', 'r1', 'u', 3, 'cn-2']]);
+  const copy = M.addView(p, 'Copy', 'v1');
+  assert.equal(copy.clusters.length, 1);
+  assert.notEqual(copy.clusters[0].id, 'c1');
+  assert.deepEqual([copy.clusters[0].name, copy.clusters[0].color], ['Alpha', '#2f6fdb']);
+  assert.equal(M.clusterIdOf(p, p.devices[0], copy.id), copy.clusters[0].id);
+  assert.equal(M.clusterIdOf(p, p.devices[1], copy.id), null);
+  copy.clusters[0].name = 'Beta';
+  assert.equal(M.clusterOf(p, p.devices[0], 'v1').name, 'Alpha', 'the views do not share clusters');
+});
+
+test('views can be renamed, moved and removed; a plan keeps one, and devices drop what goes', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
+  for (let i = 2; i <= M.LIMITS.views; i++) assert.ok(M.addView(p, '', i === 2 ? 'v1' : null));
+  assert.equal(M.addView(p), null, `a plan holds ${M.LIMITS.views} views`);
+  assert.ok(M.renameView(p, 'v2', '  Lustre '));
+  assert.equal(M.viewById(p, 'v2').name, 'Lustre');
+  assert.ok(!M.renameView(p, 'v2', '   '), 'an empty name keeps the old one');
+  assert.ok(M.moveView(p, 'v2', 0));
+  assert.equal(p.views[0].id, 'v2');
+  assert.equal(M.clusterOf(p, p.devices[0]).name, 'Alpha', 'the first view is now the copy');
+  const copied = p.views[0].clusters[0].id;
+  assert.ok(M.removeView(p, 'v2'));
+  assert.ok(!('v2' in p.devices[0].groups));
+  assert.equal(M.clusterById(p, copied), null);
+  while (p.views.length > 1) M.removeView(p, p.views[p.views.length - 1].id);
+  assert.ok(!M.removeView(p, p.views[0].id), 'the last view stays');
+});
+
+test('removeCluster unassigns its devices in its own view only', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
+  const copy = M.addView(p, 'Copy', 'v1');
+  assert.ok(M.removeCluster(p, 'c1'));
+  assert.deepEqual(p.views[0].clusters, []);
+  assert.deepEqual(p.devices[0].groups, { [copy.id]: copy.clusters[0].id });
+  assert.ok(!M.removeCluster(p, 'c1'));
+});
+
+test('copies of devices keep their clusters in every view', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
+  const copy = M.addView(p, 'Copy', 'v1');
+  const [c] = M.copiesAt(p, [{ id: 'd1', loc: { rack: 'r2', kind: 'u', at: 1 } }]);
+  assert.deepEqual(c.groups, { v1: 'c1', [copy.id]: copy.clusters[0].id });
+  c.groups.v1 = null;
+  assert.equal(p.devices[0].groups.v1, 'c1', 'the copy has its own groups');
+});
+
+test('suggestPlacement and search use the clusters of the view asked for', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-001', { groups: { v1: 'c1' } }]]);
+  const ib = M.addView(p, 'InfiniBand');
+  ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
+  M.setClusterOf(p, p.devices[0], ib.id, 'c2');
+  assert.equal(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 }).cluster, 'c1');
+  assert.equal(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 }, 1, ib.id).cluster, 'c2');
+  assert.equal(M.search(p, 'hdr').counts.devices, 0);
+  assert.equal(M.search(p, 'hdr', 8, ib.id).counts.devices, 1);
+  assert.equal(M.deviceMatcher(p, 'alpha', ib.id)(p.devices[0]), false);
+});
+
+test('copyLayout keeps the views without their clusters', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
+  M.addView(p, 'InfiniBand', 'v1');
+  const l = M.copyLayout(p);
+  assert.deepEqual(l.views.map((v) => [v.id, v.name, v.clusters]), [['v1', 'Default', []], ['v2', 'InfiniBand', []]]);
 });

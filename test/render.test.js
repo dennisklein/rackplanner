@@ -330,3 +330,21 @@ test('the bare option reaches sheet, ghosts and export', () => {
   const row = M.locateRack(p, d.loc.rack).row.id;
   assert.ok(R.exportSVG(p, { rowId: row, bare: true }).length < R.exportSVG(p, { rowId: row }).length);
 });
+
+test('the view option picks whose clusters color the devices and fill the legend', () => {
+  const p = M.createExampleProject();
+  const one = R.renderScene(p, { rowId: 'row1' });
+  assert.ok(one.body.includes('>CLUSTERS<'), 'one view: the legend heading names no view');
+  const ib = M.addView(p, 'InfiniBand');
+  ib.clusters.push({ id: 'c-hdr', name: 'HDR fabric', color: '#123456' });
+  for (const d of p.devices) if (M.clusterIdOf(p, d) === 'c-kestrel') M.setClusterOf(p, d, ib.id, 'c-hdr');
+  const first = R.renderScene(p, { rowId: 'row1' });
+  assert.ok(first.body.includes('Kestrel HPC') && !first.body.includes('HDR fabric'));
+  assert.ok(first.body.includes('CLUSTERS · DEFAULT'));
+  const other = R.renderScene(p, { rowId: 'row1', view: ib.id, interactive: true });
+  assert.ok(other.body.includes('HDR fabric') && !other.body.includes('Kestrel HPC'));
+  assert.ok(other.body.includes('CLUSTERS · INFINIBAND'));
+  assert.ok(other.body.includes('>Unassigned<'), 'devices without a cluster in this view');
+  assert.ok(other.body.includes(R.schemeFor('#123456', 'light').ear));
+  assertWellFormed(R.exportSVG(p, { rowId: 'row1', view: ib.id }));
+});

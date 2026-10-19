@@ -124,7 +124,8 @@
   // The example plan, plus two GPU servers too many for rack B03.
   const example = M.createExampleProject();
   const byName = new Map(example.devices.map((d) => [d.name, d]));
-  const clusterOf = new Map(example.clusters.map((c) => [c.id, c]));
+  const clusterOf = new Map(M.clustersOf(example).map((c) => [c.id, c]));
+  const clusterIdOf = (d) => M.clusterIdOf(example, d);
   const overflow = (name, at) => Object.assign({}, byName.get('gpu-srv-06'), { id: `vid-${name}`, name, loc: { rack: 'r6', kind: 'u', at } });
   const ALL = example.devices.concat([overflow('gpu-srv-07', 24), overflow('gpu-srv-08', 28)]);
 
@@ -146,7 +147,7 @@
 
   const planAt = (t) => Object.assign({}, example, { devices: ALL.filter((d) => !land.has(d.id) || t >= land.get(d.id)) });
   const FINAL = planAt(Infinity);
-  const colorOf = (d) => (d.cluster && clusterOf.has(d.cluster) ? clusterOf.get(d.cluster).color : null);
+  const colorOf = (d) => (clusterIdOf(d) ? clusterOf.get(clusterIdOf(d)).color : null);
   const rowOf = (rackId) => M.locateRack(example, rackId).row.id;
 
   // Clusters light up one after another; the rest of the row dims.
@@ -267,7 +268,7 @@
     }
     s.over.innerHTML = rings + flying;
     for (const [g, d] of s.devs) {
-      const b = d ? brightness(d.cluster, t) : 1;
+      const b = d ? brightness(clusterIdOf(d), t) : 1;
       g.setAttribute('opacity', b < 0.999 ? r2(0.16 + 0.84 * b) : 1);
     }
     s.svg.setAttribute('viewBox', `${r2(cam.cx - cam.w / 2)} ${r2(cam.top)} ${r2(cam.w)} ${r2(cam.w / ASPECT)}`);
@@ -431,7 +432,7 @@
         const list = make('div', 'extra clist');
         for (const id of SPOT_CLUSTERS) {
           const cl = clusterOf.get(id);
-          const n = FINAL.devices.filter((d) => d.cluster === id).length;
+          const n = FINAL.devices.filter((d) => clusterIdOf(d) === id).length;
           const item = make('div', 'ci', `<span class="sw" style="background:${cl.color}"></span><span class="nm">${cl.name}</span><span class="n">${n}</span>`);
           item.dataset.id = id;
           list.appendChild(item);

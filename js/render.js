@@ -907,7 +907,7 @@
 
   function deviceNode(project, d, r, T, theme, o, measure) {
     const type = M.typeOf(project, d.type);
-    const cluster = M.clusterById(project, d.cluster);
+    const cluster = M.clusterOf(project, d, o.view);
     const sc = schemeFor(cluster ? cluster.color : null, theme);
     const hU = M.deviceHeight(project, d);
     const rect = rectIn(r, d.loc, hU);
@@ -968,18 +968,20 @@
   }
 
   /**
-   * Lays out the cluster legend (clusters with devices in this row) beside
-   * the title block, or above it when the sheet is too narrow for both.
+   * Lays out the cluster legend (clusters of view `viewId` with devices in
+   * this row) beside the title block, or above it when the sheet is too
+   * narrow for both.
    */
-  function legendLayout(project, lay, rowDevices, measure) {
+  function legendLayout(project, lay, rowDevices, measure, viewId) {
     const counts = new Map();
     let unassigned = 0;
     for (const d of rowDevices) {
       if (d.type === M.RESERVED.id) continue;
-      if (d.cluster && M.clusterById(project, d.cluster)) counts.set(d.cluster, (counts.get(d.cluster) || 0) + 1);
+      const c = M.clusterIdOf(project, d, viewId);
+      if (c) counts.set(c, (counts.get(c) || 0) + 1);
       else unassigned++;
     }
-    const items = project.clusters.filter((c) => counts.has(c.id)).map((c) => ({ name: c.name, color: c.color, count: counts.get(c.id) }));
+    const items = M.clustersOf(project, viewId).filter((c) => counts.has(c.id)).map((c) => ({ name: c.name, color: c.color, count: counts.get(c.id) }));
     if (unassigned) items.push({ name: 'Unassigned', color: null, count: unassigned });
     const width = lay.width;
     const inner = width - MX * 2;
@@ -1011,7 +1013,9 @@
   function footer(project, lay, leg, T, theme, o, measure) {
     let s = '';
     const y0 = lay.footTop;
-    s += text(MX, y0 + 9, 'CLUSTERS', FONTS.tag, T.ink3, ' letter-spacing="1.2"');
+    // With more than one view, the heading names the view the colors belong to.
+    const heading = project.views.length > 1 ? `CLUSTERS · ${M.viewOf(project, o.view).name.toUpperCase()}` : 'CLUSTERS';
+    s += text(MX, y0 + 9, fitText(heading, FONTS.tag, 300, measure), FONTS.tag, T.ink3, ' letter-spacing="1.2"');
     if (!leg.items.length) s += text(MX, y0 + 31, 'No devices placed yet', FONTS.legend, T.ink3);
     for (const it of leg.items) {
       const x = MX + it.x;
@@ -1056,7 +1060,8 @@
    *   interactive: adds focus/hover hooks and the add-rack slot,
    *   selected: Set of device ids, selectedRack, highlight(device) → bool
    *   (others are dimmed), dragging: Set of device ids, date,
-   *   sheet: { index, count }, measure(text, cssFont) → px
+   *   sheet: { index, count }, measure(text, cssFont) → px,
+   *   view: id of the view whose clusters color the devices (default: the first)
    */
   function renderScene(project, opts) {
     const o = opts || {};
@@ -1068,7 +1073,7 @@
     const byRack = M.devicesByRack(project);
     const rowDevices = [];
     for (const r of lay.racks) rowDevices.push(...(byRack.get(r.rack.id) || []));
-    const leg = legendLayout(project, lay, rowDevices, measure);
+    const leg = legendLayout(project, lay, rowDevices, measure, o.view);
     const width = lay.width;
     const height = Math.round(lay.footTop + leg.height + 30);
     let s = defs(theme, T, lay);

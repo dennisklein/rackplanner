@@ -5,7 +5,7 @@
  * tests. A project looks like this:
  *
  *   {
- *     version: 4,
+ *     version: 5,
  *     name: 'Untitled rack plan',
  *     info: { site, author, revision },                 // title block
  *     deviceTypes: [{ id, label, tag, spec, height, face, defaultName, powerW, weightKg,
@@ -15,9 +15,9 @@
  *     cableTypes:  [{ id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM: [m] }],
  *     transceivers: [{ id, name, connector, fiber: 'lc'|'mpo', mode: 'mmf'|'smf', speedGbps, reachM }],
  *     floors: [{ id, name, rowPitchM, rows: [{ id, name, racks: [{ id, name, type, trayM, slackM }] }] }],
- *     clusters: [{ id, name, color: '#rrggbb' }],
+ *     views:    [{ id, name, clusters: [{ id, name, color: '#rrggbb' }] }],
  *     networks: [{ id, name, color: '#rrggbb', firstLabel }],
- *     devices:  [{ id, type, name, cluster: id|null, notes, serial, asset, ip, owner,
+ *     devices:  [{ id, type, name, groups: { viewId: clusterId }, notes, serial, asset, ip, owner,
  *                  powerW: null|W, weightKg: null|kg, reversed, slackM: null|m,
  *                  height (reserved space only), loc: { rack, kind: 'u'|'side', at } }],
  *     cables:   [{ id, type: id|null, network: id|null, label, lengthM: null|m, notes,
@@ -31,6 +31,13 @@
  * numbered from the top, so U1 is the topmost unit) or in one of the rack's
  * vertical side slots (kind 'side', `at` counts from 0 at the top). Side
  * slots take 1U devices only.
+ *
+ * A view is one way to group the devices: it has its own clusters (the
+ * color groups), and a device's `groups` names its cluster in each view
+ * (a view it is missing from leaves it unassigned there). Every device
+ * shows in every view. Cluster ids are unique across the plan. A plan has
+ * 1 to 8 views; functions that take a `viewId` fall back to the first view
+ * when it is missing or unknown.
  *
  * Device and rack types belong to the plan, so a plan file carries its own
  * catalog. The built-in type 'reserved' marks space for future equipment; it
@@ -51,7 +58,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 4;
+  const SCHEMA_VERSION = 5;
   const LIMITS = {
     floors: 6,
     rows: 8, // per floor
@@ -67,9 +74,11 @@
     cableTypes: 50,
     transceivers: 50,
     networks: 30,
+    views: 8,
     cables: 20000,
     legs: 8, // of a breakout cable
   };
+  const DEFAULT_VIEW_NAME = 'Default';
   const RACK_UNITS = 47; // height of the default rack type
   const SIDE_SLOTS = 2;
   const DEFAULT_RACKS = 3;
@@ -354,8 +363,46 @@
   function rackTypeById(project, id) {
     return project.rackTypes.find((t) => t.id === id) || null;
   }
+  function viewById(project, id) {
+    return (id && project.views.find((v) => v.id === id)) || null;
+  }
+  /** The view `id`, or the first view when there is no such view. */
+  function viewOf(project, id) {
+    return viewById(project, id) || project.views[0];
+  }
+  /** The clusters of view `viewId`. */
+  function clustersOf(project, viewId) {
+    return viewOf(project, viewId).clusters;
+  }
+  /** A cluster of any view: cluster ids are unique across the plan. */
   function clusterById(project, id) {
-    return id ? project.clusters.find((c) => c.id === id) || null : null;
+    if (!id) return null;
+    for (const v of project.views) {
+      const c = v.clusters.find((x) => x.id === id);
+      if (c) return c;
+    }
+    return null;
+  }
+  /** The view a cluster belongs to, or null. */
+  function viewOfCluster(project, id) {
+    return (id && project.views.find((v) => v.clusters.some((c) => c.id === id))) || null;
+  }
+  /** Id of the cluster device `d` has in view `viewId`, or null. */
+  function clusterIdOf(project, d, viewId) {
+    const v = viewOf(project, viewId);
+    const id = d.groups ? d.groups[v.id] : null;
+    return id && v.clusters.some((c) => c.id === id) ? id : null;
+  }
+  /** The cluster device `d` has in view `viewId`, or null. */
+  function clusterOf(project, d, viewId) {
+    return clusterById(project, clusterIdOf(project, d, viewId));
+  }
+  /** Puts device `d` into cluster `clusterId` of view `viewId`; null leaves it unassigned there. */
+  function setClusterOf(project, d, viewId, clusterId) {
+    const v = viewOf(project, viewId);
+    if (!d.groups) d.groups = {};
+    if (clusterId) d.groups[v.id] = clusterId;
+    else delete d.groups[v.id];
   }
   function deviceById(project, id) {
     return project.devices.find((d) => d.id === id) || null;
@@ -907,7 +954,7 @@
         cableTypes: clone(DEFAULT_CABLE_TYPES),
         transceivers: clone(DEFAULT_TRANSCEIVERS),
         floors: [],
-        clusters: [],
+        views: [{ id: 'v1', name: DEFAULT_VIEW_NAME, clusters: [] }],
         networks: [],
         devices: [],
         cables: [],
@@ -928,11 +975,11 @@
     return p;
   }
 
-  /** Same floors, rows, racks and catalogs as `project`, without devices, clusters, cables or networks. */
+  /** Same floors, rows, racks, catalogs and views as `project`, without devices, clusters, cables or networks. */
   function copyLayout(project) {
     const p = clone(project);
     p.devices = [];
-    p.clusters = [];
+    for (const v of p.views) v.clusters = [];
     p.cables = [];
     p.networks = [];
     p.meta = {};
@@ -1125,7 +1172,7 @@
         rows: [{ id: 'row3', name: 'Row A', racks: [rack('r7', 'Rack 2A01', 'rack-42'), rack('r8', 'Rack 2A02', 'rack-42')] }],
       },
     ];
-    p.clusters = [
+    p.views[0].clusters = [
       { id: 'c-net', name: 'Core network', color: '#d9a21b' },
       { id: 'c-kestrel', name: 'Kestrel HPC', color: '#2f6fdb' },
       { id: 'c-osprey', name: 'Osprey GPU', color: '#e56b1f' },
@@ -1135,7 +1182,8 @@
       { id: 'c-archive', name: 'Archive', color: '#1f9fc9' },
     ];
     let n = 0;
-    const add = (type, name, cluster, rackId, kind, at, extra) => p.devices.push(newDevice(Object.assign({ id: `ex-${++n}`, type, name, cluster, loc: { rack: rackId, kind, at } }, extra)));
+    const add = (type, name, cluster, rackId, kind, at, extra) =>
+      p.devices.push(newDevice(Object.assign({ id: `ex-${++n}`, type, name, groups: cluster ? { v1: cluster } : {}, loc: { rack: rackId, kind, at } }, extra)));
     // Switches are mounted back to front, so their ports face the servers' rear.
     const sw = { reversed: true };
 
@@ -1275,7 +1323,7 @@
   /** True when the plan still equals the example (the notice flag aside). */
   function isPristineExample(project) {
     const ex = createExampleProject();
-    const pick = (p) => JSON.stringify([p.name, p.info, p.deviceTypes, p.rackTypes, p.cableTypes, p.transceivers, p.floors, p.clusters, p.networks, p.devices, p.cables]);
+    const pick = (p) => JSON.stringify([p.name, p.info, p.deviceTypes, p.rackTypes, p.cableTypes, p.transceivers, p.floors, p.views, p.networks, p.devices, p.cables]);
     return pick(project) === pick(ex);
   }
 
@@ -1777,9 +1825,10 @@
    * The nearest device of the same type in the same rack is the reference
    * (dropping next to cn-012 of cluster Kestrel suggests cn-013, Kestrel);
    * otherwise the most recently added device of that type, otherwise the
-   * type's default name. `cluster` is undefined when there is no reference.
+   * type's default name. `cluster` is the reference's cluster in view
+   * `viewId`, undefined when there is no reference.
    */
-  function suggestPlacement(project, typeId, loc, count) {
+  function suggestPlacement(project, typeId, loc, count, viewId) {
     const type = typeOf(project, typeId);
     const n = Math.max(1, count || 1);
     const same = project.devices.filter((d) => d.type === typeId);
@@ -1796,7 +1845,7 @@
     if (!ref && same.length) ref = same[same.length - 1];
     return {
       name: ref ? nextInSeries(project, ref.name, n, false) : nextInSeries(project, type ? type.defaultName : 'dev-01', n, true),
-      cluster: ref ? ref.cluster : undefined,
+      cluster: ref ? clusterIdOf(project, ref, viewId) : undefined,
     };
   }
 
@@ -1811,19 +1860,87 @@
     return s ? firstFree(used, s.num + 1, (n) => formatSerial(s, n)) : firstFree(used, 2, (i) => `${name}-${i}`);
   }
 
-  function nextClusterColor(project) {
-    const used = new Set(project.clusters.map((c) => c.color));
-    return CLUSTER_COLORS.find((c) => !used.has(c)) || CLUSTER_COLORS[project.clusters.length % CLUSTER_COLORS.length];
+  function nextClusterColor(project, viewId) {
+    const list = clustersOf(project, viewId);
+    const used = new Set(list.map((c) => c.color));
+    return CLUSTER_COLORS.find((c) => !used.has(c)) || CLUSTER_COLORS[list.length % CLUSTER_COLORS.length];
   }
 
-  function nextClusterName(project) {
-    return firstFree(namesOf(project.clusters), project.clusters.length + 1, (i) => `Cluster ${i}`);
+  function nextClusterName(project, viewId) {
+    const list = clustersOf(project, viewId);
+    return firstFree(namesOf(list), list.length + 1, (i) => `Cluster ${i}`);
+  }
+
+  /** Removes a cluster from its view; its devices are unassigned there. */
+  function removeCluster(project, id) {
+    const v = viewOfCluster(project, id);
+    if (!v) return false;
+    v.clusters = v.clusters.filter((c) => c.id !== id);
+    for (const d of project.devices) if (d.groups && d.groups[v.id] === id) delete d.groups[v.id];
+    return true;
+  }
+
+  // ------------------------------------------------------------------ views
+
+  function nextViewName(project) {
+    return firstFree(namesOf(project.views), project.views.length + 1, (i) => `View ${i}`);
+  }
+
+  /**
+   * Adds a view at the end, named `name` or View N. With `fromViewId`, the
+   * new view starts as a copy of that view: its clusters (with new ids) and
+   * every device's cluster in it. Null when the plan has eight views.
+   */
+  function addView(project, name, fromViewId) {
+    if (project.views.length >= LIMITS.views) return null;
+    const view = { id: nextId('v', new Set(project.views.map((v) => v.id))), name: str(name, 60) || nextViewName(project), clusters: [] };
+    const from = fromViewId ? viewById(project, fromViewId) : null;
+    if (from) {
+      const ids = new Map();
+      for (const c of from.clusters) {
+        const nc = Object.assign({}, c, { id: uid('c') });
+        ids.set(c.id, nc.id);
+        view.clusters.push(nc);
+      }
+      for (const d of project.devices) {
+        const c = clusterIdOf(project, d, from.id);
+        if (c) d.groups = Object.assign({}, d.groups, { [view.id]: ids.get(c) });
+      }
+    }
+    project.views.push(view);
+    return view;
+  }
+
+  /** Renames a view; an empty name keeps the old one. */
+  function renameView(project, id, name) {
+    const v = viewById(project, id);
+    const n = str(name, 60);
+    if (v && n) v.name = n;
+    return !!(v && n);
+  }
+
+  /** Removes a view with its clusters. A plan keeps at least one view. */
+  function removeView(project, id) {
+    const v = viewById(project, id);
+    if (!v || project.views.length <= 1) return false;
+    project.views = project.views.filter((x) => x !== v);
+    for (const d of project.devices) if (d.groups) delete d.groups[v.id];
+    return true;
+  }
+
+  /** Moves a view to position `toIndex`. */
+  function moveView(project, id, toIndex) {
+    const i = project.views.findIndex((v) => v.id === id);
+    if (i < 0) return false;
+    const [v] = project.views.splice(i, 1);
+    project.views.splice(Math.max(0, Math.min(project.views.length, toIndex)), 0, v);
+    return true;
   }
 
   /** A new device with every field set; `props` overrides the defaults. */
   function newDevice(props) {
     return Object.assign(
-      { id: uid('d'), type: '', name: '', cluster: null, notes: '', serial: '', asset: '', ip: '', owner: '', powerW: null, weightKg: null, reversed: false, slackM: null, loc: null },
+      { id: uid('d'), type: '', name: '', groups: {}, notes: '', serial: '', asset: '', ip: '', owner: '', powerW: null, weightKg: null, reversed: false, slackM: null, loc: null },
       props
     );
   }
@@ -2278,20 +2395,19 @@
       .filter(Boolean);
   }
 
-  /** Text a device can be found by: name, type, cluster and its fields. */
-  function deviceHaystack(project, d, clusterNames) {
+  /** Text a device can be found by: name, type, cluster in view `viewId` and its fields. */
+  function deviceHaystack(project, d, viewId) {
     const t = typeOf(project, d.type);
-    const c = clusterNames ? clusterNames.get(d.cluster) : (clusterById(project, d.cluster) || {}).name;
-    return [d.name, t ? t.label : '', c || '', d.serial, d.asset, d.ip, d.owner].join(' ').toLowerCase();
+    const c = clusterOf(project, d, viewId);
+    return [d.name, t ? t.label : '', c ? c.name : '', d.serial, d.asset, d.ip, d.owner].join(' ').toLowerCase();
   }
 
-  /** Predicate for devices matching `query` (every word must occur), or null for an empty query. */
-  function deviceMatcher(project, query) {
+  /** Predicate for devices matching `query` (every word must occur; clusters of view `viewId`), or null for an empty query. */
+  function deviceMatcher(project, query, viewId) {
     const words = queryWords(query);
     if (!words.length) return null;
-    const names = new Map(project.clusters.map((c) => [c.id, c.name]));
     return (d) => {
-      const text = deviceHaystack(project, d, names);
+      const text = deviceHaystack(project, d, viewId);
       return words.every((w) => text.includes(w));
     };
   }
@@ -2299,9 +2415,10 @@
   /**
    * Finds floors, rows, racks and devices whose names (and, for devices, type,
    * cluster, serial number, asset tag, IP address or owner) contain every word
-   * of `query`. Each group is capped at `limit`; `counts` has the full numbers.
+   * of `query` (clusters of view `viewId`). Each group is capped at `limit`;
+   * `counts` has the full numbers.
    */
-  function search(project, query, limit) {
+  function search(project, query, limit, viewId) {
     const words = queryWords(query);
     const out = { floors: [], rows: [], racks: [], devices: [], counts: { floors: 0, rows: 0, racks: 0, devices: 0 } };
     if (!words.length) return out;
@@ -2320,7 +2437,7 @@
         });
       });
     });
-    const match = deviceMatcher(project, query);
+    const match = deviceMatcher(project, query, viewId);
     for (const d of sortedDevices(project)) {
       if (!match(d)) continue;
       const pos = locateRack(project, d.loc.rack);
@@ -2347,6 +2464,7 @@
     DEFAULT_CABLE_TYPES,
     DEFAULT_TRANSCEIVERS,
     DEFAULT_ROW_PITCH_M,
+    DEFAULT_VIEW_NAME,
     clone,
     str,
     plural,
@@ -2366,7 +2484,14 @@
     rackUnits,
     rackSideSlots,
     maxSideSlots,
+    viewById,
+    viewOf,
+    clustersOf,
     clusterById,
+    viewOfCluster,
+    clusterIdOf,
+    clusterOf,
+    setClusterOf,
     deviceById,
     floorById,
     rowById,
@@ -2471,6 +2596,12 @@
     nextFreeName,
     nextClusterColor,
     nextClusterName,
+    removeCluster,
+    nextViewName,
+    addView,
+    renameView,
+    removeView,
+    moveView,
     newDevice,
     cableEnds,
     legsOf,

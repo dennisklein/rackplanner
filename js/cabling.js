@@ -1027,8 +1027,8 @@
   /**
    * One network (null: the cables without one) as a graph. Leaves are
    * switches with links to nodes (devices that are not switches), cores
-   * the other switches. Nodes with the same leaves, cluster and type form a
-   * group. Returns { switches, cores, leaves, nodes, groups: [{ devices,
+   * the other switches. Nodes with the same leaves, cluster (in view
+   * `viewId`) and type form a group. Returns { switches, cores, leaves, nodes, groups: [{ devices,
    * leaves, cluster, type, links }], links: [{ a, b, count, speedGbps (the
    * slowest), speedsGbps (each speed once), totalGbps }], ratios: Map
    * leafId → { down, up, ratio } in Gb/s, checks:
@@ -1038,7 +1038,7 @@
    * uplinks, leaves that do not reach every core switch (or that they all
    * do), nodes on several leaves }; devices in rack order.
    */
-  function fabric(project, networkId) {
+  function fabric(project, networkId, viewId) {
     const ctx = context(project);
     const net = networkId || null;
     const peers = new Map();
@@ -1100,9 +1100,10 @@
     const groups = new Map();
     for (const node of byOrder(ids.filter((id) => !sw.has(id)))) {
       const leaves = [...peers.get(node.id).keys()].filter((p) => leafSet.has(p)).sort((x, y) => order(x) - order(y));
-      const key = [leaves.join(','), node.cluster || '', node.type].join('\u0000');
+      const cluster = M.clusterIdOf(project, node, viewId);
+      const key = [leaves.join(','), cluster || '', node.type].join('\u0000');
       let g = groups.get(key);
-      if (!g) groups.set(key, (g = { devices: [], leaves: leaves.map((id) => ctx.devices.get(id)), cluster: node.cluster || null, type: node.type, links: 0 }));
+      if (!g) groups.set(key, (g = { devices: [], leaves: leaves.map((id) => ctx.devices.get(id)), cluster, type: node.type, links: 0 }));
       g.devices.push(node);
       for (const p of peers.get(node.id).values()) g.links += p.count;
     }

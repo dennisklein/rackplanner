@@ -183,6 +183,80 @@
   }
 
   /**
+   * Reads the views and their clusters into `p.views`. Files before
+   * version 5 have one list of clusters and a cluster per device: they
+   * become one view, "Default". Cluster ids are unique across the plan, so
+   * a cluster id used in two views gets a new id in the second. Returns a
+   * map from the file's view ids to { id, clusters: map from the file's
+   * cluster ids to the plan's }; the key '' stands for a file without views.
+   */
+  function readViews(raw, p, warnings) {
+    const out = new Map();
+    const usedClusters = new Set();
+    const readView = (v, id, name) => {
+      const view = { id, name, clusters: [] };
+      const clusters = readGroups(v.clusters, 'cluster', Infinity, view.clusters, (c, cid) => ({ id: cid, name: str(c.name, 60) || M.nextClusterName({ views: [view] }), color: M.normalizeHex(c.color) || M.nextClusterColor({ views: [view] }) }), warnings);
+      for (const [fileId, cid] of clusters) {
+        if (usedClusters.has(cid)) {
+          const c = view.clusters.find((x) => x.id === cid);
+          c.id = M.uid('c');
+          clusters.set(fileId, c.id);
+        }
+        usedClusters.add(clusters.get(fileId));
+      }
+      p.views.push(view);
+      return clusters;
+    };
+    p.views = [];
+    if (!Array.isArray(raw.views)) {
+      out.set('', { id: 'v1', clusters: readView({ clusters: raw.clusters }, 'v1', M.DEFAULT_VIEW_NAME) });
+      return out;
+    }
+    const usedViews = new Set(raw.views.filter(isObj).map((v) => idOf(v.id)));
+    raw.views.forEach((v, i) => {
+      if (!isObj(v)) return;
+      const fileId = idOf(v.id);
+      const label = str(v.name, 60) || `#${i + 1}`;
+      if (!fileId) return void warnings.push(`Skipped view ${label}: it has no id.`);
+      if (out.has(fileId)) return void warnings.push(`Skipped view ${label}: its id “${fileId}” is used twice.`);
+      if (p.views.length >= L.views) return void warnings.push(`Skipped view ${label}: a plan holds ${L.views} views.`);
+      const id = fileId.startsWith('__') ? M.nextId('v', usedViews) : fileId;
+      usedViews.add(id);
+      const name = str(v.name, 60) || M.nextViewName(p);
+      out.set(fileId, { id, clusters: readView(v, id, name) });
+    });
+    if (!p.views.length) out.set('', { id: 'v1', clusters: readView({ clusters: [] }, 'v1', M.DEFAULT_VIEW_NAME) });
+    // Names tell views apart in CSV columns.
+    uniqueNames(p.views, 'view', warnings);
+    return out;
+  }
+
+  /**
+   * A device's clusters in the plan's views, from `d.groups` (version 5) or
+   * `d.cluster` (before), with a warning for each one the plan doesn't have.
+   */
+  function readDeviceGroups(d, name, views, warnings) {
+    const groups = {};
+    if (views.has('')) {
+      const view = views.get('');
+      const cluster = idOf(d.cluster);
+      if (cluster && !view.clusters.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned.`);
+      if (view.clusters.has(cluster)) groups[view.id] = view.clusters.get(cluster);
+      return groups;
+    }
+    if (!isObj(d.groups)) return groups;
+    for (const [fileView, value] of Object.entries(d.groups)) {
+      const cluster = idOf(value);
+      if (!cluster) continue;
+      const view = views.get(idOf(fileView));
+      if (!view) warnings.push(`${name} refers to unknown view “${fileView}”; its cluster there is dropped.`);
+      else if (!view.clusters.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned in that view.`);
+      else groups[view.id] = view.clusters.get(cluster);
+    }
+    return groups;
+  }
+
+  /**
    * Reads the cables of a file. Ends refer to devices by their id in the
    * file (`deviceIds` maps them to the plan's) and to ports by name. A
    * cable that would break the plan's rules is skipped with a warning.
@@ -264,8 +338,8 @@
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
     const rackIds = readLayout(raw, p, warnings);
 
-    // Cluster and network ids as written in the file → ids in the plan.
-    const clusterIds = readGroups(raw.clusters, 'cluster', Infinity, p.clusters, (c, id) => ({ id, name: str(c.name, 60) || M.nextClusterName(p), color: M.normalizeHex(c.color) || M.nextClusterColor(p) }), warnings);
+    // View, cluster and network ids as written in the file → ids in the plan.
+    const views = readViews(raw, p, warnings);
     const networkIds = readGroups(raw.networks, 'network', L.networks, p.networks, (n, id) => Object.assign(M.cleanNetwork(n, p), { id }), warnings);
 
     // Each device is checked against the devices already accepted in its rack.
@@ -303,13 +377,11 @@
       planIds.add(id);
       // Cables find a device by its id in the file; with an id used twice, the first device.
       if (fileId && !deviceIds.has(fileId)) deviceIds.set(fileId, id);
-      const cluster = idOf(d.cluster);
-      if (cluster && !clusterIds.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned.`);
       const dev = M.newDevice({
         id,
         type: type.id,
         name,
-        cluster: clusterIds.has(cluster) ? clusterIds.get(cluster) : null,
+        groups: readDeviceGroups(d, name, views, warnings),
         notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : '',
         powerW: M.clampNum(d.powerW, 0, 100000, null),
         weightKg: M.clampNum(d.weightKg, 0, 5000, null),
@@ -346,7 +418,12 @@
   /** The plan as JSON; devices and cables take a line each. Empty optional device fields are left out. */
   function serialize(project, opts) {
     const devices = project.devices.map((d) => {
-      const o = { id: d.id, type: d.type, name: d.name, cluster: d.cluster || null };
+      const groups = {};
+      for (const v of project.views) {
+        const c = M.clusterIdOf(project, d, v.id);
+        if (c) groups[v.id] = c;
+      }
+      const o = { id: d.id, type: d.type, name: d.name, groups };
       if (d.notes) o.notes = d.notes;
       for (const f of M.FIELDS) if (d[f.key]) o[f.key] = d[f.key];
       if (d.powerW !== null && d.powerW !== undefined) o.powerW = d.powerW;
@@ -367,7 +444,7 @@
       cableTypes: project.cableTypes || [],
       transceivers: project.transceivers || [],
       floors: project.floors,
-      clusters: project.clusters,
+      views: project.views,
       networks: project.networks || [],
       devices,
       cables: project.cables || [],
@@ -378,9 +455,15 @@
 
   // ------------------------------------------------------------------- CSV
 
-  const CSV_COLUMNS = ['Floor', 'Row', 'Rack', 'Position', 'Height (U)', 'Type', 'Name', 'Cluster']
-    .concat(M.FIELDS.map((f) => f.csv))
-    .concat(['Power (W)', 'Weight (kg)', 'Notes']);
+  /** "Cluster" for a plan with one view; "Cluster: <view>" for each view of a plan with more. */
+  function clusterColumns(project) {
+    return project.views.length === 1 ? ['Cluster'] : project.views.map((v) => `Cluster: ${v.name}`);
+  }
+  const csvColumns = (project) =>
+    ['Floor', 'Row', 'Rack', 'Position', 'Height (U)', 'Type', 'Name']
+      .concat(clusterColumns(project))
+      .concat(M.FIELDS.map((f) => f.csv))
+      .concat(['Power (W)', 'Weight (kg)', 'Notes']);
 
   function csvCell(value) {
     let s = String(value == null ? '' : value);
@@ -398,23 +481,14 @@
   const csvText = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
   function toCSV(project) {
-    const rows = [CSV_COLUMNS];
+    const rows = [csvColumns(project)];
     const racks = new Map(M.allRacks(project).map((r) => [r.rack.id, r]));
     for (const d of M.sortedDevices(project)) {
       const type = M.typeOf(project, d.type);
       const pos = racks.get(d.loc.rack);
-      const cluster = M.clusterById(project, d.cluster);
       rows.push(
-        [
-          pos.floor.name,
-          pos.row.name,
-          pos.rack.name,
-          positionText(project, d),
-          M.deviceHeight(project, d),
-          type.label,
-          d.name,
-          cluster ? cluster.name : '',
-        ]
+        [pos.floor.name, pos.row.name, pos.rack.name, positionText(project, d), M.deviceHeight(project, d), type.label, d.name]
+          .concat(project.views.map((v) => (M.clusterOf(project, d, v.id) || { name: '' }).name))
           .concat(M.FIELDS.map((f) => d[f.key] || ''))
           .concat([M.powerOf(project, d), M.weightOf(project, d), d.notes || ''])
       );
@@ -494,14 +568,19 @@
   /**
    * Reads a CSV inventory (the columns of toCSV; only Rack, Position and
    * Name or Type are required). Devices are added to `base` when given,
-   * otherwise to a new plan. Floors, rows, racks, clusters and device types
-   * that don't exist yet are created by name. Returns { project, warnings, added }.
+   * otherwise to a new plan. Floors, rows, racks, views, clusters and device
+   * types that don't exist yet are created by name. A "Cluster" column
+   * fills view `viewId`, a "Cluster: <view>" column the view of that name.
+   * Returns { project, warnings, added }.
    */
-  function importCSV(text, base) {
+  function importCSV(text, base, viewId) {
     const rows = parseCSV(text);
     if (rows.length < 2) throw new Error('The CSV has no devices: it needs a header row and at least one device.');
     const col = {};
+    const viewCols = [];
     rows[0].forEach((h, i) => {
+      const m = /^\s*(?:cluster|group)\s*:\s*(.+?)\s*$/i.exec(h);
+      if (m) return void viewCols.push({ name: m[1].slice(0, 60), index: i });
       const key = headerKey(h);
       for (const [name, aliases] of Object.entries(HEADERS)) {
         if (col[name] === undefined && aliases.some((a) => headerKey(a) === key)) col[name] = i;
@@ -561,14 +640,30 @@
       if (t) warnings.push(`Added the device type ${t.label} (${height}U) to the catalog.`);
       return t;
     }
-    function findCluster(name) {
+    // The view each cluster column fills.
+    const clusterCols = [];
+    if (col.cluster !== undefined) clusterCols.push({ view: M.viewOf(work, viewId), index: col.cluster });
+    for (const vc of viewCols) {
+      const view = work.views.find((v) => lower(v.name) === lower(vc.name)) || M.addView(work, vc.name);
+      if (view) clusterCols.push({ view, index: vc.index });
+      else warnings.push(`A plan holds ${L.views} views; skipped the column ${rows[0][vc.index].trim()}.`);
+    }
+    function findCluster(view, name) {
       if (!name) return null;
-      let c = work.clusters.find((x) => lower(x.name) === lower(name));
+      let c = view.clusters.find((x) => lower(x.name) === lower(name));
       if (!c) {
-        c = { id: M.uid('c'), name: name.slice(0, 60), color: M.nextClusterColor(work) };
-        work.clusters.push(c);
+        c = { id: M.uid('c'), name: name.slice(0, 60), color: M.nextClusterColor(work, view.id) };
+        view.clusters.push(c);
       }
       return c.id;
+    }
+    function findGroups(r) {
+      const groups = {};
+      for (const { view, index } of clusterCols) {
+        const c = findCluster(view, String(r[index] == null ? '' : r[index]).trim());
+        if (c) groups[view.id] = c;
+      }
+      return groups;
     }
 
     const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
@@ -589,7 +684,7 @@
       // Names are cut to the length the plan keeps, so later lines find what earlier ones created.
       const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
       if (!rack) return;
-      const d = { id: M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: work.devices.concat(devices) }, type.defaultName, 1, true), cluster: findCluster(get(r, 'cluster')), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
+      const d = { id: M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: work.devices.concat(devices) }, type.defaultName, 1, true), groups: findGroups(r), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
       for (const f of M.FIELDS) d[f.key] = get(r, f.key);
       const power = get(r, 'powerW');
       const weight = get(r, 'weightKg');
@@ -963,7 +1058,7 @@
   return {
     normalizeProject,
     serialize,
-    CSV_COLUMNS,
+    csvColumns,
     csvCell,
     toCSV,
     parseCSV,

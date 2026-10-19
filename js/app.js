@@ -139,6 +139,7 @@
     rowId: null, // the row shown
     view: prefs.view === 'map' ? 'map' : 'sheet',
     metric: ['space', 'power', 'weight'].includes(prefs.metric) ? prefs.metric : 'space',
+    clusterView: null, // id of the plan view whose clusters color the devices (ui.view is the sheet or floor map)
     focusCluster: null, // cluster id, '__none' for unassigned, or null
     hoverCluster: null,
     query: '',
@@ -182,6 +183,7 @@
     el.toasts.textContent = '';
     const remembered = prefs.rows[id];
     ui.rowId = remembered && M.rowById(project, remembered) ? remembered : M.allRows(project)[0].row.id;
+    ui.clusterView = project.views[0].id;
     if (id) lib.setCurrent(id);
   }
 
@@ -335,6 +337,7 @@
   // at the dispatch points below while ui.workspace is 'cabling'.
   const cab = window.RP.cablingUI.create({
     project: () => project,
+    view: () => ui.clusterView,
     ui,
     prefs,
     savePrefs,
@@ -468,7 +471,8 @@
     } else if (s && s.kind === 'rack' && !M.rackById(project, s.id)) ui.selection = null;
     else if (s && s.kind === 'row' && !M.rowById(project, s.id)) ui.selection = null;
     else if (s && s.kind === 'floor' && !M.floorById(project, s.id)) ui.selection = null;
-    const valid = (c) => !c || (c === '__none' ? project.devices.some((d) => !d.cluster) : !!M.clusterById(project, c));
+    if (!M.viewById(project, ui.clusterView)) ui.clusterView = project.views[0].id;
+    const valid = (c) => !c || (c === '__none' ? project.devices.some((d) => !clusterIdOf(d)) : viewClusters().some((x) => x.id === c));
     if (!valid(ui.focusCluster)) ui.focusCluster = null;
     if (!valid(ui.hoverCluster)) ui.hoverCluster = null;
     if (ui.armed && !M.typeOf(project, ui.armed)) ui.armed = null;
@@ -495,12 +499,17 @@
     if (layer) layer.innerHTML = html;
   }
 
+  /** Id of the cluster device `d` has in the view shown, or null. */
+  const clusterIdOf = (d) => M.clusterIdOf(project, d, ui.clusterView);
+  /** The clusters of the view shown. */
+  const viewClusters = () => M.clustersOf(project, ui.clusterView);
+
   /** Devices to show at full strength: the focused cluster and search matches. */
   function highlightFn() {
     const focus = ui.hoverCluster || ui.focusCluster;
-    const match = ui.query.trim() ? M.deviceMatcher(project, ui.query) : null;
+    const match = ui.query.trim() ? M.deviceMatcher(project, ui.query, ui.clusterView) : null;
     if (!focus && !match) return null;
-    return (d) => (!focus || (focus === '__none' ? !d.cluster : d.cluster === focus)) && (!match || match(d));
+    return (d) => (!focus || (focus === '__none' ? !clusterIdOf(d) : clusterIdOf(d) === focus)) && (!match || match(d));
   }
 
   function sheetInfo(rowId) {
@@ -554,6 +563,7 @@
       selected: selSet(),
       selectedRack: sel && sel.kind === 'rack' ? sel.id : null,
       highlight: highlightFn(),
+      view: ui.clusterView,
       dragging: d && d.active && d.source === 'device' && !d.copy ? new Set(d.ids) : null,
     });
     ui.layout = out.layout;
@@ -605,9 +615,9 @@
     const stats = M.statsByRack(project);
     const byRack = M.devicesByRack(project);
     const hl = highlightFn();
-    const match = ui.query.trim() ? M.deviceMatcher(project, ui.query) : null;
+    const match = ui.query.trim() ? M.deviceMatcher(project, ui.query, ui.clusterView) : null;
     const sel = ui.selection;
-    const colors = new Map(project.clusters.map((c) => [c.id, c.color]));
+    const colors = new Map(viewClusters().map((c) => [c.id, c.color]));
     const fs = M.statsWithin(project, floor.id, stats);
     let html =
       `<div class="fm-head"><div class="fm-title"><h2 title="${esc(floor.name)}">${esc(floor.name)}</h2><p>${esc(plural(floor.rows.length, 'row'))} · ${esc(statsLine(fs))}</p></div>` +
@@ -634,7 +644,7 @@
           if (d.loc.kind !== 'u') continue;
           const h = M.deviceHeight(project, d);
           const res = d.type === M.RESERVED.id;
-          const c = colors.get(d.cluster);
+          const c = colors.get(clusterIdOf(d));
           blocks += `<i class="${res ? 'res' : ''}${hl && !hl(d) ? ' dim' : ''}" style="top:${(((d.loc.at - 1) / st.units) * 100).toFixed(2)}%;height:${((h / st.units) * 100).toFixed(2)}%${c ? `;--c:${c}` : ''}"></i>`;
         }
         const cls = ['fm-rack'];
@@ -951,8 +961,9 @@
     const counts = new Map();
     let unassigned = 0;
     for (const d of project.devices) {
-      if (d.type === M.RESERVED.id && !d.cluster) continue;
-      if (d.cluster) counts.set(d.cluster, (counts.get(d.cluster) || 0) + 1);
+      const c = clusterIdOf(d);
+      if (d.type === M.RESERVED.id && !c) continue;
+      if (c) counts.set(c, (counts.get(c) || 0) + 1);
       else unassigned++;
     }
     const row = (id, name, color, count, editable) =>
@@ -965,10 +976,11 @@
         ? `<button type="button" class="btn icon sm subtle cl-edit" aria-label="Edit ${esc(name)}" title="Rename or recolor">${icon('pencil')}</button>`
         : `<span class="btn icon sm subtle" aria-hidden="true" style="visibility:hidden"></span>`) +
       `</li>`;
-    let html = project.clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
+    const clusters = viewClusters();
+    let html = clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
     el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`;
-    el.clustersHint.textContent = !project.clusters.length
+    el.clustersHint.textContent = !clusters.length
       ? 'Clusters give devices that belong together one color.'
       : ui.focusCluster
         ? 'Click the highlighted cluster again to show all devices.'
@@ -1004,7 +1016,7 @@
       `<label class="chip${cls || ''}"><input type="radio" name="${name}" id="${esc(`${name}-${value || 'none'}`)}" value="${esc(value)}"${checked ? ' checked' : ''}>` +
       `<span>${color !== undefined ? `<i class="sw" style="--c:${color || 'var(--unassigned)'}"></i>` : ''}${esc(label)}</span></label>`;
     let s = chip('', 'None', null, selected === null);
-    for (const c of project.clusters) s += chip(c.id, c.name, c.color, selected === c.id);
+    for (const c of viewClusters()) s += chip(c.id, c.name, c.color, selected === c.id);
     if (withNew) s += chip('__new', '+ New cluster', undefined, selected === '__new', ' chip-new');
     return s;
   }
@@ -1142,7 +1154,7 @@
 
   function renderDeviceInspector(d) {
     const type = M.typeOf(project, d.type);
-    const cluster = M.clusterById(project, d.cluster);
+    const cluster = M.clusterOf(project, d, ui.clusterView);
     const hU = M.deviceHeight(project, d);
     const pos = M.locateRack(project, d.loc.rack);
     const slotOpts = M.validLocs(project, d.type, d.loc.rack, d.id, d.height)
@@ -1169,7 +1181,7 @@
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
       `</div>` +
       `<section class="insp-sec"><h3 id="insp-cluster-label">Cluster</h3>` +
-      `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', d.cluster, true)}</div></section>` +
+      `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', clusterIdOf(d), true)}</div></section>` +
       `<section class="insp-sec"><h3>Position</h3>` +
       `<div class="pos-grid">` +
       `<div class="field"><label for="insp-rack">Rack</label><select id="insp-rack">${rackOptions(d.loc.rack)}</select></div>` +
@@ -1195,15 +1207,16 @@
 
     const id = d.id;
     bindText($('#insp-name'), 'name:' + id, (p, v) => (M.deviceById(p, id).name = v), () => M.suggestName(project, d.type));
+    const view = ui.clusterView;
     $$('input[name="insp-cluster"]', el.inspector).forEach((r) =>
       r.addEventListener('change', () => {
         if (r.value === '__new') {
-          openClusterDialog(null, (p, cid) => void (M.deviceById(p, id).cluster = cid), () => renderInspector());
+          openClusterDialog(null, (p, cid) => M.setClusterOf(p, M.deviceById(p, id), view, cid), () => renderInspector());
           return;
         }
         prefs.lastCluster = r.value || null;
         savePrefs();
-        commit((p) => void (M.deviceById(p, id).cluster = r.value || null));
+        commit((p) => M.setClusterOf(p, M.deviceById(p, id), view, r.value || null));
       })
     );
     $('#insp-rack').addEventListener('change', (e) => {
@@ -1251,7 +1264,7 @@
     const byType = new Map();
     for (const d of devs) byType.set(d.type, (byType.get(d.type) || 0) + 1);
     const summary = [...byType].map(([t, n]) => `${n} × ${M.typeOf(project, t).label}`).join(', ');
-    const clusters = new Set(devs.map((d) => d.cluster || null));
+    const clusters = new Set(devs.map((d) => clusterIdOf(d)));
     const owners = new Set(devs.map((d) => d.owner || ''));
     const same = clusters.size === 1 ? [...clusters][0] : undefined;
     // Reserved space faces no way: only devices are mounted one way or the other.
@@ -1262,7 +1275,7 @@
     const units = devs.filter((d) => d.loc.kind === 'u').reduce((a, d) => a + M.deviceHeight(project, d), 0);
     const rows = sorted
       .map((d) => {
-        const c = M.clusterById(project, d.cluster);
+        const c = M.clusterOf(project, d, ui.clusterView);
         return (
           `<li><button type="button" data-select="${esc(d.id)}" title="${esc(M.formatDeviceLoc(project, d))}">` +
           `<span class="u">${esc(shortRack(M.rackById(project, d.loc.rack).name))} ${M.formatPosition(project, d.loc, d.type, d.height)}</span>` +
@@ -1299,7 +1312,8 @@
     const ids = devs.map((d) => d.id);
     $$('input[name="multi-cluster"]', el.inspector).forEach((r) =>
       r.addEventListener('change', () => {
-        const apply = (p, cid) => ids.forEach((id) => (M.deviceById(p, id).cluster = cid));
+        const view = ui.clusterView;
+        const apply = (p, cid) => ids.forEach((id) => M.setClusterOf(p, M.deviceById(p, id), view, cid));
         if (r.value === '__new') return openClusterDialog(null, apply, () => renderInspector());
         commit((p) => void apply(p, r.value || null));
       })
@@ -1346,7 +1360,7 @@
   function contentsList(devs) {
     return devs
       .map((d) => {
-        const c = M.clusterById(project, d.cluster);
+        const c = M.clusterOf(project, d, ui.clusterView);
         return (
           `<li><button type="button" data-select="${esc(d.id)}" title="${esc(M.typeOf(project, d.type).label)}">` +
           `<span class="u">${M.formatPosition(project, d.loc, d.type, d.height)}</span>` +
@@ -1568,7 +1582,7 @@
       `<div><dt>Floors · rows</dt><dd>${project.floors.length} · ${M.allRows(project).length}</dd></div>` +
       `<div><dt>Racks</dt><dd>${t.racks}</dd></div>` +
       `<div><dt>Devices</dt><dd>${t.count}</dd></div>` +
-      `<div><dt>Clusters</dt><dd>${project.clusters.length}</dd></div>` +
+      `<div><dt>Clusters</dt><dd>${viewClusters().length}</dd></div>` +
       `<div><dt>Units used</dt><dd>${t.used} <small>of ${t.units}</small></dd></div>` +
       `<div><dt>Reserved</dt><dd>${t.reserved} U</dd></div>` +
       `</dl>` +
@@ -1906,15 +1920,16 @@
     return { x: ((e.clientX - r.left) * ui.sceneW) / r.width, y: ((e.clientY - r.top) * ui.sceneH) / r.height };
   }
 
+  /** Color of cluster `id` when it is one of the view shown. */
   function clusterColor(id) {
-    const c = M.clusterById(project, id);
+    const c = viewClusters().find((x) => x.id === id);
     return c ? c.color : null;
   }
 
   function drawGhost(typeId, loc, ok, device, height) {
     if (!loc) return setGhosts('');
-    const hint = device ? null : M.suggestPlacement(project, typeId, loc, 1);
-    const clusterId = device ? device.cluster : hint.cluster !== undefined ? hint.cluster : prefs.lastCluster;
+    const hint = device ? null : M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
+    const clusterId = device ? clusterIdOf(device) : hint.cluster !== undefined ? hint.cluster : prefs.lastCluster;
     setGhosts(
       R.renderGhost(project, typeId, loc, ok, {
         theme: ui.theme,
@@ -1932,7 +1947,7 @@
   function drawGhosts(moves, ok) {
     const items = moves.map((m) => {
       const d = M.deviceById(project, m.id);
-      return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(d.cluster), reversed: !!d.reversed };
+      return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(clusterIdOf(d)), reversed: !!d.reversed };
     });
     setGhosts(R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare' }));
   }
@@ -2331,7 +2346,7 @@
     const id = rowEl.dataset.cluster;
     if (e.target.closest('.cl-edit')) return openClusterDialog(id);
     if (e.target.closest('.cl-select')) {
-      const devs = project.devices.filter((d) => (id === '__none' ? !d.cluster && d.type !== M.RESERVED.id : d.cluster === id));
+      const devs = project.devices.filter((d) => (id === '__none' ? !clusterIdOf(d) && d.type !== M.RESERVED.id : clusterIdOf(d) === id));
       const inRow = devs.filter((d) => rowOfRack(d.loc.rack) === ui.rowId);
       selectDevices((inRow.length ? inRow : devs).map((d) => d.id), { follow: !inRow.length });
       if (inRow.length < devs.length) toast(`Selected ${plural(inRow.length || devs.length, 'device')}${inRow.length ? ' in this row' : ''} of ${devs.length}`);
@@ -2363,7 +2378,7 @@
   function renderSearchResults() {
     const q = ui.query.trim();
     const cabling = ui.workspace === 'cabling';
-    const res = M.search(project, q, 6);
+    const res = M.search(project, q, 6, ui.clusterView);
     const groups = [
       ['floors', 'Floors', 'map'],
       ['rows', 'Rows', 'map'],
@@ -2624,12 +2639,12 @@
           `<label class="chip chip-check"><input type="checkbox" value="${esc(r.id)}"${i >= start ? ' checked' : ''}><span>${esc(shortRack(r.name))}</span></label>`
       )
       .join('');
-    const hint = M.suggestPlacement(project, typeId, loc, 1);
-    const last = prefs.lastCluster && M.clusterById(project, prefs.lastCluster) ? prefs.lastCluster : null;
-    const initial = hint.cluster !== undefined ? hint.cluster : type.variable ? null : last || (project.clusters.length ? null : '__new');
+    const hint = M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
+    const last = prefs.lastCluster && clusterColor(prefs.lastCluster) ? prefs.lastCluster : null;
+    const initial = hint.cluster !== undefined ? hint.cluster : type.variable ? null : last || (viewClusters().length ? null : '__new');
     $('#place-clusters').innerHTML = clusterChips('place-cluster', initial, true);
-    place.newColor = M.nextClusterColor(project);
-    $('#place-new-name').value = M.nextClusterName(project);
+    place.newColor = M.nextClusterColor(project, ui.clusterView);
+    $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
     renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => (place.newColor = c));
     $('#place-new').hidden = initial !== '__new';
     showError('#place-error', '');
@@ -2765,20 +2780,22 @@
       newCluster = { id: M.uid('c'), name: cname, color: place.newColor };
     }
     const clusterId = newCluster ? newCluster.id : picked || null;
+    // A new device gets a cluster in the view shown only; in other views it is unassigned.
+    const view = ui.clusterView;
     const count = place.positions.length;
     const names = M.nameSequence(name, count);
     const height = placeHeight();
     const devices = place.positions.map((pos, i) =>
       M.newDevice(
         Object.assign(
-          { type: type.id, name: names[i], cluster: clusterId, loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
+          { type: type.id, name: names[i], groups: clusterId ? { [view]: clusterId } : {}, loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
           type.variable ? { height } : {}
         )
       )
     );
     ui.selection = { kind: 'devices', ids: count > 1 ? devices.map((d) => d.id) : [devices[0].id] };
     commit((p) => {
-      if (newCluster) p.clusters.push(newCluster);
+      if (newCluster) M.clustersOf(p, view).push(newCluster);
       p.devices.push(...devices);
     });
     if (!type.variable) {
@@ -2797,14 +2814,14 @@
     const c = id ? M.clusterById(project, id) : null;
     Object.assign(clusterDlg, {
       id: c ? c.id : null,
-      color: c ? c.color : M.nextClusterColor(project),
+      color: c ? c.color : M.nextClusterColor(project, ui.clusterView),
       onCreate: onCreate || null,
       onCancel: onCancel || null,
       saved: false,
     });
     $('#cluster-kicker').textContent = c ? 'Edit cluster' : 'New cluster';
     $('#cluster-title').textContent = c ? c.name : 'Create a cluster';
-    $('#cluster-name').value = c ? c.name : M.nextClusterName(project);
+    $('#cluster-name').value = c ? c.name : M.nextClusterName(project, ui.clusterView);
     $('#cluster-delete').hidden = !c;
     $('#cluster-submit').textContent = c ? 'Save' : 'Create';
     renderSwatches($('#cluster-colors'), 'cluster-color', clusterDlg.color, (col) => {
@@ -2849,8 +2866,9 @@
     } else {
       const nc = { id: M.uid('c'), name, color };
       const onCreate = clusterDlg.onCreate;
+      const view = ui.clusterView;
       commit((p) => {
-        p.clusters.push(nc);
+        M.clustersOf(p, view).push(nc);
         if (onCreate) onCreate(p, nc.id);
       });
       prefs.lastCluster = nc.id;
@@ -2868,7 +2886,8 @@
     const id = clusterDlg.id;
     const c = M.clusterById(project, id);
     if (!c) return;
-    const count = project.devices.filter((d) => d.cluster === id).length;
+    const view = M.viewOfCluster(project, id);
+    const count = project.devices.filter((d) => M.clusterIdOf(project, d, view.id) === id).length;
     $('#dlg-cluster').close('cancel');
     const ok =
       !count ||
@@ -2878,12 +2897,7 @@
         ok: 'Delete cluster',
       }));
     if (!ok) return;
-    commit((p) => {
-      p.clusters = p.clusters.filter((x) => x.id !== id);
-      p.devices.forEach((d) => {
-        if (d.cluster === id) d.cluster = null;
-      });
-    });
+    commit((p) => void M.removeCluster(p, id));
     toast(`Deleted cluster ${c.name}`, { action: 'Undo', onAction: undo });
   });
 
@@ -3948,7 +3962,7 @@
     const merge = $('#open-merge').checked;
     let result;
     try {
-      result = IO.importCSV(text, merge ? project : null);
+      result = IO.importCSV(text, merge ? project : null, merge ? ui.clusterView : null);
     } catch (e) {
       return showError('#open-error', e.message);
     }
@@ -4118,7 +4132,7 @@
   }
 
   function exportOpts() {
-    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare' };
+    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView };
   }
 
   /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
@@ -4285,7 +4299,7 @@
         const sc =
           drawing === 'front' || drawing === 'rear'
             ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure })
-            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare' });
+            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
       })
       .join('');

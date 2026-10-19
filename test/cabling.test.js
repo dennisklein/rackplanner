@@ -857,3 +857,16 @@ test('a transceiver named on a copper or DAC end is ignored, a cable’s rating 
   for (const [n, s] of [['n1', 'swp1'], ['n2', 'swp2'], ['n3', 'swp3']]) link(p, end(n, 'eth0'), end('sw1', s), { label: 'X' });
   assert.deepEqual(C.describe(p, p.cables.find((x) => x.label === 'X')).issues.map((i) => [i.text, i.short]), [['The label X is used 3 times', 'Label used 3 times']]);
 });
+
+test('the fabric groups nodes by their clusters in the view asked for', () => {
+  const p = M.createExampleProject();
+  const ib = M.addView(p, 'InfiniBand');
+  ib.clusters.push({ id: 'c-a02', name: 'Leaf A02', color: '#123456' });
+  // Osprey and Ceph share leaf A02 but not their leaves, so they stay two groups; Kestrel loses its cluster.
+  for (const d of p.devices) if (['c-osprey', 'c-ceph'].includes(M.clusterIdOf(p, d))) M.setClusterOf(p, d, ib.id, 'c-a02');
+  const key = (f) => f.groups.slice(0, 3).map((g) => [g.devices.length, g.cluster]);
+  assert.deepEqual(key(C.fabric(p, 'n-ib')), [[12, 'c-kestrel'], [8, 'c-osprey'], [3, 'c-ceph']]);
+  assert.deepEqual(key(C.fabric(p, 'n-ib', ib.id)), [[12, null], [8, 'c-a02'], [3, 'c-a02']]);
+  const drawn = CR.fabric(p, 'n-ib', { view: ib.id });
+  assert.ok(drawn.body.includes('Leaf A02') && !drawn.body.includes('Osprey GPU'));
+});

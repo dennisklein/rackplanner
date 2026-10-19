@@ -28,12 +28,13 @@ test('normalizeProject drops what does not fit and keeps the rest', () => {
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.equal(p.name, 'Hall 3');
   assert.deepEqual(rowRacks(p).map((r) => r.name), ['West', 'Rack A02', 'East']);
-  assert.deepEqual(p.clusters.map((c) => [c.id, c.color]), [
+  assert.deepEqual(p.views.map((v) => [v.id, v.name]), [['v1', 'Default']], 'a file before version 5 has one view');
+  assert.deepEqual(p.views[0].clusters.map((c) => [c.id, c.color]), [
     ['c1', '#aabbcc'],
-    ['c2', M.nextClusterColor({ clusters: [{ color: '#aabbcc' }] })],
+    ['c2', M.nextClusterColor({ views: [{ clusters: [{ color: '#aabbcc' }] }] })],
   ]);
   assert.deepEqual(p.devices.map((d) => d.name), ['cn-1', 'sw']);
-  assert.equal(p.devices[1].cluster, null);
+  assert.deepEqual(p.devices.map((d) => d.groups), [{ v1: 'c1' }, {}]);
   assert.notEqual(p.devices[1].id, 'a', 'duplicate ids are replaced');
   assert.deepEqual(p.devices[1].loc, { rack: 'r3', kind: 'side', at: 1 });
   assert.deepEqual(warnings, [
@@ -81,8 +82,8 @@ test('normalizeProject accepts numeric ids', () => {
     clusters: [{ id: 7, name: 'HPC', color: '#2f6fdb' }, { name: 'no id' }],
     devices: [{ id: 3, type: 'compute-node', name: 'cn-1', cluster: 7, loc: { rack: 2, kind: 'u', at: 1 } }],
   });
-  assert.deepEqual(p.clusters.map((c) => c.id), ['7']);
-  assert.deepEqual(p.devices.map((d) => [d.id, d.cluster, d.loc.rack]), [['3', '7', 'r2']]);
+  assert.deepEqual(p.views[0].clusters.map((c) => c.id), ['7']);
+  assert.deepEqual(p.devices.map((d) => [d.id, M.clusterIdOf(p, d), d.loc.rack]), [['3', '7', 'r2']]);
   assert.deepEqual(warnings, ['Skipped cluster no id: it has no id.']);
 });
 
@@ -99,8 +100,8 @@ test('version 1 plans, counted from the bottom, keep their layout', () => {
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, []);
   assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
-  assert.equal(p.version, 4);
-  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 4 is kept');
+  assert.equal(p.version, 5);
+  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 5 is kept');
 });
 
 test('plans keep floors, rows, catalogs, fields, reserved space and cabling', () => {
@@ -174,9 +175,9 @@ test('floors, rows and racks never share an id, and reserved cluster ids are rep
   assert.equal(new Set(ids).size, 7, 'one floor, two rows, four racks, all distinct');
   assert.deepEqual(M.devicesWithin(p, p.floors[0].rows[1].id).map((d) => d.id), ['c'], 'a row holds only its own devices');
   assert.deepEqual(M.devicesWithin(p, M.locateRack(p, M.deviceById(p, 'a').loc.rack).rack.id).map((d) => d.id), ['a']);
-  assert.ok(p.clusters.every((c) => !c.id.startsWith('__')));
-  assert.equal(M.clusterById(p, M.deviceById(p, 'a').cluster).name, 'Sneaky', 'devices follow their cluster to its new id');
-  assert.equal(M.clusterById(p, M.deviceById(p, 'b').cluster).name, 'Other');
+  assert.ok(p.views[0].clusters.every((c) => !c.id.startsWith('__')));
+  assert.equal(M.clusterOf(p, M.deviceById(p, 'a')).name, 'Sneaky', 'devices follow their cluster to its new id');
+  assert.equal(M.clusterOf(p, M.deviceById(p, 'b')).name, 'Other');
   const row = M.addRow(p, p.floors[0].id);
   assert.equal(new Set(M.structureIds(p)).size, 7 + 1 + 3, 'new rows and racks get ids nobody uses, not even a rack called row9');
   assert.ok(row);
@@ -184,9 +185,9 @@ test('floors, rows and racks never share an id, and reserved cluster ids are rep
 
 test('toCSV lists devices by floor, row and rack, top to bottom, and neutralises formulas', () => {
   const p = M.createEmptyProject();
-  p.clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
+  p.views[0].clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
   const add = (type, kind, at, name, extra) => p.devices.push(M.newDevice(Object.assign({ type, name, loc: { rack: 'r1', kind, at } }, extra)));
-  add('compute-node', 'u', 5, '=cmd()', { cluster: 'c1', serial: 'S1', powerW: 999 });
+  add('compute-node', 'u', 5, '=cmd()', { groups: { v1: 'c1' }, serial: 'S1', powerW: 999 });
   add('switch-rj45', 'u', 47, 'sw, "core"');
   add('switch-qsfp', 'side', 0, 'leaf');
   add('reserved', 'u', 10, 'later', { height: 3 });
@@ -196,6 +197,78 @@ test('toCSV lists devices by floor, row and rack, top to bottom, and neutralises
   assert.equal(lines[2], 'Floor 1,Row A,Rack A01,U10-12,3,Reserved space,later,,,,,,0,0,');
   assert.equal(lines[3], 'Floor 1,Row A,Rack A01,U47,1,48-port switch,"sw, ""core""",,,,,,150,6,');
   assert.equal(lines[4], 'Floor 1,Row A,Rack A01,Side V1,1,24-port switch,leaf,,,,,,350,9,');
+});
+
+test('version 5 files keep their views; ids and names that clash are made unique', () => {
+  const ex = M.createExampleProject();
+  const ib = M.addView(ex, 'InfiniBand');
+  ib.clusters.push({ id: 'c-hdr', name: 'HDR', color: '#d64545' });
+  M.setClusterOf(ex, M.deviceById(ex, 'ex-9'), ib.id, 'c-hdr');
+  const back = IO.normalizeProject(JSON.parse(IO.serialize(ex)));
+  assert.deepEqual(back.warnings, []);
+  assert.deepEqual(back.project, ex, 'a round trip changes nothing');
+
+  const { project: p, warnings } = IO.normalizeProject({
+    version: 5,
+    racks: [{ id: 'r1' }],
+    views: [
+      { id: 'a', name: 'Lustre', clusters: [{ id: 'c1', name: 'MDS', color: '#2f6fdb' }] },
+      { id: 'b', name: 'lustre', clusters: [{ id: 'c1', name: 'HDR', color: '#d64545' }] },
+      { id: 'a', name: 'Again' },
+      { id: '__x', name: 'Odd' },
+      { name: 'No id' },
+      null,
+    ],
+    devices: [
+      { id: 'n1', type: 'compute-node', name: 'cn-1', groups: { a: 'c1', b: 'c1', zz: 'c1', __x: 'nope' }, cluster: 'c1', loc: { rack: 'r1', kind: 'u', at: 1 } },
+      { id: 'n2', type: 'compute-node', name: 'cn-2', groups: 'junk', loc: { rack: 'r1', kind: 'u', at: 3 } },
+    ],
+  });
+  assert.deepEqual(p.views.map((v) => [v.id, v.name]), [['a', 'Lustre'], ['b', 'lustre'], ['v1', 'Odd']]);
+  const [mds, hdr] = [p.views[0].clusters[0], p.views[1].clusters[0]];
+  assert.equal(mds.id, 'c1');
+  assert.notEqual(hdr.id, 'c1', 'a cluster id used in an earlier view gets a new one');
+  assert.deepEqual(p.devices[0].groups, { a: 'c1', b: hdr.id });
+  assert.deepEqual(p.devices[1].groups, {});
+  assert.deepEqual(warnings, [
+    'Skipped view Again: its id “a” is used twice.',
+    'Skipped view No id: it has no id.',
+    'cn-1 refers to unknown view “zz”; its cluster there is dropped.',
+    'cn-1 refers to unknown cluster “nope” and is left unassigned in that view.',
+  ]);
+
+  const many = IO.normalizeProject({ version: 5, views: Array.from({ length: 10 }, (_, i) => ({ id: `w${i}`, name: 'Same' })), devices: [] });
+  assert.equal(many.project.views.length, M.LIMITS.views);
+  assert.deepEqual(many.project.views.slice(0, 3).map((v) => v.name), ['Same', 'Same 2', 'Same 3']);
+  assert.ok(many.warnings.includes(`Skipped view Same: a plan holds ${M.LIMITS.views} views.`));
+  assert.ok(many.warnings.includes('Renamed the view Same to Same 2: the name is used twice.'));
+  assert.deepEqual(IO.normalizeProject({ version: 5, views: [], devices: [] }).project.views, [{ id: 'v1', name: 'Default', clusters: [] }], 'a plan has at least one view');
+});
+
+test('CSVs have a cluster column per view, and read them back into the views of those names', () => {
+  const p = M.createEmptyProject();
+  p.views[0].clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
+  const ib = M.addView(p, 'InfiniBand');
+  ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
+  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', v2: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
+  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-2', groups: { v2: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 3 } }));
+  const lines = IO.toCSV(p).trim().split('\r\n');
+  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes');
+  assert.match(lines[1], /,cn-1,Alpha,HDR,/);
+  assert.match(lines[2], /,cn-2,,HDR,/);
+
+  const back = IO.importCSV(IO.toCSV(p)).project;
+  assert.deepEqual(back.views.map((v) => [v.name, v.clusters.map((c) => c.name)]), [['Default', ['Alpha']], ['InfiniBand', ['HDR']]]);
+  assert.deepEqual(back.devices.map((d) => back.views.map((v) => (M.clusterOf(back, d, v.id) || {}).name)), [['Alpha', 'HDR'], [undefined, 'HDR']]);
+
+  // A plain Cluster column fills the view given; a column for a new view adds it.
+  const csv = ['Rack,Position,Name,Type,Cluster,Cluster: Power', 'Rack A02,U1,x-1,Compute node,OPA,Feed A'].join('\n');
+  const merged = IO.importCSV(csv, p, 'v2').project;
+  const x = merged.devices.find((d) => d.name === 'x-1');
+  assert.equal(M.clusterOf(merged, x, 'v2').name, 'OPA');
+  assert.equal(M.clusterIdOf(merged, x, 'v1'), null);
+  const power = merged.views.find((v) => v.name === 'Power');
+  assert.equal(M.clusterOf(merged, x, power.id).name, 'Feed A');
 });
 
 test('parseCSV handles quotes, other separators and the formula guard', () => {
@@ -222,7 +295,7 @@ test('a CSV export imports back into an equal plan', () => {
   const pick = (proj) =>
     M.sortedDevices(proj).map((d) => {
       const pos = M.locateRack(proj, d.loc.rack);
-      return [pos.floor.name, pos.row.name, pos.rack.name, d.loc.kind, d.loc.at, d.name, M.typeOf(proj, d.type).label, (M.clusterById(proj, d.cluster) || {}).name, d.owner, M.powerOf(proj, d), M.deviceHeight(proj, d)];
+      return [pos.floor.name, pos.row.name, pos.rack.name, d.loc.kind, d.loc.at, d.name, M.typeOf(proj, d.type).label, (M.clusterOf(proj, d) || {}).name, d.owner, M.powerOf(proj, d), M.deviceHeight(proj, d)];
     });
   assert.deepEqual(pick(p), pick(ex));
 });
@@ -247,7 +320,7 @@ test('a CSV adds devices to a plan and creates what is missing', () => {
     ['sw-rj45-01', 'Rack A02 · side slot V1'],
   ]);
   assert.equal(M.locateRack(p, p.devices[1].loc.rack).row.name, 'Row B', 'rows are created by name');
-  assert.deepEqual(p.clusters.map((c) => c.name), ['Web']);
+  assert.deepEqual(p.views[0].clusters.map((c) => c.name), ['Web']);
   assert.deepEqual(p.deviceTypes.slice(5).map((t) => [t.label, t.height, t.face]), [['1U server', 1, 'generic'], ['Database box', 4, 'generic']]);
   for (const w of [
     'Skipped x: position “top” is not like U12 or Side V1.',
@@ -288,15 +361,16 @@ test('share links pack and unpack a plan', async () => {
 
 const C = require('../js/cabling.js');
 
-test('version 4 files keep ports, lengths, networks, catalogs and cables, a device and a cable to a line', () => {
+test('version 5 files keep ports, lengths, networks, catalogs, views and cables, a device and a cable to a line', () => {
   const ex = M.createExampleProject();
   M.deviceById(ex, 'ex-9').slackM = 0.5;
   ex.floors[0].rows[0].racks[0].trayM = 0.8;
   ex.cables[0].a.transceiver = 'sfp-10g-sr'; // not used by a copper cable, but kept
   const json = IO.serialize(ex);
   const raw = JSON.parse(json);
-  assert.equal(raw.version, 4);
-  assert.deepEqual(Object.keys(raw), ['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'floors', 'clusters', 'networks', 'devices', 'cables', 'meta']);
+  assert.equal(raw.version, 5);
+  assert.deepEqual(Object.keys(raw), ['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'floors', 'views', 'networks', 'devices', 'cables', 'meta']);
+  assert.deepEqual(raw.devices.find((d) => d.id === 'ex-9').groups, { v1: 'c-kestrel' });
   assert.deepEqual(raw.devices.find((d) => d.id === 'ex-1').reversed, true);
   assert.ok(!('reversed' in raw.devices.find((d) => d.id === 'ex-9')), 'only devices mounted back to front say so');
   const lines = json.split('\n');

@@ -178,7 +178,8 @@
    * (default rear), theme, measure(text, cssFont) → px, interactive (hit
    * areas), selected (see selectedCables), focusNetwork (a network id; ''
    * for the cables without one), pending: { device, port } (the first end
-   * of a connection being made), highlight: Set of cable ids.
+   * of a connection being made), highlight: Set of cable ids, view (the
+   * view whose clusters color the devices; default: the first).
    * Returns { width, height, body, side, rowId, layout } where layout holds
    * where things are drawn: devices (id → rect), ports ("dev|port" →
    * center), cables (id → bounding box) and exits.
@@ -331,7 +332,7 @@
       for (const d of devs) {
         const type = M.typeOf(project, d.type);
         if (!type) continue;
-        const cluster = M.clusterById(project, d.cluster);
+        const cluster = M.clusterOf(project, d, o.view);
         const sc = R.schemeFor(cluster ? cluster.color : null, t);
         const hU = M.deviceHeight(project, d);
         const own = d.reversed ? flip(side) : side;
@@ -1145,7 +1146,8 @@
    * ids: a Set, a list or { ids }), highlight (device ids, as selected:
    * outlined unless selected), fabric (cabling.fabric of this network,
    * when the caller has it already), interactive (boxes are focusable
-   * buttons with a name, for the keyboard). Returns { width, height, body, groups:
+   * buttons with a name, for the keyboard), view (the view whose clusters
+   * color and group the boxes; default: the first). Returns { width, height, body, groups:
    * [[device ids]] (data-group indexes them), cores, leaves, switchBox:
    * { x, y, w, h } around the switches, or null }.
    */
@@ -1155,7 +1157,7 @@
     const T = R.THEMES[t];
     const measure = o.measure || R.approxMeasure;
     const grouped = o.grouped !== false;
-    const fab = o.fabric || C.fabric(project, networkId || null);
+    const fab = o.fabric || C.fabric(project, networkId || null, o.view);
     const ctx = C.context(project);
     const idx = C.cableIndex(project);
     const net = networkId ? M.networkById(project, networkId) : null;
@@ -1171,7 +1173,7 @@
       ? fab.groups
       : fab.nodes.map((n) => {
           const g = fab.groups.find((x) => x.devices.includes(n));
-          return { devices: [n], leaves: g ? g.leaves : [], cluster: n.cluster || null, type: n.type };
+          return { devices: [n], leaves: g ? g.leaves : [], cluster: M.clusterIdOf(project, n, o.view), type: n.type };
         });
     const tiers = [];
     if (fab.cores.length) tiers.push({ key: 'core', label: 'CORE', list: fab.cores });
@@ -1341,7 +1343,7 @@
     };
     for (const c of fab.cores) {
       const q = pos.get(c.id);
-      s += box(q.x, q.y, c.cluster, c.name, where(c), meter(q.x, q.y, used(c), total(c)), mark([c.id]), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"${button(`${c.name}, ${where(c)}, ${used(c)} of ${total(c)} ports in use`)}`);
+      s += box(q.x, q.y, M.clusterIdOf(project, c, o.view), c.name, where(c), meter(q.x, q.y, used(c), total(c)), mark([c.id]), `data-dev="${esc(c.id)}" data-core="${esc(c.id)}"${button(`${c.name}, ${where(c)}, ${used(c)} of ${total(c)} ports in use`)}`);
     }
     for (const l of fab.leaves) {
       const q = pos.get(l.id);
@@ -1352,7 +1354,7 @@
       const badge =
         `<rect x="${r1(q.x + BW - 7 - bw)}" y="${r1(q.y + 22)}" width="${r1(bw)}" height="16" rx="3" fill="${warn ? T.bad : T.barTrack}"/>` +
         text(q.x + BW - 7 - bw / 2, q.y + 33.5, ratio, F.label, warn ? R.inkOn(T.bad, T.deep) : T.ink, ' text-anchor="middle"');
-      s += box(q.x, q.y, l.cluster, l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, mark([l.id]), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"${button(`${l.name}, ${where(l)}, ${r && r.ratio !== null ? `oversubscription ${ratio}` : 'no uplinks'}${warn ? ' (warning)' : ''}`)}`);
+      s += box(q.x, q.y, M.clusterIdOf(project, l, o.view), l.name, where(l), meter(q.x, q.y, used(l), total(l)) + badge, mark([l.id]), `data-dev="${esc(l.id)}" data-leaf="${esc(l.id)}"${button(`${l.name}, ${where(l)}, ${r && r.ratio !== null ? `oversubscription ${ratio}` : 'no uplinks'}${warn ? ' (warning)' : ''}`)}`);
     }
     groups.forEach((g, gi) => {
       const p = gpos[gi];
