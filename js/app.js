@@ -122,10 +122,11 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system', workspace: 'racks' }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
   if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
+  if (prefs.detail !== 'bare') prefs.detail = 'full';
   const lib = window.RP.library.create(storage);
   let planId = null;
   let project = null;
@@ -311,6 +312,7 @@
     inspector: $('#inspector'),
     planName: $('#plan-name'),
     undo: $('#btn-undo'),
+    bare: $('#btn-bare'),
     redo: $('#btn-redo'),
     zoom: $('#zoom'),
     zoomLevel: $('#btn-zoom-reset'),
@@ -544,6 +546,7 @@
     const out = R.renderScene(project, {
       rowId: ui.rowId,
       theme: ui.theme,
+      bare: prefs.detail === 'bare',
       interactive: true,
       measure,
       date: todayISO(),
@@ -750,6 +753,17 @@
     else fitWidth();
   }
   $$('.ws-switch [data-workspace]').forEach((b) => b.addEventListener('click', () => setWorkspace(b.dataset.workspace)));
+
+  /** Shows devices as plain name plates (Racks sheet, ghosts, exports) or with their drawn fronts. */
+  function setDetail(detail) {
+    if (detail === prefs.detail) return;
+    prefs.detail = detail;
+    savePrefs();
+    el.bare.setAttribute('aria-pressed', String(detail === 'bare'));
+    render();
+  }
+  el.bare.addEventListener('click', () => setDetail(prefs.detail === 'bare' ? 'full' : 'bare'));
+  el.bare.setAttribute('aria-pressed', String(prefs.detail === 'bare'));
 
   function setView(view) {
     if (view === ui.view) return;
@@ -966,6 +980,7 @@
     for (const b of $$('.ws-switch [data-workspace]')) b.setAttribute('aria-pressed', String(b.dataset.workspace === ui.workspace));
     $('#app').classList.toggle('is-cabling', cabling);
     el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
+    el.bare.disabled = cabling; // the Cabling drawings keep the ports
     el.undo.disabled = !history.past.length;
     el.redo.disabled = !history.future.length;
     if (document.activeElement !== el.planName) el.planName.value = project.name;
@@ -1909,6 +1924,7 @@
         color: clusterColor(clusterId),
         name: device ? device.name : hint.name,
         reversed: !!(device && device.reversed),
+        bare: prefs.detail === 'bare',
       })
     );
   }
@@ -1918,7 +1934,7 @@
       const d = M.deviceById(project, m.id);
       return { typeId: d.type, loc: m.loc, height: d.height, name: d.name, color: clusterColor(d.cluster), reversed: !!d.reversed };
     });
-    setGhosts(R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId }));
+    setGhosts(R.renderGhosts(project, items, ok, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare' }));
   }
 
   function showChip(e, title, detail, state) {
@@ -4102,7 +4118,7 @@
   }
 
   function exportOpts() {
-    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId) };
+    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare' };
   }
 
   /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
@@ -4269,7 +4285,7 @@
         const sc =
           drawing === 'front' || drawing === 'rear'
             ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure })
-            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId) });
+            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare' });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
       })
       .join('');
@@ -4483,6 +4499,7 @@
     } else if (key === '[') stepRow(-1);
     else if (key === ']') stepRow(1);
     else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
+    else if (letter === 'b' && !cabling) setDetail(prefs.detail === 'bare' ? 'full' : 'bare');
     else if (letter === 'm' && !cabling) setView(ui.view === 'map' ? 'sheet' : 'map');
     else if (key === '+' || key === '=') setZoom(ui.zoom * 1.2);
     else if (key === '-' || key === '_') setZoom(ui.zoom / 1.2);

@@ -173,6 +173,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 | <kbd>[</kbd> <kbd>]</kbd> | Previous, next row |
 | <kbd>C</kbd> | Racks or Cabling workspace |
 | <kbd>M</kbd> | Floor map on or off (Racks) |
+| <kbd>B</kbd> | Bare devices on or off: names only, without drawn fronts (Racks) |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move the selected devices to the next free position (Racks) |
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack (Racks) |
 | <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling, add or remove a cable, or in the schedule select a range of cables |
