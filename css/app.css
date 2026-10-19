@@ -323,6 +323,7 @@ p { margin: 0; }
 .cl-main[aria-pressed="true"] .cl-name { font-weight: 600; }
 .cl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cl-count { font: 500 12px/1 var(--font-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.sec-tools { display: flex; align-items: center; gap: 2px; }
 .cl-edit, .cl-select { opacity: 0; }
 .cl-row:hover .cl-edit, .cl-row:focus-within .cl-edit, .cl-row:hover .cl-select, .cl-row:focus-within .cl-select { opacity: 1; }
 .sw {
@@ -620,6 +621,18 @@ kbd {
 #place-name { font-size: 15px; font-weight: 500; }
 
 .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; height: 34px; }
+/* The plan's views, next to the workspace switch when the plan has more than one. */
+.view-switch { flex: none; }
+.view-switch .vw-label { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#racks-clusters-sec .sec-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-view { margin-left: 6px; font-weight: 400; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.sec-view::before { content: "· "; }
+/* The views dialog: a row per view with its name, cluster count and actions. */
+.view-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.view-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.view-row.is-current { border-color: var(--ink); }
+.view-row input[type="text"] { flex: 1; min-width: 0; }
+.view-row .vw-count { font: 500 12px/1 var(--font-mono); color: var(--ink-3); white-space: nowrap; }
 /* Segments made of buttons: the view toggle, the floor map's meter switch, the catalog tabs. */
 .seg > button {
   display: flex; align-items: center; gap: 5px; padding: 0 var(--seg-pad, 11px); border: 0;
@@ -855,6 +868,7 @@ kbd {
   .brand-name { display: inline; }
   .topbar { flex-wrap: wrap; gap: 10px 12px; }
   .plan-name-wrap { order: 3; flex-basis: 100%; }
+  .view-switch .vw-label { max-width: 96px; }
   .search { order: 4; flex: 1 1 100%; }
   .dlg-body.catalog { grid-template-columns: minmax(0, 1fr); }
   .cat-list { max-height: 30vh; }

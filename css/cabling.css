@@ -352,11 +352,13 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
 
 /* ------------------------------------------------------------ responsive */
 
-/* Icons alone in the workspace switch, and the search gives way first, where the switch would crowd out the plan name. */
+/* Icons alone in the workspace and view switches, and the search gives way first, where the switches would crowd out the plan name. */
 @media (min-width: 961px) and (max-width: 1366px) {
   .ws-switch .ws-label { display: none; }
   .ws-switch > button { padding: 0 9px; }
-  .search { flex-shrink: 3; }
+  .view-switch .vw-label { display: none; }
+  .view-switch .btn { gap: 2px; padding: 0 7px; }
+  .search { flex-shrink: 3; min-width: 140px; }
 }
 /* A short laptop screen keeps more of its height for the table than for the order list. */
 @media (min-width: 961px) and (max-height: 820px) {
@@ -369,7 +371,7 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
   .bom { padding: 8px 14px 10px; }
 }
 @media (max-width: 960px) {
-  .ws-switch { order: 2; }
+  .ws-switch, .view-switch { order: 2; }
   .cab-note { display: none; }
   .pm-hint { margin-left: 0; }
   .pm-head { flex-wrap: wrap; }

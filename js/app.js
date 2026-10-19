@@ -122,8 +122,9 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, views: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
+  if (!prefs.views || typeof prefs.views !== 'object') prefs.views = {};
   if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   if (prefs.detail !== 'bare') prefs.detail = 'full';
@@ -183,7 +184,7 @@
     el.toasts.textContent = '';
     const remembered = prefs.rows[id];
     ui.rowId = remembered && M.rowById(project, remembered) ? remembered : M.allRows(project)[0].row.id;
-    ui.clusterView = project.views[0].id;
+    ui.clusterView = M.viewOf(project, prefs.views[id]).id;
     if (id) lib.setCurrent(id);
   }
 
@@ -993,6 +994,7 @@
     $('#app').classList.toggle('is-cabling', cabling);
     el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
     el.bare.disabled = cabling; // the Cabling drawings keep the ports
+    renderViewSwitch();
     el.undo.disabled = !history.past.length;
     el.redo.disabled = !history.future.length;
     if (document.activeElement !== el.planName) el.planName.value = project.name;
@@ -1006,6 +1008,58 @@
     }
     el.armedHint.hidden = !ui.armed;
     if (cabling) cab.renderChrome();
+  }
+
+  /** The menu button of the plan's views, shown when it has more than one; the cluster list names the view shown. */
+  function renderViewSwitch() {
+    const many = project.views.length > 1;
+    const name = M.viewOf(project, ui.clusterView).name;
+    $('#view-switch').hidden = !many;
+    $('#clusters-view').hidden = !many;
+    $('#clusters-view').textContent = name;
+    $('#view-label').textContent = name;
+    const btn = $('#btn-cluster-view');
+    btn.title = `View ${name}: its clusters color the devices (V)`;
+    btn.setAttribute('aria-label', `View: ${name}`);
+  }
+  function renderViewMenu() {
+    $('#menu-views').innerHTML =
+      project.views
+        .map(
+          (v) =>
+            `<button type="button" role="menuitemradio" aria-checked="${v.id === ui.clusterView}" data-cluster-view="${esc(v.id)}">` +
+            `<span>${esc(v.name)}</span><small>${esc(plural(v.clusters.length, 'cluster'))}</small></button>`
+        )
+        .join('') +
+      `<hr><button type="button" role="menuitem" data-edit-views><span>Edit views…</span><small>Add, copy, rename or delete views</small></button>`;
+  }
+
+  /** Shows view `id`: its clusters color the devices, fill the cluster list and take new devices. */
+  function setClusterView(id) {
+    if (id === ui.clusterView || !M.viewById(project, id)) return;
+    ui.clusterView = id;
+    ui.focusCluster = null;
+    ui.hoverCluster = null;
+    if (planId) {
+      prefs.views[planId] = id;
+      savePrefs();
+    }
+    render();
+    if ($('#dlg-views').open) renderViewList();
+  }
+  $('#menu-views').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cluster-view], [data-edit-views]');
+    if (!b) return;
+    closeMenus();
+    if (b.dataset.clusterView) setClusterView(b.dataset.clusterView);
+    else openViewsDialog();
+  });
+  /** The view after the one shown (`step` 1) or before it (-1), round the end. */
+  function stepClusterView(step) {
+    const views = project.views;
+    if (views.length < 2) return;
+    const i = views.findIndex((v) => v.id === ui.clusterView);
+    setClusterView(views[(i + step + views.length) % views.length].id);
   }
 
   // ------------------------------------------------------------ inspector
@@ -1600,6 +1654,7 @@
       `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
       `<dt><kbd>M</kbd></dt><dd>Floor map</dd>` +
       `<dt><kbd>C</kbd></dt><dd>Cabling</dd>` +
+      (project.views.length > 1 ? `<dt><kbd>V</kbd></dt><dd>Next view</dd>` : '') +
       `<dt><kbd>Shift</kbd> + click</dt><dd>Add to selection</dd>` +
       `<dt><kbd>Shift</kbd> + drag</dt><dd>Select an area</dd>` +
       `<dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>Select the row</dd>` +
@@ -2901,6 +2956,91 @@
     toast(`Deleted cluster ${c.name}`, { action: 'Undo', onAction: undo });
   });
 
+  // Views dialog -------------------------------------------------------
+
+  function renderViewList() {
+    const views = project.views;
+    keepFocus($('#view-list'), () => {
+      $('#view-list').innerHTML = views
+        .map((v, i) => {
+          const current = v.id === ui.clusterView;
+          return (
+            `<li class="view-row${current ? ' is-current' : ''}" data-view-row="${esc(v.id)}">` +
+            `<label class="sr-only" for="view-name-${esc(v.id)}">Name of view ${i + 1}</label>` +
+            `<input id="view-name-${esc(v.id)}" type="text" value="${esc(v.name)}" maxlength="60" autocomplete="off" spellcheck="false" data-view-name="${esc(v.id)}">` +
+            `<span class="vw-count">${esc(plural(v.clusters.length, 'cluster'))}</span>` +
+            `<button type="button" class="btn sm" data-view-show="${esc(v.id)}"${current ? ' disabled aria-pressed="true"' : ''}>${current ? 'Shown' : 'Show'}</button>` +
+            `<button type="button" class="btn icon sm subtle" data-view-delete="${esc(v.id)}"${views.length < 2 ? ' disabled' : ''} title="Delete this view" aria-label="${esc(`Delete view ${v.name}`)}">${icon('trash')}</button>` +
+            `</li>`
+          );
+        })
+        .join('');
+    });
+    const full = views.length >= M.LIMITS.views;
+    $('#view-add').disabled = full;
+    $('#view-copy').disabled = full;
+    showError('#views-error', full ? `A plan holds ${M.LIMITS.views} views.` : '');
+  }
+
+  function openViewsDialog() {
+    renderViewList();
+    openDialog($('#dlg-views'));
+  }
+  $('#btn-views').addEventListener('click', openViewsDialog);
+
+  /** Adds a view (a copy of the view shown with `copy`) and shows it. */
+  function addClusterView(copy) {
+    const from = copy ? ui.clusterView : null;
+    const name = copy ? `${M.viewOf(project, from).name} (copy)` : '';
+    const v = commitAdd((p) => M.addView(p, name, from));
+    if (!v) return;
+    setClusterView(v.id);
+    renderViewList();
+    const input = $(`[data-view-name="${CSS.escape(v.id)}"]`);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+  $('#view-add').addEventListener('click', () => addClusterView(false));
+  $('#view-copy').addEventListener('click', () => addClusterView(true));
+
+  $('#view-list').addEventListener('change', (e) => {
+    const input = e.target.closest('[data-view-name]');
+    if (!input) return;
+    const id = input.dataset.viewName;
+    const name = input.value.trim();
+    const taken = project.views.some((v) => v.id !== id && v.name.toLowerCase() === name.toLowerCase());
+    if (!name || taken) {
+      showError('#views-error', !name ? 'Give the view a name.' : `Another view is named ${name}.`);
+      input.value = M.viewById(project, id).name;
+      return;
+    }
+    showError('#views-error', '');
+    commit((p) => void M.renameView(p, id, name));
+    renderViewList();
+  });
+
+  $('#view-list').addEventListener('click', async (e) => {
+    const show = e.target.closest('[data-view-show]');
+    if (show) return setClusterView(show.dataset.viewShow);
+    const del = e.target.closest('[data-view-delete]');
+    if (!del) return;
+    const v = M.viewById(project, del.dataset.viewDelete);
+    if (!v || project.views.length < 2) return;
+    const ok =
+      !v.clusters.length ||
+      (await confirmDialog({
+        title: `Delete view ${v.name}?`,
+        body: `Its ${plural(v.clusters.length, 'cluster')} go with it. The devices, their places and the cables stay. Undo brings the view back.`,
+        ok: 'Delete view',
+      }));
+    if (!ok) return;
+    commit((p) => void M.removeView(p, v.id));
+    toast(`Deleted view ${v.name}`, { action: 'Undo', onAction: undo });
+    if ($('#dlg-views').open) renderViewList();
+  });
+
   // Confirm and report dialogs -----------------------------------------
 
   function confirmDialog(o) {
@@ -4045,6 +4185,7 @@
     ['#btn-row', '#menu-row', renderRowMenu],
     ['#cat-new', '#menu-cat-new'],
     ['#btn-theme', '#menu-theme'],
+    ['#btn-cluster-view', '#menu-views', renderViewMenu],
   ].forEach(([b, m, fill]) => {
     const btn = $(b);
     const menu = $(m);
@@ -4513,6 +4654,7 @@
     } else if (key === '[') stepRow(-1);
     else if (key === ']') stepRow(1);
     else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
+    else if (letter === 'v') stepClusterView(e.shiftKey ? -1 : 1);
     else if (letter === 'b' && !cabling) setDetail(prefs.detail === 'bare' ? 'full' : 'bare');
     else if (letter === 'm' && !cabling) setView(ui.view === 'map' ? 'sheet' : 'map');
     else if (key === '+' || key === '=') setZoom(ui.zoom * 1.2);
