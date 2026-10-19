@@ -126,6 +126,16 @@ its fans or power supplies, and its front ports are at the rack's rear.
   inserted right after the original.
 - **Clusters**: click one in the left panel to highlight its devices. Use the
   pencil icon to rename or recolor it.
+- **Views**: one plan can group the same devices in more than one way, for
+  example by storage system and by InfiniBand island. Each view has clusters
+  of its own; the devices, their places, the cables and the networks are the
+  same in every view. Open **Views** (the layers icon next to **Clusters**)
+  to add a view, copy the one shown, rename or delete one. With two or more
+  views, a menu next to **Racks** and **Cabling** picks the view shown, and
+  <kbd>V</kbd> steps to the next one. The view shown colors the devices and
+  fills the cluster list, the legend, the search and the fabric groups. A new
+  device gets a cluster in the view shown only. The browser remembers the
+  view shown for each plan.
 - **Move around**: the bar above the drawing has a tab per floor, the row
   picker with previous and next buttons, and a switch between the
   **Elevation** of the current row and the **Floor map**. The floor map shows
@@ -174,6 +184,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 | <kbd>C</kbd> | Racks or Cabling workspace |
 | <kbd>M</kbd> | Floor map on or off (Racks) |
 | <kbd>B</kbd> | Bare devices on or off: names only, without drawn fronts (Racks) |
+| <kbd>V</kbd>, <kbd>Shift</kbd>+<kbd>V</kbd> | Next, previous view, in a plan with more than one |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move the selected devices to the next free position (Racks) |
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack (Racks) |
 | <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling, add or remove a cable, or in the schedule select a range of cables |
@@ -337,7 +348,9 @@ Plans saved by earlier versions are moved into the list automatically.
 - **PNG image** and **SVG drawing** of the current row, with cluster legend and
   title block, always in the light theme. In Cabling they give the cabling
   elevation from the side shown, or the fabric of the network shown (from
-  the port map or the schedule, the row's Racks sheet).
+  the port map or the schedule, the row's Racks sheet). They use the
+  clusters of the view shown, and the legend names that view when the plan
+  has more than one.
 - **Print or PDF**: one sheet per row, for the current row, floor or the whole
   plan, on A4, A3, Letter, Legal or Tabloid, with its **Racks** or its
   cabling (**Cabling front**, **Cabling rear**). The title block names the site,
@@ -345,6 +358,8 @@ Plans saved by earlier versions are moved into the list automatically.
   plan overview (click the empty sheet to see it).
 - **CSV inventory** of every device with floor, row, rack, position, type,
   cluster, serial number, asset tag, IP address, owner, power, weight and notes.
+  A plan with more than one view has a column per view (`Cluster: Lustre`,
+  `Cluster: InfiniBand`).
 - **Cable schedule (CSV)**: one line per cable of the plan, and per leg of a
   breakout cable, with label, network, type, length and whether it is
   estimated, both ends with floor, row, rack, position, device, port and
@@ -367,8 +382,9 @@ Plans saved by earlier versions are moved into the list automatically.
 **Open** also imports a **CSV inventory**, into a new plan or added to the
 current one. It needs Rack, Position (`U12`, `U12-13` or `Side V1`) and Name or
 Type columns; Floor, Row, Height, Cluster and the other columns of the export
-are used when present. Missing floors, rows, racks and clusters are created by
-name, and unknown types become generic types of the given height. Comma,
+are used when present. A `Cluster` column fills the view shown, a
+`Cluster: <view>` column the view of that name. Missing floors, rows, racks,
+views and clusters are created by name, and unknown types become generic types of the given height. Comma,
 semicolon and tab separators all work.
 
 **Open** also reads a **cable schedule CSV**, like the export or made by
@@ -421,9 +437,9 @@ media/               the intro video: its animation, player page and the script 
 ## Data model
 
 A plan is one JSON document, and a plan file is that document as is. Floors
-hold rows and rows hold racks as nested arrays. Devices, cables, the four
-catalogs, clusters and networks are flat lists at the top level and point at
-each other by id.
+hold rows and rows hold racks as nested arrays, and views hold their
+clusters. Devices, cables, the four catalogs, views and networks are flat
+lists at the top level and point at each other by id.
 
 ```mermaid
 erDiagram
@@ -432,7 +448,8 @@ erDiagram
     RACK }o..|| RACK_TYPE : "has type"
     DEVICE }o..|| RACK : "mounted in"
     DEVICE }o..|| DEVICE_TYPE : "has type"
-    DEVICE }o..o| CLUSTER : "grouped in"
+    VIEW ||--o{ CLUSTER : contains
+    DEVICE }o..o{ CLUSTER : "grouped in, one per view"
     DEVICE_TYPE ||--o{ PORT_GROUP : "ports"
     CABLE }o..|{ DEVICE : "end a, ends b"
     CABLE }o..o| CABLE_TYPE : "type, or picked"
@@ -472,7 +489,7 @@ erDiagram
     DEVICE {
         string id PK "random"
         string type FK "device type or reserved"
-        string cluster FK "or null"
+        map groups "view id to cluster id"
         string loc_rack FK "loc.rack"
         string loc_kind "loc.kind: u or side"
         int loc_at "loc.at: top unit or side slot"
@@ -509,8 +526,13 @@ erDiagram
         number speedGbps "1, 25, 200"
         string side "front or rear of the device"
     }
+    VIEW {
+        string id PK "v1, v2, ..."
+        string name "Default"
+        Cluster[] clusters
+    }
     CLUSTER {
-        string id PK "random"
+        string id PK "random, unique in the plan"
         string name "Kestrel"
         string color "#rrggbb"
     }
@@ -560,14 +582,27 @@ Solid lines are arrays nested in their parent, dashed lines are ids. The three
 `loc_` fields are one object in the file, for example
 `"loc": { "rack": "r1", "kind": "u", "at": 5 }`, and a cable's ends are the
 objects `a` and `b`. Besides the nine lists (`floors`, `rackTypes`,
-`deviceTypes`, `cableTypes`, `transceivers`, `clusters`, `networks`,
+`deviceTypes`, `cableTypes`, `transceivers`, `views`, `networks`,
 `devices`, `cables`), the top level holds `app` (`"rackplanner"`),
-`version` (4), the plan's `name`, `info` with the site, author and revision
-for the title block, and `meta`. A plan has 1 to 6 floors, 1 to 20 rack
-types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
+`version` (5), the plan's `name`, `info` with the site, author and revision
+for the title block, and `meta`. A plan has 1 to 6 floors, 1 to 8 views,
+1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
 and 20 000 cables. A device type has up to 32 port groups and 1024 ports. A
 device's `reversed` and `slackM` are left out of the file while they are
 `false` and `null`.
+
+A device's `groups` names its cluster in each view, by view id; a view it is
+missing from leaves it unassigned there. Every device shows in every view.
+
+```json
+"views": [
+  { "id": "v1", "name": "Lustre", "clusters": [{ "id": "c-mds", "name": "MDS", "color": "#2f6fdb" }] },
+  { "id": "v2", "name": "InfiniBand", "clusters": [{ "id": "c-hdr", "name": "HDR island", "color": "#d64545" }] }
+],
+"devices": [
+  { "id": "d-1", "type": "storage-node", "name": "mds-01", "groups": { "v1": "c-mds", "v2": "c-hdr" }, "loc": { "rack": "r1", "kind": "u", "at": 5 } }
+]
+```
 
 Where a device sits:
 
@@ -621,9 +656,10 @@ cables with a warning.
 
 Floors, rows and racks share one id space, so an id names only one of them.
 New ones get the next free `f1`, `row1` or `r1`, new catalog types `t1`,
-`rt1`, `ct1` or `tr1`. Device, cluster, network and cable ids are random.
-Cluster ids starting with `__` are reserved for the app and replaced on
-import.
+`rt1`, `ct1` or `tr1`, new views `v1`. Device, cluster, network and cable ids
+are random. Cluster ids are unique across all views; an import gives a
+cluster id used in an earlier view a new one. View and cluster ids starting
+with `__` are reserved for the app and replaced on import.
 
 What a change does to the rest of the plan:
 
@@ -634,18 +670,21 @@ What a change does to the rest of the plan:
 | Deleting a device | Deletes its cables. A breakout cable only loses its legs there, unless it has none left or loses its head. |
 | Deleting a rack type | Refused while a rack uses it. The last rack type always stays. |
 | Deleting a cable type or transceiver | Refused while a cable names it. |
-| Deleting a cluster | Its devices stay where they are, without a cluster. |
+| Deleting a cluster | Its devices stay where they are, without a cluster in its view. |
+| Deleting a view | Its clusters go with it; devices, cables and networks stay. A plan keeps at least one view. |
 | Deleting a network | Its cables stay, without a network. |
 | Moving or reversing a device | Its cables stay plugged in; estimated lengths follow. |
 | Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series. |
 | Changing a type's ports | Ports keep their cables by group and place in the group; the catalog names the cables a change would unplug before it applies. |
-| A new plan from this layout | No devices, so no cables or networks; the catalogs stay. |
+| A new plan from this layout | No devices, so no clusters, cables or networks; the catalogs and the views (empty) stay. |
 
 **Open** reads plan files of every version. Version 1 counted units from the
 bottom, and versions 1 and 2 had a single list of racks, which becomes one row.
 Versions 1 to 3 had no ports or cables: their standard device types and rack
 types get the standard ports, sizes, tray distance and slack, and the plan
 gets the standard cable types and transceivers and no networks or cables.
+Versions 1 to 4 had one list of clusters and a `cluster` per device: they
+become one view, `Default`.
 
 ## Tests
 
