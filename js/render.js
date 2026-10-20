@@ -912,7 +912,9 @@
     const hU = M.deviceHeight(project, d);
     const rect = rectIn(r, d.loc, hU);
     const dim = o.highlight && !o.highlight(d);
+    const hidden = !!(o.hidden && o.hidden(d));
     const cls = ['dev'];
+    if (hidden) cls.push('is-hidden');
     if (o.dragging && o.dragging.has(d.id)) cls.push('is-dragging');
     if (o.selected && o.selected.has(d.id)) cls.push('is-selected');
     if (type.variable) cls.push('is-reserved');
@@ -928,10 +930,12 @@
       for (const f of M.FIELDS) if (d[f.key]) lines.push(`${f.label}: ${d[f.key]}`);
       s += `<title>${esc(lines.join('\n'))}</title>`;
     } else s += '>';
-    s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare }, d.reversed);
+    const w = rect.rotated ? rect.h : rect.w;
+    const h = rect.rotated ? rect.w : rect.h;
+    // A hidden device keeps its units taken: a dashed outline in place of its face.
+    if (hidden) s += `<rect x="0.75" y="0.75" width="${w - 1.5}" height="${h - 1.5}" rx="2" fill="${T.paper}" fill-opacity="0.85" stroke="${T.ink2}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+    else s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare }, d.reversed);
     if (o.interactive) {
-      const w = rect.rotated ? rect.h : rect.w;
-      const h = rect.rotated ? rect.w : rect.h;
       s += `<rect class="dev-hl" x="-1.5" y="-1.5" width="${w + 3}" height="${h + 3}" rx="3" fill="none" stroke="${T.ink}" stroke-width="1.5"/>`;
     }
     return s + '</g>';
@@ -1059,7 +1063,8 @@
    *   rowId (default: the first row), theme: 'light' | 'dark',
    *   interactive: adds focus/hover hooks and the add-rack slot,
    *   selected: Set of device ids, selectedRack, highlight(device) → bool
-   *   (others are dimmed), dragging: Set of device ids, date,
+   *   (others are dimmed), hidden(device) → bool (drawn as a dashed
+   *   outline only), dragging: Set of device ids, date,
    *   sheet: { index, count }, measure(text, cssFont) → px,
    *   view: id of the view whose clusters color the devices (default: the first)
    */
