@@ -325,6 +325,10 @@ p { margin: 0; }
 .cl-count { font: 500 12px/1 var(--font-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .sec-tools { display: flex; align-items: center; gap: 2px; }
 .cl-edit, .cl-select { opacity: 0; }
+/* The eye of a network stays in sight; the row of a hidden network fades. */
+.btn.cl-eye[aria-pressed] { background: transparent; border-color: transparent; color: var(--ink-3); }
+.btn.cl-eye[aria-pressed="false"] { color: var(--ink-2); }
+.cl-row.is-hidden .cl-main { opacity: 0.45; }
 .cl-row:hover .cl-edit, .cl-row:focus-within .cl-edit, .cl-row:hover .cl-select, .cl-row:focus-within .cl-select { opacity: 1; }
 .sw {
   width: 16px; height: 12px; flex: none; border-radius: 2px;

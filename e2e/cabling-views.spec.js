@@ -957,3 +957,24 @@ test.describe('on a touch screen', () => {
     expect(await outline()).toBe('none');
   });
 });
+
+test('the eye of a network hides its cables in the elevation and shows them again', async ({ page }) => {
+  const cables = page.locator('.scene .cable');
+  const all = await cables.count();
+  const eye = page.locator('#networks [data-net-eye="n-sas"]');
+  await expect(eye).toHaveAttribute('aria-pressed', 'true');
+  await eye.click();
+  await expect(eye).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#networks .cl-row[data-network="n-sas"]')).toHaveClass(/is-hidden/);
+  await expect(cables).toHaveCount(all - 8);
+  await expect(page.locator('.scene [data-port][opacity="0.25"]')).toHaveCount(16);
+  // Keyboard focus stays on the eye; the other views have no eyes, and the elevation keeps what it hides.
+  await expect(page.locator('#networks [data-net-eye="n-sas"]')).toBeFocused();
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await expect(page.locator('#networks [data-net-eye]')).toHaveCount(0);
+  await page.click('#cab-toggle [data-cab-view="elevation"]');
+  await expect(cables).toHaveCount(all - 8);
+  await page.click('#networks [data-net-eye="n-sas"]');
+  await expect(cables).toHaveCount(all);
+  await expect(page.locator('.scene [data-port][opacity]')).toHaveCount(0);
+});

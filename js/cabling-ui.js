@@ -66,6 +66,7 @@
       cabSel: null, // { kind: 'cables', ids } | { kind: 'devices', ids } | { kind: 'port', device, port }
       focusNetwork: null, // network id, NONE for the cables without one, or null
       hoverNetwork: null,
+      hiddenNetworks: new Set(), // networks the elevation does not draw: ids, NONE for the cables without one
       cabType: 'auto', // cable type armed for new cables: 'auto' or a cable type id
       pending: null, // the first port of a connection being made, and the legs set of a breakout cable: { device, port, legs: [{ device, port }] }
     });
@@ -213,6 +214,7 @@
       const valid = (n) => !n || (n === NONE ? p.cables.some((c) => !netOf(c.network)) : !!netOf(n));
       if (!valid(ui.focusNetwork)) ui.focusNetwork = null;
       if (!valid(ui.hoverNetwork)) ui.hoverNetwork = null;
+      for (const k of ui.hiddenNetworks) if (!valid(k)) ui.hiddenNetworks.delete(k);
       if (ui.cabType !== 'auto' && !M.cableTypeById(p, ui.cabType)) ui.cabType = 'auto';
       // A connection being made keeps the ports that are still there and free.
       const freePort = (e) => {
@@ -233,6 +235,7 @@
     /** Forgets the state of the plan that was open: for another plan, or a plan replaced whole. */
     function reset() {
       Object.assign(ui, { cabSel: null, focusNetwork: null, hoverNetwork: null, cabType: 'auto', pending: null });
+      ui.hiddenNetworks.clear();
       fab.network = null;
       pm.rack = null;
       sched.filter = '';
@@ -414,6 +417,7 @@
         pending: ui.pending,
         highlight: searchHits(),
         view: ctx.view(),
+        hiddenNetworks: [...ui.hiddenNetworks].map((k) => (k === NONE ? '' : k)),
       });
       Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
       setScene(out, `Cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
@@ -2120,8 +2124,18 @@
       const per = new Map();
       for (const c of p.cables) per.set(netKey(c), (per.get(netKey(c)) || 0) + 1);
       // Each button has a data attribute of its own, by which keyboard focus finds it again once the list is drawn anew.
+      // The elevation has an eye per network, which shows or hides its cables there.
+      const eyes = ui.cabView === 'elevation';
+      const eye = (id, name) => {
+        const shown = !ui.hiddenNetworks.has(id);
+        return (
+          `<button type="button" class="btn icon sm subtle cl-eye" data-net-eye="${esc(id)}" aria-pressed="${shown}" aria-label="Show ${esc(name)} in the elevation" ` +
+          `title="${shown ? 'Hide its cables in the elevation' : 'Show its cables in the elevation'}">${icon(shown ? 'eye' : 'eye-off')}</button>`
+        );
+      };
       const row = (id, name, color, n, editable) =>
-        `<li class="cl-row" data-network="${esc(id)}">` +
+        `<li class="cl-row${eyes && ui.hiddenNetworks.has(id) ? ' is-hidden' : ''}" data-network="${esc(id)}">` +
+        (eyes ? eye(id, name) : '') +
         `<button type="button" class="cl-main" data-net-focus="${esc(id)}" aria-pressed="${ui.focusNetwork === id}"><span class="sw sw-net" style="--c:${color}"></span>` +
         `<span class="cl-name">${esc(name)}</span><span class="cl-count" title="${plural(n, 'cable')}">${n}</span></button>` +
         (editable
@@ -2185,6 +2199,10 @@
       if (!rowEl) return;
       const id = rowEl.dataset.network;
       if (e.target.closest('.cl-edit')) return openNetworkDialog(id);
+      if (e.target.closest('.cl-eye')) {
+        if (!ui.hiddenNetworks.delete(id)) ui.hiddenNetworks.add(id);
+        return ctx.render({ inspector: false });
+      }
       if (e.target.closest('.cl-main')) {
         ui.focusNetwork = ui.focusNetwork === id ? null : id;
         ui.hoverNetwork = null;

@@ -286,7 +286,9 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   new cables continue the network's series (`IB-0001`, `IB-0002`, …), and
   cables without a network continue `C-0001`. Click a network in the left
   panel to show only its cables; new cables join it (otherwise they get the
-  network used last). Every label can be changed by hand, and **Renumber**
+  network used last). In the elevation, the eye next to a network hides its
+  cables and fades their ports, as for the layers of an image editor; click
+  it again to show them. Every label can be changed by hand, and **Renumber**
   relabels selected cables in the schedule's order.
 - **Inspector**: select a cable to change its label, network, type,
   transceivers, length and notes, or to plug in or unplug the legs of a
