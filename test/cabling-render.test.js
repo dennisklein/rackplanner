@@ -213,6 +213,24 @@ test('a selection draws its cables bold and names the far ends', () => {
   assert.ok(pending.includes('stroke-dasharray="3 2" pointer-events="none"'));
 });
 
+test('hidden networks leave their cables out and fade their ports', () => {
+  const p = M.createExampleProject();
+  const drawn = (body) => new Set([...body.matchAll(/<g class="cable[^"]*" data-cable="([^"]+)"/g)].map((m) => m[1]));
+  const all = CR.elevation(p, { rowId: 'row1', side: 'rear' });
+  const sas = [...drawn(all.body)].filter((id) => p.cables.find((c) => c.id === id).network === 'n-sas');
+  assert.equal(sas.length, 8);
+  const out = CR.elevation(p, { rowId: 'row1', side: 'rear', hiddenNetworks: ['n-sas'] });
+  const left = drawn(out.body);
+  for (const id of sas) assert.ok(!left.has(id), 'a hidden cable is not drawn');
+  assert.equal(left.size, drawn(all.body).size - sas.length, 'the other cables are');
+  // The cables of other networks keep their place.
+  for (const id of left) assert.deepEqual(out.layout.cables.get(id), all.layout.cables.get(id));
+  // The ports of hidden cables fade, and keep their place too.
+  assert.equal(count(out.body, '" opacity="0.25"><'), 16, 'both ends of each');
+  assert.deepEqual([...out.layout.ports], [...all.layout.ports]);
+  assertWellFormed(wrap(out));
+});
+
 test('a breakout is one cable drawn as its legs', () => {
   const p = M.createExampleProject();
   const out = CR.elevation(p, { rowId: 'row2', side: 'rear' }).body;
