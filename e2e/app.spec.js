@@ -838,3 +838,18 @@ test.describe('on a phone', () => {
     await expect(page.locator('#cat-label')).toHaveValue('GPU server 2');
   });
 });
+
+test('the eye of a cluster hides its devices in the racks and shows them again', async ({ page }) => {
+  const eye = page.locator('#clusters [data-cl-eye="c-kestrel"]');
+  await expect(eye).toHaveAttribute('aria-pressed', 'true');
+  await eye.click();
+  await expect(eye).toHaveAttribute('aria-pressed', 'false');
+  await expect(eye).toBeFocused();
+  await expect(page.locator('#clusters .cl-row[data-cluster="c-kestrel"]')).toHaveClass(/is-hidden/);
+  // Its devices keep their units, drawn as outlines; the others are as they were.
+  await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(12);
+  await expect(devices(page)).toHaveCount(37);
+  await expect(device(page, 'gpu-001')).not.toHaveClass(/is-hidden/);
+  await eye.click();
+  await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
+});

@@ -143,6 +143,7 @@
     clusterView: null, // id of the plan view whose clusters color the devices (ui.view is the sheet or floor map)
     focusCluster: null, // cluster id, '__none' for unassigned, or null
     hoverCluster: null,
+    hiddenClusters: new Set(), // clusters the sheet does not draw: ids, '__none' for unassigned devices
     query: '',
     searchOpen: false,
     searchActive: -1,
@@ -178,6 +179,7 @@
     ui.selection = null;
     ui.focusCluster = null;
     ui.hoverCluster = null;
+    ui.hiddenClusters.clear();
     ui.armed = null;
     cab.reset();
     // Undo buttons in toasts refer to the previous plan.
@@ -476,6 +478,7 @@
     const valid = (c) => !c || (c === '__none' ? project.devices.some((d) => !clusterIdOf(d)) : viewClusters().some((x) => x.id === c));
     if (!valid(ui.focusCluster)) ui.focusCluster = null;
     if (!valid(ui.hoverCluster)) ui.hoverCluster = null;
+    for (const c of ui.hiddenClusters) if (!valid(c)) ui.hiddenClusters.delete(c);
     if (ui.armed && !M.typeOf(project, ui.armed)) ui.armed = null;
     cab.prune();
   }
@@ -564,6 +567,7 @@
       selected: selSet(),
       selectedRack: sel && sel.kind === 'rack' ? sel.id : null,
       highlight: highlightFn(),
+      hidden: ui.hiddenClusters.size ? (dev) => ui.hiddenClusters.has(clusterIdOf(dev) || '__none') : null,
       view: ui.clusterView,
       dragging: d && d.active && d.source === 'device' && !d.copy ? new Set(d.ids) : null,
     });
@@ -967,8 +971,17 @@
       if (c) counts.set(c, (counts.get(c) || 0) + 1);
       else unassigned++;
     }
+    // An eye per cluster shows or hides its devices in the racks.
+    const eye = (id, name) => {
+      const shown = !ui.hiddenClusters.has(id);
+      return (
+        `<button type="button" class="btn icon sm subtle cl-eye" data-cl-eye="${esc(id)}" aria-pressed="${shown}" aria-label="Show ${esc(name)} in the racks" ` +
+        `title="${shown ? 'Hide its devices in the racks' : 'Show its devices in the racks'}">${icon(shown ? 'eye' : 'eye-off')}</button>`
+      );
+    };
     const row = (id, name, color, count, editable) =>
-      `<li class="cl-row" data-cluster="${esc(id)}">` +
+      `<li class="cl-row${ui.hiddenClusters.has(id) ? ' is-hidden' : ''}" data-cluster="${esc(id)}">` +
+      eye(id, name) +
       `<button type="button" class="cl-main" aria-pressed="${ui.focusCluster === id}">` +
       `<span class="sw" style="--c:${color || 'var(--unassigned)'}"></span>` +
       `<span class="cl-name">${esc(name)}</span><span class="cl-count" title="${count} devices">${count}</span></button>` +
@@ -980,7 +993,7 @@
     const clusters = viewClusters();
     let html = clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
-    el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`;
+    keepFocus(el.clusters, () => (el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`));
     el.clustersHint.textContent = !clusters.length
       ? 'Clusters give devices that belong together one color.'
       : ui.focusCluster
@@ -2400,6 +2413,10 @@
     if (!rowEl) return;
     const id = rowEl.dataset.cluster;
     if (e.target.closest('.cl-edit')) return openClusterDialog(id);
+    if (e.target.closest('.cl-eye')) {
+      if (!ui.hiddenClusters.delete(id)) ui.hiddenClusters.add(id);
+      return render({ inspector: false });
+    }
     if (e.target.closest('.cl-select')) {
       const devs = project.devices.filter((d) => (id === '__none' ? !clusterIdOf(d) && d.type !== M.RESERVED.id : clusterIdOf(d) === id));
       const inRow = devs.filter((d) => rowOfRack(d.loc.rack) === ui.rowId);
