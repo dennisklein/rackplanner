@@ -21,6 +21,8 @@
   const HISTORY_LIMIT = 200;
   // Undo keeps whole snapshots; cap their total size for very large plans.
   const HISTORY_CHARS = 40e6;
+  /** "Click" in a hint, which a touch screen reads as "Tap" (css/app.css shows one of the two). */
+  const CLICK = '<span class="hint-touch">Tap</span><span class="hint-pointer">Click</span>';
   const COLOR_NAMES = ['Cobalt', 'Orange', 'Teal', 'Violet', 'Amber', 'Red', 'Green', 'Cyan', 'Rose', 'Indigo', 'Olive', 'Brown'];
   const SHARE_PREFIX = '#plan=';
   // What the theme button offers, and how it names each one.
@@ -1188,11 +1190,11 @@
     let html = clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
     keepFocus(el.clusters, () => (el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`));
-    el.clustersHint.textContent = !clusters.length
+    el.clustersHint.innerHTML = !clusters.length
       ? 'Clusters give devices that belong together one color.'
       : ui.focusCluster
-        ? 'Click the highlighted cluster again to show all devices.'
-        : 'Click a cluster to highlight its devices in the racks.';
+        ? `${CLICK} the highlighted cluster again to show all devices.`
+        : `${CLICK} a cluster to highlight its devices in the racks.`;
   }
 
   function renderChrome() {
@@ -1210,8 +1212,8 @@
       const t = M.typeOf(project, ui.armed);
       const what = `${t.variable ? '' : 'a '}<strong>${esc(t.label.toLowerCase())}</strong>`;
       el.armedHint.innerHTML =
-        `<span class="hint-pointer">Click a free slot to place ${what}, or press <kbd>Enter</kbd> to choose one</span>` +
-        `<span class="hint-touch">Tap a free slot to place ${what}</span><kbd>Esc</kbd>` +
+        `<span class="hint-pointer">Click a free slot to place ${what}, or press <kbd>Enter</kbd> to choose one <kbd>Esc</kbd></span>` +
+        `<span class="hint-touch">Tap a free slot to place ${what}</span>` +
         `<button type="button" data-disarm aria-label="Stop placing">${icon('x', 'ic-sm')}</button>`;
     }
     el.armedHint.hidden = !ui.armed;
@@ -1898,7 +1900,7 @@
 
     el.inspector.innerHTML =
       `<div class="insp-head"><div class="kicker">Plan overview</div>` +
-      `<p class="insp-note">Select a device, a rack’s yellow label, a row or a floor to edit it. Shift-click or Shift-drag to select several devices.</p></div>` +
+      `<p class="insp-note">Select a device, a rack’s yellow label, a row or a floor to edit it. <span class="hint-pointer">Shift-click or Shift-drag to select several devices.</span><span class="hint-touch">A cluster’s select button selects all its devices.</span></p></div>` +
       `<section class="insp-sec"><h3>Title block</h3><div class="field-grid">` +
       infoField('site', 'Site', 'Data center, hall') +
       infoField('author', 'Drawn by', 'Name') +

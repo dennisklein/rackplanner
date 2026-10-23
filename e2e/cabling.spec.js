@@ -195,7 +195,7 @@ test('network chips, the network in focus and the text filter narrow the schedul
   const mgt = await plan(page, (p, a, RP) => RP.cabling.cablesWithin(p, 'row1').filter((c) => c.network === 'n-mgmt').length);
   await expect(rows(page)).toHaveCount(mgt);
   await expect(page.locator('#sc-body .sc-label').first()).toHaveText(/^MGT-/);
-  await expect(page.locator('#networks-hint')).toHaveText('Click the highlighted network again to show all cables.');
+  await expect(page.locator('#networks-hint')).toHaveText('Click the highlighted network again to show all cables.', { useInnerText: true });
   await page.keyboard.press('Escape');
   await expect(rows(page)).toHaveCount(112);
   await expect(page.locator('#networks .cl-main', { hasText: 'Management' })).toHaveAttribute('aria-pressed', 'false');

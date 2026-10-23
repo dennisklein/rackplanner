@@ -300,8 +300,9 @@ message's **Front** or **Rear** goes there and keeps the first. The cable type p
 default, picks the first type in the catalog that fits both ports and
 reaches the length. For a breakout cable (one head, 2 to 8 legs), pick its
 type, click the head's port and then a port for each leg; <kbd>Enter</kbd>
-or <kbd>Esc</kbd> connects it with the legs set so far. Before that,
-<kbd>Esc</kbd> cancels. **+ Cable** in the schedule connects two ports
+or <kbd>Esc</kbd> connects it with the legs set so far (on a touch screen,
+the message's **finish with** does). Before that, <kbd>Esc</kbd> or the
+message's **×** cancels. **+ Cable** in the schedule connects two ports
 picked from lists, and so does a free port's inspector, or **Connect…**
 beside a free port in a device's inspector. In Cabling, messages show at the
 foot of the inspector, off the drawing, and each new connection's message

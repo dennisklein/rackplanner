@@ -966,6 +966,25 @@ test.describe('on a touch screen', () => {
     await expect(page.locator('#inspector .kicker')).toHaveText('Leaf switch · InfiniBand');
     expect(await outline()).toBe('none');
   });
+
+  test('the connecting hint says Tap, names no keys, and finishes a breakout cable with a button', async ({ page }) => {
+    const hint = page.locator('#armed-hint');
+    await page.click('#btn-row-next');
+    await page.locator('.cab-card[data-cab-type="dac-osfp-2x"]').tap();
+    await page.click('#btn-zoom-reset');
+    const head = await port(page, 'ib-leaf-b02', 'p7');
+    await head.scrollIntoViewIfNeeded();
+    await head.tap();
+    await expect(hint).toHaveText(/^Tap the first of 2 legs to connect ib-leaf-b02 p7 with OSFP to 2 × QSFP56 DAC$/, { useInnerText: true });
+    const leg = await port(page, 'core-sw-01', 'p11');
+    await leg.scrollIntoViewIfNeeded();
+    await leg.tap();
+    await expect(hint).toHaveText(/^Tap leg 2 of 2 of .+, or finish with 1$/, { useInnerText: true });
+    await hint.locator('[data-cab-finish]').tap();
+    await expect(hint).toBeHidden();
+    expect((await cableAt(page, 'ib-leaf-b02', 'p7')).b).toEqual([{ device: await idOf(page, 'core-sw-01'), port: 'p11' }, null]);
+    await expect(page.locator('#networks-hint')).toHaveText(/^Tap a network/, { useInnerText: true });
+  });
 });
 
 test('the eye of a network hides its cables in the elevation and shows them again', async ({ page }) => {

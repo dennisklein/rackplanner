@@ -22,6 +22,8 @@
   const IO = window.RP.io;
 
   const NONE = '__none'; // the cables without a network, as a network to focus or filter
+  /** "Click" in a hint, which a touch screen reads as "Tap" (css/app.css shows one of the two). */
+  const CLICK = '<span class="hint-touch">Tap</span><span class="hint-pointer">Click</span>';
   const SCOPES = ['row', 'floor', 'plan'];
   const GROUPS = [
     ['route', 'By route'],
@@ -1303,20 +1305,23 @@
         const t = armedType();
         const from = `<strong>${esc(`${d.name} ${pd.port}`)}</strong>`;
         const with_ = `<strong>${esc(t ? t.name : 'Auto')}</strong>`;
+        // A touch screen has no keys: the X cancels, and a button finishes a breakout cable.
+        const keys = (text) => `<span class="hint-pointer">${text}</span>`;
         let msg;
         if (pd.fill) {
           const c = cableById(pd.fill.cable);
-          msg = `Click a free port for leg ${pd.fill.leg + 1} of <strong>${esc(c ? c.label || 'the cable' : 'the cable')}</strong> from ${from}, <kbd>Esc</kbd> to cancel`;
+          msg = `${CLICK} a free port for leg ${pd.fill.leg + 1} of <strong>${esc(c ? c.label || 'the cable' : 'the cable')}</strong> from ${from}${keys(', <kbd>Esc</kbd> to cancel')}`;
         } else if (t && t.legs > 1) {
           const n = pd.legs.length;
           msg = n
-            ? `Click leg ${n + 1} of ${t.legs} of ${with_} from ${from}; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`
-            : `Click the first of ${t.legs} legs to connect ${from} with ${with_}, <kbd>Esc</kbd> to cancel`;
+            ? `${CLICK} leg ${n + 1} of ${t.legs} of ${with_} from ${from}${keys(`; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`)}` +
+              `<span class="hint-touch">, or <button type="button" class="hint-link" data-cab-finish>finish with ${n}</button></span>`
+            : `${CLICK} the first of ${t.legs} legs to connect ${from} with ${with_}${keys(', <kbd>Esc</kbd> to cancel')}`;
         } else {
           // New switches face the rear, but a plan may have their ports on the other side.
           const other = prefs.cabSide === 'front' ? 'rear' : 'front';
           const go = ui.cabView === 'elevation' ? `, or go to the <button type="button" class="hint-link" data-cab-side="${other}">${other === 'front' ? 'Front' : 'Rear'}</button>` : '';
-          msg = `Click a second port to connect ${from} with ${with_}${go ? `${go};` : ','} <kbd>Esc</kbd> to cancel`;
+          msg = `${CLICK} a second port to connect ${from} with ${with_}${go}${keys(`${go ? ';' : ','} <kbd>Esc</kbd> to cancel`)}`;
         }
         el.armedHint.innerHTML = `<span>${msg}</span><button type="button" data-cab-cancel aria-label="Stop connecting" title="Stop connecting">${icon('x', 'ic-sm')}</button>`;
       }
@@ -1324,6 +1329,7 @@
     }
     el.armedHint.addEventListener('click', (e) => {
       if (e.target.closest('[data-cab-cancel]')) cancelPending();
+      if (e.target.closest('[data-cab-finish]')) finishLegs();
       const side = e.target.closest('[data-cab-side]');
       if (side) setSide(side.dataset.cabSide);
     });
@@ -2158,11 +2164,11 @@
       }
       const ports = p.devices.reduce((a, d) => a + portsOf(d).size, 0);
       const free = ports - cableIndex().size;
-      $('#networks-hint').textContent = !p.networks.length
+      $('#networks-hint').innerHTML = !p.networks.length
         ? 'Networks give cables a color and a series of labels.'
         : ui.focusNetwork
-          ? 'Click the highlighted network again to show all cables.'
-          : `Click a network to show only its cables. ${plural(free, 'port is', 'ports are')} still free.`;
+          ? `${CLICK} the highlighted network again to show all cables.`
+          : `${CLICK} a network to show only its cables. ${plural(free, 'port is', 'ports are')} still free.`;
     }
     /** Back to the Racks workspace. */
     function hideBin() {

@@ -1275,8 +1275,13 @@ test.describe('on a phone', () => {
     expect(offscreen).toBe(0);
 
     await page.locator('.part[data-type="switch-qsfp"]').tap();
-    // The page scrolls to the drawing, under the devices, with its hint.
+    // The page scrolls to the drawing, under the devices, with its hint, which names no keys.
     await expect(page.locator('#armed-hint')).toBeInViewport();
+    await expect(page.locator('#armed-hint')).toHaveText('Tap a free slot to place a 24-port switch', { useInnerText: true });
+    await expect(page.locator('#clusters-hint')).toHaveText('Tap a cluster to highlight its devices in the racks.', { useInnerText: true });
+    const note = page.locator('#inspector .insp-note', { hasText: 'Select a device' });
+    await expect(note).toContainText('A cluster’s select button selects all its devices.', { useInnerText: true });
+    await expect(note).not.toContainText('Shift', { useInnerText: true });
     await expect.poll(stageTop(page)).toBe(0);
     // At 100%, U30 is further down the drawing.
     let target = await spot(page, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 30 });
