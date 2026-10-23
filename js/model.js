@@ -1489,6 +1489,28 @@
       const start = Math.max(1, Math.min(units - h + 1, startU));
       return planPositions(project, typeId, id, start, count, dir, null, height);
     });
+    return spreadOver(racks, avail, count);
+  }
+
+  /**
+   * Plans `count` devices of `typeId` in the free side slots of `rackIds`,
+   * spread evenly over them as in planSpread: in the first rack from slot
+   * `start` on and then the slots before it, in the others from the top.
+   * Returns [{ rack, at }] rack by rack; fewer than `count` when the side
+   * slots are full.
+   */
+  function planSideSlots(project, typeId, rackIdsList, start, count) {
+    const racks = rackIdsList.filter((id) => rackById(project, id));
+    if (!racks.length || !typeOf(project, typeId)) return [];
+    const avail = racks.map((id, i) => {
+      const free = validLocs(project, typeId, id).filter((l) => l.kind === 'side').map((l) => l.at);
+      return i ? free : free.filter((at) => at >= start).concat(free.filter((at) => at < start));
+    });
+    return spreadOver(racks, avail, count);
+  }
+
+  /** Takes `count` of the positions `avail[i]` of racks `racks[i]`, as evenly as they allow: [{ rack, at }]. */
+  function spreadOver(racks, avail, count) {
     const k = racks.length;
     const take = racks.map((_, i) => Math.min(avail[i].length, Math.floor(count / k) + (i < count % k ? 1 : 0)));
     let rest = count - take.reduce((a, b) => a + b, 0);
@@ -1889,6 +1911,24 @@
     if (count <= 1) return [name];
     const s = seriesOf(name);
     return Array.from({ length: count }, (_, i) => formatSerial(s, s.num + i));
+  }
+
+  /**
+   * Names for new devices in racks `rackIds` (one per device), named after
+   * `first`, a name for rack `fromRackId`. When `first` holds the code of
+   * that rack, each name holds the code of its own rack and counts on there
+   * (pdu-a01-a, pdu-a01-b, pdu-a02-a); otherwise they count on from `first`
+   * as in nameSequence.
+   */
+  function namesAt(project, first, fromRackId, rackIds) {
+    const name = String(first == null ? '' : first).trim();
+    if (!rackCodeIn(project, name, fromRackId)) return nameSequence(name, rackIds.length);
+    const names = [];
+    for (const rackId of rackIds) {
+      const named = { devices: project.devices.concat(names.map((n) => ({ name: n }))) };
+      names.push(rackId === fromRackId && !names.includes(name) ? name : nameInRack(Object.assign({}, project, named), name, fromRackId, rackId, 1, true));
+    }
+    return names;
   }
 
   /**
@@ -2781,6 +2821,7 @@
     canPlace,
     planPositions,
     planSpread,
+    planSideSlots,
     validLocs,
     nudgeTarget,
     nearestLoc,
@@ -2807,6 +2848,7 @@
     suggestPlacement,
     suggestName,
     nameInRack,
+    namesAt,
     nextFreeName,
     nextClusterColor,
     nextClusterName,

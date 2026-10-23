@@ -124,6 +124,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   (`U20–23, U36–39 · skips ceph-01 … ceph-03`), and outlines them in the racks.
   Tick **Spread evenly across racks in this row** and pick the racks to share
   them out; a rack that runs out of space leaves the rest to the others.
+  Devices dropped on a side slot take the free side slots, from that one on,
+  in the rack or in the racks picked. A name with the code of its rack takes
+  the code of each rack: `pdu-a01-a`, `pdu-a01-b`, `pdu-a02-a`.
 - **Move**: drag devices between units, racks and side slots. Hold <kbd>Alt</kbd>
   while dropping to copy instead. On a touch screen, tap the selected device
   again, then tap a free slot.

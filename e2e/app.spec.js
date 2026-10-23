@@ -116,6 +116,34 @@ test('the place dialog follows the Rack field with the name and the cluster, unt
   await expect(page.locator('input[name="place-cluster"][value="c-osprey"]')).toBeChecked();
 });
 
+test('several side-slot devices fill the free side slots, in the rack or spread over the row', async ({ page }) => {
+  await dragPart(page, 'pdu', await spot(page, 'pdu', { rack: 'r2', kind: 'side', at: 0 }));
+  await page.mouse.up();
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  await expect(page.locator('#place-name')).toHaveValue('pdu-a02-a');
+  await expect(page.locator('#place-dir-field')).toBeHidden();
+  await page.fill('#place-qty', '2');
+  await expect(page.locator('#place-preview')).toHaveText('pdu-a02-a … pdu-a02-b · Side slots V1, V2');
+  await page.fill('#place-qty', '3');
+  await expect(page.locator('#place-preview')).toHaveText('Only 2 side slots are free in this rack.');
+  await expect(page.locator('#place-submit')).toBeDisabled();
+  // Spread over Row A: A01 and A03 have one free side slot each.
+  await page.check('#place-spread');
+  await page.locator('#place-racks input[value="r1"]').check({ force: true });
+  await page.fill('#place-qty', '4');
+  await expect(page.locator('#place-preview')).toHaveText('pdu-a01-a … pdu-a03-a · A01 ×1, A02 ×2, A03 ×1');
+  await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(4);
+  await page.click('#place-submit');
+  await expect(page.locator('#dlg-place')).toBeHidden();
+  const placed = await page.evaluate(() =>
+    window.RP.app
+      .project()
+      .devices.filter((d) => d.type === 'pdu' && d.loc.rack[1] < '4')
+      .map((d) => `${d.name} ${d.loc.rack} ${d.loc.kind} ${d.loc.at}`)
+  );
+  expect(placed.sort()).toEqual(['pdu-a01-a r1 side 1', 'pdu-a02-a r2 side 0', 'pdu-a02-b r2 side 1', 'pdu-a03-a r3 side 1']);
+});
+
 test('names other devices have are flagged, with a free series to use instead', async ({ page }) => {
   await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 32 }));
   await page.mouse.up();

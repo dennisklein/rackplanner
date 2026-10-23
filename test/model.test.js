@@ -221,6 +221,35 @@ test('planSpread spreads devices evenly and overflows into racks with room', () 
   ], 'fewer when the racks run out of space');
 });
 
+test('planSideSlots fills free side slots from the one picked, then over the racks given', () => {
+  // Rack A02 (r2) has two free side slots, A01 and A03 one each (V2), B01 (r4) none.
+  const p = M.createExampleProject();
+  assert.deepEqual(M.planSideSlots(p, 'pdu', ['r2'], 1, 2), [
+    { rack: 'r2', at: 1 },
+    { rack: 'r2', at: 0 },
+  ]);
+  assert.deepEqual(M.planSideSlots(p, 'pdu', ['r1', 'r2', 'r3'], 0, 3), [
+    { rack: 'r1', at: 1 },
+    { rack: 'r2', at: 0 },
+    { rack: 'r3', at: 1 },
+  ]);
+  assert.deepEqual(M.planSideSlots(p, 'pdu', ['r4', 'r1', 'r2'], 0, 3), [
+    { rack: 'r1', at: 1 },
+    { rack: 'r2', at: 0 },
+    { rack: 'r2', at: 1 },
+  ], 'the others take the share of a full rack');
+  assert.equal(M.planSideSlots(p, 'pdu', ['r4', 'r1', 'r3'], 0, Infinity).length, 2, 'fewer when the side slots are full');
+});
+
+test('namesAt gives each new device the code of its rack', () => {
+  const p = M.createExampleProject();
+  assert.deepEqual(M.namesAt(p, 'pdu-a01-a', 'r1', ['r1', 'r1', 'r2', 'r3']), ['pdu-a01-a', 'pdu-a01-b', 'pdu-a02-a', 'pdu-a03-a']);
+  assert.deepEqual(M.namesAt(p, 'pdu-a02-a', 'r2', ['r1', 'r2', 'r2']), ['pdu-a01-a', 'pdu-a02-a', 'pdu-a02-b'], 'the name given is for its own rack');
+  assert.deepEqual(M.namesAt(p, 'pdu-b03-c', 'r6', ['r6', 'r6']), ['pdu-b03-c', 'pdu-b03-d']);
+  assert.deepEqual(M.namesAt(p, 'cn-a01-01', 'r1', ['r1', 'r1', 'r2']), ['cn-a01-01', 'cn-a01-02', 'cn-a02-01']);
+  assert.deepEqual(M.namesAt(p, 'cn-013', 'r1', ['r1', 'r2', 'r2']), ['cn-013', 'cn-014', 'cn-015'], 'names without a code count on');
+});
+
 test('validLocs, nudgeTarget and nearestLoc find free space', () => {
   const p = project([
     ['compute-node', 'r1', 'u', 20],

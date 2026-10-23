@@ -3280,9 +3280,8 @@
     $('#place-rack').innerHTML = rackOptions(loc.rack);
     renderPlacePositions();
     $('#place-height').max = String(M.rackUnits(project, loc.rack));
-    $('#place-qty-field').hidden = loc.kind !== 'u';
     $('#place-dir-field').hidden = loc.kind !== 'u';
-    const canSpread = loc.kind === 'u' && row.racks.length > 1;
+    const canSpread = row.racks.length > 1;
     $('#place-spread-wrap').hidden = !canSpread;
     $('#place-racks').hidden = true;
     const start = row.racks.findIndex((r) => r.id === loc.rack);
@@ -3363,35 +3362,28 @@
       : placeFits(loc, height)
         ? `${M.formatLoc(project, loc, type.id, height)} · ${M.formatTypeSpec(type, height)}`
         : `${rackName} · does not fit at U${loc.at} · ${M.formatTypeSpec(type, height)}`;
-    if (loc.kind !== 'u') {
-      const check = M.canPlace(project, type.id, loc, null, height);
-      place.positions = [{ rack: loc.rack, at: loc.at }];
-      place.valid = check.ok;
-      line.textContent = check.ok ? '' : check.reason;
-      line.classList.toggle('bad', !check.ok);
-      line.hidden = check.ok;
-      submit.textContent = 'Place';
-      submit.disabled = !place.valid;
-      notePlaceClash();
-      notePlaceBudget();
-      drawPlaceGhosts();
-      return;
-    }
+    const side = loc.kind === 'side';
     const spread = !$('#place-spread-wrap').hidden && $('#place-spread').checked;
     $('#place-racks').hidden = !spread;
-    let max;
-    if (spread) {
-      const racks = $$('#place-racks input:checked').map((i) => i.value);
-      place.positions = M.planSpread(project, type.id, racks, loc.at, qty, dir, height);
-      max = M.planSpread(project, type.id, racks, loc.at, Infinity, dir, height).length;
-      if (!racks.length) {
-        place.valid = false;
-        line.classList.add('bad');
-        line.textContent = 'Pick the racks to spread over.';
-      }
-    } else {
-      place.positions = M.planPositions(project, type.id, loc.rack, loc.at, qty, dir, null, height).map((at) => ({ rack: loc.rack, at }));
-      max = M.planPositions(project, type.id, loc.rack, loc.at, Infinity, dir, null, height).length;
+    const racks = spread ? $$('#place-racks input:checked').map((i) => i.value) : [loc.rack];
+    // Side-slot devices take the free side slots from the one picked on, in this rack or the racks to spread over.
+    const plan = (n) =>
+      side
+        ? M.planSideSlots(project, type.id, racks, loc.at, n)
+        : spread
+          ? M.planSpread(project, type.id, racks, loc.at, n, dir, height)
+          : M.planPositions(project, type.id, loc.rack, loc.at, n, dir, null, height).map((at) => ({ rack: loc.rack, at }));
+    place.positions = plan(qty);
+    const max = plan(Infinity).length;
+    if (tooTall) {
+      place.valid = false;
+      line.classList.add('bad');
+      line.textContent = `${rackName} has ${units} units: ${typed}U do not fit.`;
+    } else if (spread && !racks.length) {
+      place.valid = false;
+      line.classList.add('bad');
+      line.textContent = 'Pick the racks to spread over.';
+    } else if (!spread) {
       // The first device goes where it was dropped (a taller reservation may no longer fit there).
       const here = M.canPlace(project, type.id, loc, null, height);
       if (!here.ok) {
@@ -3400,30 +3392,30 @@
         line.textContent = here.reason;
       }
     }
-    if (tooTall) {
-      place.valid = false;
-      line.classList.add('bad');
-      line.textContent = `${rackName} has ${units} units: ${typed}U do not fit.`;
-    }
     qtyInput.max = String(Math.max(1, max));
     if (!place.valid) {
       /* message set above */
     } else if (place.positions.length < qty) {
       place.valid = false;
       line.classList.add('bad');
-      line.textContent = `Only ${max} fit ${dir < 0 ? 'upward' : 'downward'} from U${loc.at} in ${spread ? 'these racks' : 'this rack'}.`;
+      const these = spread ? 'these racks' : 'this rack';
+      line.textContent = side
+        ? `Only ${plural(max, 'side slot')} ${max === 1 ? 'is' : 'are'} free in ${these}.`
+        : `Only ${max} fit ${dir < 0 ? 'upward' : 'downward'} from U${loc.at} in ${these}.`;
     } else if (!place.positions.length) {
       place.valid = false;
       line.classList.add('bad');
       line.textContent = M.canPlace(project, type.id, loc, null, height).reason || 'It does not fit here.';
     } else if (qty > 1 || spread) {
-      const names = M.nameSequence(nameInput.value.trim(), qty);
+      const names = placeNames();
       const per = new Map();
       for (const p of place.positions) per.set(p.rack, (per.get(p.rack) || 0) + 1);
       const where =
         per.size > 1
           ? [...per].map(([r, n]) => `${shortRack(M.rackById(project, r).name)} ×${n}`).join(', ')
-          : blocksText(place.positions[0].rack, place.positions.map((p) => p.at), M.heightOf(project, type.id, height));
+          : side
+            ? `Side slots ${place.positions.map((p) => `V${p.at + 1}`).join(', ')}`
+            : blocksText(place.positions[0].rack, place.positions.map((p) => p.at), M.heightOf(project, type.id, height));
       line.textContent = `${names[0]}${qty > 1 ? ` … ${names[qty - 1]}` : ''} · ${where}`;
     }
     line.hidden = !line.textContent;
@@ -3464,7 +3456,7 @@
   /** Shows in the place dialog which of its names are taken. */
   function notePlaceClash() {
     const name = $('#place-name').value.trim();
-    const html = name ? clashNote(M.nameSequence(name, Math.max(1, place.positions.length)), [], 'place-dup-use') : '';
+    const html = name ? clashNote(place.positions.length ? placeNames() : [name], [], 'place-dup-use') : '';
     $('#place-dup').innerHTML = html;
     $('#place-dup').hidden = !html;
   }
@@ -3501,7 +3493,7 @@
     const picked = ($('input[name="place-cluster"]:checked') || { value: '' }).value;
     const color = picked === '__new' ? place.newColor : clusterColor(picked);
     const height = placeHeight();
-    const names = M.nameSequence($('#place-name').value.trim(), place.positions.length);
+    const names = placeNames();
     const items = placeLocs().map((loc, i) => ({
       typeId: place.typeId,
       loc,
@@ -3514,8 +3506,10 @@
     setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare', warn }));
   }
 
+  /** The names of the devices the place dialog adds, each with the code of its rack where the name holds one. */
+  const placeNames = () => M.namesAt(project, $('#place-name').value, place.loc.rack, place.positions.map((pos) => pos.rack));
   /** Where the place dialog puts its devices: a loc for each of place.positions. */
-  const placeLocs = () => place.positions.map((pos) => ({ rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at }));
+  const placeLocs = () => place.positions.map((pos) => ({ rack: pos.rack, kind: place.loc.kind, at: pos.at }));
   /** "Rack A01 will be at 12.1 kW of 12.0 kW; …" for racks over a budget (`list` from M.overBudgetWith). */
   const overLine = (list, verb) => list.map((o) => `${o.rack.name} ${verb} ${overText(o.stats)}`).join('; ');
 
@@ -3600,7 +3594,7 @@
     const groups = Object.assign({}, place.groups, { [view]: clusterId });
     if (!clusterId) delete groups[view];
     const count = place.positions.length;
-    const names = M.nameSequence(name, count);
+    const names = placeNames();
     const taken = M.takenNames(project, names);
     if (taken.length && !(await confirmTaken(taken, count > 1 ? `Place ${count} anyway` : 'Place anyway'))) return;
     const height = placeHeight();
