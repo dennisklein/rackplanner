@@ -3565,6 +3565,30 @@
     }));
     const warn = place.over.length > 0;
     setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare', warn }));
+    clearGhosts($('#dlg-place'));
+  }
+
+  /**
+   * Moves dialog `dlg` sideways off the ghosts in view, to the side of them
+   * with more room, when it covers them and that side has room for it.
+   */
+  function clearGhosts(dlg) {
+    dlg.style.translate = '';
+    const layer = el.svg.querySelector('#ghost-layer');
+    if (!layer || !layer.childElementCount) return;
+    const c = el.canvas.getBoundingClientRect();
+    const g = layer.getBoundingClientRect();
+    const left = Math.max(g.left, c.left);
+    const right = Math.min(g.right, c.right);
+    const d = dlg.getBoundingClientRect();
+    const covers = left < right && left < d.right && right > d.left && Math.max(g.top, c.top) < d.bottom && Math.min(g.bottom, c.bottom) > d.top;
+    if (!covers) return;
+    const m = 16;
+    const before = left - m;
+    const after = document.documentElement.clientWidth - right - m;
+    if (Math.max(before, after) < d.width) return;
+    const x = after >= before ? right + m : before - d.width;
+    dlg.style.translate = `${Math.round(x - d.left)}px 0`;
   }
 
   /** The names of the devices the place dialog adds, each with the code of its rack where the name holds one. */
@@ -3616,7 +3640,10 @@
     if (isNew) $('#place-new-name').select();
     drawPlaceGhosts();
   });
-  $('#dlg-place').addEventListener('close', () => setGhosts(''));
+  $('#dlg-place').addEventListener('close', (e) => {
+    setGhosts('');
+    e.currentTarget.style.translate = '';
+  });
   $('#place-mount').addEventListener('change', drawPlaceGhosts);
   $('#place-dup').addEventListener('click', (e) => {
     const b = e.target.closest('#place-dup-use');

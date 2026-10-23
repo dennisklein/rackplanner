@@ -124,7 +124,8 @@ Rear**); otherwise they ask how it is **Mounted**.
 - **Several at once**: set a quantity to stack devices downward or upward from
   the drop point. Occupied units are skipped and names count up (`cn-013 … cn-020`).
   The preview names the blocks the devices take and what they go around
-  (`U20–23, U36–39 · skips ceph-01 … ceph-03`), and outlines them in the racks.
+  (`U20–23, U36–39 · skips ceph-01 … ceph-03`), and outlines them in the racks;
+  the dialog moves aside to keep the outlines in sight where there is room.
   Tick **Spread evenly across racks in this row** and pick the racks to share
   them out; a rack that runs out of space leaves the rest to the others.
   Devices dropped on a side slot take the free side slots, from that one on,

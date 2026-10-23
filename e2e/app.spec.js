@@ -95,6 +95,10 @@ test('the place preview shows the blocks devices split into, and ghosts them aro
   await page.fill('#place-qty', '4');
   await expect(page.locator('#place-preview')).toHaveText('gpu-009 … gpu-012 · U20–23, U36–39 · skips ceph-01 … ceph-03');
   await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(4);
+  // The dialog moves off the rack, so the ghosts are in sight.
+  const ghosts = await page.locator('#ghost-layer').boundingBox();
+  const dialog = await page.locator('#dlg-place').boundingBox();
+  expect(dialog.x >= ghosts.x + ghosts.width || dialog.x + dialog.width <= ghosts.x).toBe(true);
   await page.click('#dlg-place [data-close]');
   await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(0);
 });
