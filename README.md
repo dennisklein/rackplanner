@@ -284,7 +284,9 @@ types and networks instead of devices and clusters, and the bar above the
 drawing switches between four views:
 
 - **Elevation**: the row from the **Rear** (the default, with the racks
-  running right to left) or the **Front**. Every device shows the ports on
+  running right to left) or the **Front**; changing the side keeps the
+  device being connected or selected, else the one in the middle, where it
+  is on the screen. Every device shows the ports on
   that side, cabled ones in their network's color. Cables run from the port
   into the rack's cable manager (copper on the left, fiber and direct cables
   on the right), up to the tray above the racks and along it, and to an exit

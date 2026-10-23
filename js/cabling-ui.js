@@ -495,11 +495,55 @@
 
     function setSide(side) {
       if (side === prefs.cabSide || (side !== 'front' && side !== 'rear')) return;
+      const anchor = sideAnchor();
       prefs.cabSide = side;
       ctx.savePrefs();
       // The inspector too: whether it offers Show in elevation depends on the side drawn.
       ctx.render();
       renderSides();
+      // The racks are mirrored: the device worked on stays where it was on the screen.
+      const now = anchor && devBox(anchor.id);
+      if (now) {
+        el.canvas.scrollLeft += now.x - anchor.x;
+        el.canvas.scrollTop += now.y - anchor.y;
+      }
+    }
+    /** The middle of a device drawn in the elevation, on the screen; null when it is not drawn. */
+    function devBox(id) {
+      const g = el.svg.querySelector(`.dev[data-dev="${CSS.escape(id)}"]`);
+      if (!g) return null;
+      const b = g.getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    }
+    /**
+     * The device to keep in place when the side changes: the one being
+     * connected, else the one selected (or an end of the cable selected),
+     * when it is in sight; else the one nearest the middle of the stage.
+     */
+    function sideAnchor() {
+      if (ui.cabView !== 'elevation') return null;
+      const c = el.canvas.getBoundingClientRect();
+      const inSight = (b) => b && b.x >= c.left && b.x <= c.right && b.y >= c.top && b.y <= c.bottom;
+      const s = ui.cabSel;
+      const ids = [];
+      if (ui.pending) ids.push(ui.pending.device);
+      if (s && s.kind === 'port') ids.push(s.device);
+      else if (s && s.kind === 'devices') ids.push(...s.ids);
+      else if (s && s.kind === 'cables') for (const id of s.ids) if (cableById(id)) ids.push(...M.cableEnds(cableById(id)).map((x) => x.end.device));
+      for (const id of ids) {
+        const b = devBox(id);
+        if (inSight(b)) return { id, x: b.x, y: b.y };
+      }
+      const mid = { x: (c.left + c.right) / 2, y: (c.top + c.bottom) / 2 };
+      let best = null;
+      for (const g of el.svg.querySelectorAll('.dev[data-dev]')) {
+        const b = g.getBoundingClientRect();
+        const x = Math.min(Math.max(mid.x, b.left), b.right);
+        const y = Math.min(Math.max(mid.y, b.top), b.bottom);
+        const d = Math.hypot(x - mid.x, y - mid.y);
+        if (!best || d < best.d) best = { id: g.dataset.dev, x: b.x + b.width / 2, y: b.y + b.height / 2, d };
+      }
+      return best && { id: best.id, x: best.x, y: best.y };
     }
     const sidesEl = $('#cab-sides');
     function renderSides() {

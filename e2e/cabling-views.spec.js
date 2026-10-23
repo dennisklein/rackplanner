@@ -403,6 +403,56 @@ test('a click on the middle of a device selects it, not a cable across its face'
   expect((await ui(page)).cabSel).toEqual({ kind: 'cables', ids: [c.id] });
 });
 
+test('Front and Rear keep the device worked on where it is on the screen', async ({ page }) => {
+  // Close in, so that each rack has room to stay where it is.
+  await page.click('#btn-zoom-reset');
+  for (let i = 0; i < 7; i++) await page.click('#btn-zoom-in');
+  expect(await zoomText(page)).toBe('300%');
+  const center = async (name) =>
+    page.locator(`.scene .dev[data-dev="${await idOf(page, name)}"]`).evaluate((g) => g.scrollIntoView({ block: 'center', inline: 'center' }));
+  const mid = async (name) => {
+    const b = await page.locator(`.scene .dev[data-dev="${await idOf(page, name)}"]`).boundingBox();
+    return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) };
+  };
+  const near = (a, b) => {
+    expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(2);
+  };
+  // The device selected.
+  await center('cn-005');
+  await clickDevice(page, 'cn-005');
+  const at = await mid('cn-005');
+  await page.click('#cab-sides [data-cab-side="front"]');
+  await expect(page.locator('#scene')).toHaveAttribute('aria-label', /seen from the front/);
+  near(await mid('cn-005'), at);
+  await page.click('#cab-sides [data-cab-side="rear"]');
+  near(await mid('cn-005'), at);
+
+  // The device being connected, though another is selected out of sight.
+  await clickDevice(page, 'ceph-01');
+  await center('ib-leaf-a03');
+  await (await port(page, 'ib-leaf-a03', 'p5')).click();
+  const leaf = await mid('ib-leaf-a03');
+  await page.click('#cab-sides [data-cab-side="front"]');
+  near(await mid('ib-leaf-a03'), leaf);
+  expect((await ui(page)).pending).toMatchObject({ port: 'p5' });
+  await page.keyboard.press('Escape');
+
+  // Nothing selected: the device in the middle of the stage.
+  await page.keyboard.press('Escape');
+  expect((await ui(page)).cabSel).toBeNull();
+  const name = await page.evaluate(() => {
+    const c = document.getElementById('canvas').getBoundingClientRect();
+    const t = document.elementFromPoint(c.x + c.width / 2, c.y + c.height / 2);
+    const g = t && t.closest('.dev[data-dev]');
+    return g ? window.RP.app.project().devices.find((d) => d.id === g.dataset.dev).name : null;
+  });
+  expect(name).not.toBeNull();
+  const before = await mid(name);
+  await page.click('#cab-sides [data-cab-side="rear"]');
+  near(await mid(name), before);
+});
+
 test('an exit at the end of the tray goes to its row', async ({ page }) => {
   await page.click('.scene .exit[data-row="row2"]');
   await expect(page.locator('#row-label')).toHaveText('Row B');
