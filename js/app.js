@@ -244,6 +244,8 @@
   /**
    * Applies `mutate` to a copy of the project and records an undo step.
    * Edits sharing `opts.key` within two seconds (typing) share one step.
+   * The step keeps the row and view shown, and `opts.label` to name it in
+   * undo and redo (a toast with Undo names it otherwise).
    */
   function commit(mutate, opts) {
     const o = opts || {};
@@ -253,7 +255,7 @@
     if (after === projectJSON) return false;
     const now = Date.now();
     const coalesce = o.key && history.key === o.key && now - history.at < 2000;
-    if (!coalesce) pushPast({ json: projectJSON, step: {} });
+    if (!coalesce) pushPast({ json: projectJSON, step: { label: o.label || null, rowId: ui.rowId, view: ui.clusterView } });
     history.key = o.key || null;
     history.at = now;
     history.future.length = 0;
@@ -265,51 +267,72 @@
     return true;
   }
 
-  /** Commits `make(draft)`, which returns what it added, or null to leave the plan as it is. */
-  function commitAdd(make) {
+  /** Commits `make(draft)`, which returns what it added, or null to leave the plan as it is; `label(made)` names the step. */
+  function commitAdd(make, label) {
     let made = null;
+    const opts = {};
     commit((p) => {
       made = make(p);
+      if (made && label) opts.label = label(made);
       return made ? undefined : false;
-    });
+    }, opts);
     return made;
   }
 
-  /** Commits `change(draft)`, which returns an error message and leaves the plan as it is, or null. */
-  function commitOrError(change) {
+  /** Commits `change(draft)`, which returns an error message and leaves the plan as it is, or null; `label` names the step. */
+  function commitOrError(change, label) {
     let err = null;
-    commit((p) => {
-      err = change(p);
-      return err ? false : undefined;
-    });
+    commit(
+      (p) => {
+        err = change(p);
+        return err ? false : undefined;
+      },
+      { label }
+    );
     return err;
   }
 
-  function restore(json) {
+  /** Shows the plan `json`; with an undo `step`, at the row and in the view the step was made in. Returns where it went: 'Ground floor · Row A', or ''. */
+  function restore(json, step) {
     projectJSON = json;
     project = JSON.parse(json);
     history.key = null;
+    const went = [];
+    if (step && step.rowId !== ui.rowId && M.rowById(project, step.rowId)) {
+      setRow(step.rowId, { render: false });
+      const pos = currentRow();
+      went.push(pos.floor.name, pos.row.name);
+    }
+    if (step && setClusterView(step.view, { render: false })) went.push(M.viewById(project, step.view).name);
     persist();
     render();
     // Text refused for the plan as it was belongs to no field of this one.
     cat.keep = null;
     cat.error = '';
     if ($('#dlg-catalog').open) renderCatalog();
+    if ($('#dlg-views').open) renderViewList();
     cab.onRestore();
+    return went.join(' · ');
+  }
+  /** Says what undo or redo did (`verb`), and where when it went to another row or view. */
+  function toastStep(verb, step, went) {
+    toast(`${step.label ? `${verb}: ${step.label}` : `${verb} a change`}${went ? ` (${went})` : ''}`, { kind: 'undo' });
   }
   function undo() {
     if (!history.past.length) return;
     const entry = popPast();
     history.future.push({ json: projectJSON, step: entry.step });
-    restore(entry.json);
+    const went = restore(entry.json, entry.step);
     retireUndoToasts();
+    toastStep('Undid', entry.step, went);
   }
   function redo() {
     if (!history.future.length) return;
     const entry = history.future.pop();
     pushPast({ json: projectJSON, step: entry.step });
-    restore(entry.json);
+    const went = restore(entry.json, entry.step);
     retireUndoToasts();
+    toastStep('Redid', entry.step, went);
   }
 
   // ------------------------------------------------------------- elements
@@ -929,7 +952,7 @@
       });
       if (!ok) return;
     }
-    commit((p) => void M.setRowRackCount(p, rowId, count));
+    commit((p) => void M.setRowRackCount(p, rowId, count), { label: `Gave ${row.name} ${plural(count, 'rack')}` });
   }
 
   // Parts bin and clusters ---------------------------------------------
@@ -1016,8 +1039,7 @@
     el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
     el.bare.disabled = cabling; // the Cabling drawings keep the ports
     renderViewSwitch();
-    el.undo.disabled = !history.past.length;
-    el.redo.disabled = !history.future.length;
+    renderUndoButtons();
     if (document.activeElement !== el.planName) el.planName.value = project.name;
     el.notice.hidden = !(project.meta && project.meta.example);
     el.stage.classList.toggle('is-armed', !!ui.armed);
@@ -1029,6 +1051,16 @@
     }
     el.armedHint.hidden = !ui.armed;
     if (cabling) cab.renderChrome();
+  }
+
+  /** The undo and redo buttons, whose tooltips name the step each one reverts. */
+  function renderUndoButtons() {
+    const next = history.future.length ? history.future[history.future.length - 1].step : null;
+    const last = lastStep();
+    el.undo.disabled = !last;
+    el.redo.disabled = !next;
+    el.undo.title = last && last.label ? `Undo: ${last.label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+    el.redo.title = next && next.label ? `Redo: ${next.label} (Ctrl+Shift+Z)` : 'Redo (Ctrl+Shift+Z)';
   }
 
   /** The menu button of the plan's views, shown when it has more than one; the cluster list names the view shown. */
@@ -1055,9 +1087,9 @@
       `<hr><button type="button" role="menuitem" data-edit-views><span>Edit views…</span><small>Add, copy, rename or delete views</small></button>`;
   }
 
-  /** Shows view `id`: its clusters color the devices, fill the cluster list and take new devices. */
-  function setClusterView(id) {
-    if (id === ui.clusterView || !M.viewById(project, id)) return;
+  /** Shows view `id`: its clusters color the devices, fill the cluster list and take new devices. False when it is shown already or gone. */
+  function setClusterView(id, opts) {
+    if (id === ui.clusterView || !M.viewById(project, id)) return false;
     ui.clusterView = id;
     ui.focusCluster = null;
     ui.hoverCluster = null;
@@ -1065,8 +1097,10 @@
       prefs.views[planId] = id;
       savePrefs();
     }
+    if (opts && opts.render === false) return true;
     render();
     if ($('#dlg-views').open) renderViewList();
+    return true;
   }
   $('#menu-views').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cluster-view], [data-edit-views]');
@@ -1291,7 +1325,7 @@
         }
         prefs.lastCluster = r.value || null;
         savePrefs();
-        commit((p) => M.setClusterOf(p, M.deviceById(p, id), view, r.value || null));
+        commit((p) => M.setClusterOf(p, M.deviceById(p, id), view, r.value || null), { label: `Set the cluster of ${d.name}` });
       })
     );
     $('#insp-rack').addEventListener('change', (e) => {
@@ -1308,7 +1342,7 @@
     });
     $('#insp-slot').addEventListener('change', (e) => moveDevice(id, parseLocKey(d.loc.rack, e.target.value)));
     $$('input[name="insp-mount"]', el.inspector).forEach((r) =>
-      r.addEventListener('change', () => commit((p) => void (M.deviceById(p, id).reversed = r.value === 'back')))
+      r.addEventListener('change', () => commit((p) => void (M.deviceById(p, id).reversed = r.value === 'back'), { label: `Turned ${d.name}` }))
     );
     const heightInput = $('#insp-height');
     if (heightInput) {
@@ -1320,7 +1354,7 @@
           heightInput.value = hU;
           return;
         }
-        commit((p) => void (M.deviceById(p, id).height = h));
+        commit((p) => void (M.deviceById(p, id).height = h), { label: `Made ${d.name} ${h}U high` });
       });
     }
     const up = $('#insp-up');
@@ -1390,15 +1424,17 @@
         const view = ui.clusterView;
         const apply = (p, cid) => ids.forEach((id) => M.setClusterOf(p, M.deviceById(p, id), view, cid));
         if (r.value === '__new') return openClusterDialog(null, apply, () => renderInspector());
-        commit((p) => void apply(p, r.value || null));
+        commit((p) => void apply(p, r.value || null), { label: `Set the cluster of ${plural(ids.length, 'device')}` });
       })
     );
     $$('input[name="multi-mount"]', el.inspector).forEach((r) =>
-      r.addEventListener('change', () => commit((p) => void mountable.forEach((d) => (M.deviceById(p, d.id).reversed = r.value === 'back'))))
+      r.addEventListener('change', () =>
+        commit((p) => void mountable.forEach((d) => (M.deviceById(p, d.id).reversed = r.value === 'back')), { label: `Turned ${plural(mountable.length, 'device')}` })
+      )
     );
     $('#multi-owner').addEventListener('change', (e) => {
       const v = e.target.value.trim();
-      commit((p) => void ids.forEach((id) => (M.deviceById(p, id).owner = v)));
+      commit((p) => void ids.forEach((id) => (M.deviceById(p, id).owner = v)), { label: `Set the owner of ${plural(ids.length, 'device')}` });
     });
     $('#multi-rename-go').addEventListener('click', () => {
       const first = $('#multi-rename').value.trim();
@@ -1495,7 +1531,7 @@
     const id = rack.id;
     bindText($('#insp-rack-name'), 'rack:' + id, (p, v) => (M.rackById(p, id).name = v), () => M.defaultRackName(project, pos.row.id, pos.index));
     $('#insp-rack-type').addEventListener('change', (e) => {
-      const err = commitOrError((p) => M.setRackType(p, id, e.target.value));
+      const err = commitOrError((p) => M.setRackType(p, id, e.target.value), `Changed the type of ${rack.name}`);
       if (err) {
         toast(`Can’t change the type: ${err}`, { warn: true });
         renderInspector();
@@ -1507,13 +1543,13 @@
     $$('[data-rack-act]', el.inspector).forEach((b) =>
       b.addEventListener('click', () => {
         const act = b.dataset.rackAct;
-        if (act === 'left' || act === 'right') commit((p) => void M.moveRack(p, id, pos.row.id, pos.index + (act === 'left' ? -1 : 1)));
+        if (act === 'left' || act === 'right') commit((p) => void M.moveRack(p, id, pos.row.id, pos.index + (act === 'left' ? -1 : 1)), { label: `Moved ${rack.name}` });
         else addRackTo(pos.row.id, pos.index + (act === 'insert-right' ? 1 : 0));
       })
     );
     $('#insp-rack-row').addEventListener('change', (e) => {
       const target = e.target.value;
-      if (!commit((p) => (M.moveRack(p, id, target) ? undefined : false))) return renderInspector();
+      if (!commit((p) => (M.moveRack(p, id, target) ? undefined : false), { label: `Moved ${rack.name}` })) return renderInspector();
       setRow(target);
       toast(`Moved ${rack.name} to ${M.formatWhere(project, target)}`, { action: 'Undo', onAction: undo });
     });
@@ -1525,7 +1561,7 @@
         body: `This removes all ${devicesAndCables(devs)} from ${rack.name}. Undo brings them back.`,
         ok: 'Remove devices',
       });
-      if (ok) commit((p) => void M.removeDevicesIn(p, new Set([id])));
+      if (ok) commit((p) => void M.removeDevicesIn(p, new Set([id])), { label: `Removed the devices of ${rack.name}` });
     });
     $('#insp-del-rack').addEventListener('click', () => deleteRack(id));
   }
@@ -1569,12 +1605,12 @@
     bindText($('#insp-row-name'), 'row:' + id, (p, v) => (M.rowById(p, id).name = v), () => `Row ${M.letters(pos.rowIndex)}`);
     $('#row-less').addEventListener('click', () => setRowRackCount(id, row.racks.length - 1));
     $('#row-more').addEventListener('click', () => setRowRackCount(id, row.racks.length + 1));
-    $('#row-renumber').addEventListener('click', () => commit((p) => void M.renumberRacks(p, id)));
+    $('#row-renumber').addEventListener('click', () => commit((p) => void M.renumberRacks(p, id), { label: `Renumbered the racks of ${row.name}` }));
     $('#insp-row-floor').addEventListener('change', (e) => {
-      if (!commit((p) => (M.moveRow(p, id, e.target.value) ? undefined : false))) renderInspector();
+      if (!commit((p) => (M.moveRow(p, id, e.target.value) ? undefined : false), { label: `Moved ${row.name}` })) renderInspector();
     });
     $$('[data-row-act]', el.inspector).forEach((b) =>
-      b.addEventListener('click', () => commit((p) => void M.moveRow(p, id, pos.floor.id, pos.rowIndex + (b.dataset.rowAct === 'up' ? -1 : 1))))
+      b.addEventListener('click', () => commit((p) => void M.moveRow(p, id, pos.floor.id, pos.rowIndex + (b.dataset.rowAct === 'up' ? -1 : 1)), { label: `Moved ${row.name}` }))
     );
     $('#row-open').addEventListener('click', () => setRow(id, { view: 'sheet' }));
     $('#row-add').addEventListener('click', () => addRowTo(pos.floor.id, pos.rowIndex + 1));
@@ -1619,7 +1655,9 @@
     bindText($('#insp-floor-name'), 'floor:' + id, (p, v) => (M.floorById(p, id).name = v), () => `Floor ${i + 1}`);
     bindProp($('#floor-pitch'), (p) => M.floorById(p, id), 'rowPitchM', (v) => M.clampNum(String(v).trim() === '' ? null : v, 0.5, 50, M.DEFAULT_ROW_PITCH_M));
     $$('[data-open-row]', el.inspector).forEach((b) => b.addEventListener('click', () => setRow(b.dataset.openRow, { view: 'sheet' })));
-    $$('[data-floor-act]', el.inspector).forEach((b) => b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)))));
+    $$('[data-floor-act]', el.inspector).forEach((b) =>
+      b.addEventListener('click', () => commit((p) => void M.moveFloor(p, id, i + Number(b.dataset.floorAct)), { label: `Moved ${floor.name}` }))
+    );
     $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
     $('#floor-add-row').addEventListener('click', () => addRowTo(id));
     $('#floor-dup').addEventListener('click', () => duplicateStructure('floor', id));
@@ -1714,7 +1752,7 @@
       const row = rowOfRack(loc.rack);
       if (row !== ui.rowId) setRow(row, { render: false });
     }
-    const changed = commit((p) => void (M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at }));
+    const changed = commit((p) => void (M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at }), { label: `Moved ${d.name}` });
     if (!changed) render();
     if (opts && (opts.reveal || opts.follow)) revealDevice(id, opts.reveal);
     return changed;
@@ -1728,7 +1766,9 @@
       return false;
     }
     ui.selection = { kind: 'devices', ids: moves.map((m) => m.id) };
-    return commit((p) => void moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at })));
+    return commit((p) => void moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at })), {
+      label: `Moved ${plural(moves.length, 'device')}`,
+    });
   }
 
   // dir follows unit numbers: -1 moves up the rack (toward U1), +1 moves down.
@@ -1794,10 +1834,13 @@
     const row = rowOfRack(loc.rack);
     if (row !== ui.rowId) setRow(row, { render: false });
     // A cable never joins a device to itself, so a single copy has none; copyCables is a no-op kept for symmetry.
-    commit((p) => {
-      p.devices.push(copy);
-      M.copyCables(p, new Map([[id, copy.id]]));
-    });
+    commit(
+      (p) => {
+        p.devices.push(copy);
+        M.copyCables(p, new Map([[id, copy.id]]));
+      },
+      { label: `Added ${copy.name}, a copy of ${d.name}` }
+    );
     toast(`Added ${copy.name} at ${M.formatDeviceLoc(project, copy)}`);
   }
 
@@ -2938,19 +2981,25 @@
     const color = clusterDlg.color;
     if (clusterDlg.id) {
       const id = clusterDlg.id;
-      commit((p) => {
-        const c = M.clusterById(p, id);
-        c.name = name;
-        c.color = color;
-      });
+      commit(
+        (p) => {
+          const c = M.clusterById(p, id);
+          c.name = name;
+          c.color = color;
+        },
+        { label: `Changed cluster ${name}` }
+      );
     } else {
       const nc = { id: M.uid('c'), name, color };
       const onCreate = clusterDlg.onCreate;
       const view = ui.clusterView;
-      commit((p) => {
-        M.clustersOf(p, view).push(nc);
-        if (onCreate) onCreate(p, nc.id);
-      });
+      commit(
+        (p) => {
+          M.clustersOf(p, view).push(nc);
+          if (onCreate) onCreate(p, nc.id);
+        },
+        { label: `Added cluster ${name}` }
+      );
       prefs.lastCluster = nc.id;
       savePrefs();
     }
@@ -3017,7 +3066,7 @@
   function addClusterView(copy) {
     const from = copy ? ui.clusterView : null;
     const name = copy ? `${M.viewOf(project, from).name} (copy)` : '';
-    const v = commitAdd((p) => M.addView(p, name, from));
+    const v = commitAdd((p) => M.addView(p, name, from), (made) => (copy ? `Copied view ${M.viewById(project, from).name} as ${made.name}` : `Added view ${made.name}`));
     if (!v) return;
     setClusterView(v.id);
     renderViewList();
@@ -3042,7 +3091,7 @@
       return;
     }
     showError('#views-error', '');
-    commit((p) => void M.renameView(p, id, name));
+    commit((p) => void M.renameView(p, id, name), { label: `Renamed view ${M.viewById(project, id).name} to ${name}` });
     renderViewList();
   });
 
@@ -3061,7 +3110,7 @@
         ok: 'Delete view',
       }));
     if (!ok) return;
-    commit((p) => void M.removeView(p, v.id));
+    commit((p) => void M.removeView(p, v.id), { label: `Deleted view ${v.name}` });
     toast(`Deleted view ${v.name}`, { action: 'Undo', onAction: undo });
     if ($('#dlg-views').open) renderViewList();
   });
@@ -4274,7 +4323,7 @@
   }
 
   $('#btn-start-empty').addEventListener('click', startEmptyInPlace);
-  $('#btn-keep-example').addEventListener('click', () => commit((p) => void delete p.meta.example));
+  $('#btn-keep-example').addEventListener('click', () => commit((p) => void delete p.meta.example, { label: 'Kept the example plan' }));
 
   // --------------------------------------------------------------- export
 
@@ -4543,8 +4592,17 @@
       clearTimeout(timer);
       t.remove();
     };
-    // An Undo names the step just made: it undoes that step only (see retireUndoToasts).
-    if (o.onAction === undo) t.undoStep = lastStep();
+    // An Undo names the step just made: it undoes that step only (see
+    // retireUndoToasts), and the message names it in undo and redo.
+    if (o.onAction === undo && (t.undoStep = lastStep())) {
+      if (!t.undoStep.label) t.undoStep.label = message;
+      renderUndoButtons();
+    }
+    // A toast of the same kind (what undo did, the row shown) replaces the one before.
+    if (o.kind) {
+      t.dataset.kind = o.kind;
+      for (const old of $$(`.toast[data-kind="${o.kind}"]`, el.toasts)) old.remove();
+    }
     if (o.action) {
       const b = document.createElement('button');
       b.type = 'button';

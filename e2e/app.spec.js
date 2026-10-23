@@ -585,6 +585,32 @@ test('the Undo of a toast undoes only the step it names', async ({ page }) => {
   await expect(devices(page)).toHaveCount(36);
 });
 
+test('undo and redo say what they revert and go to the row it was in', async ({ page }) => {
+  await device(page, 'cn-002').click();
+  await page.keyboard.press('Delete');
+  await expect(page.locator('#btn-undo')).toHaveAttribute('title', 'Undo: Deleted cn-002 and 3 cables (Ctrl+Z)');
+  await page.keyboard.press(']');
+  await page.keyboard.press(']');
+  await expect(page.locator('.ftab[aria-pressed="true"]')).toHaveText('First floor');
+
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.ftab[aria-pressed="true"]')).toHaveText('Ground floor');
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  await expect(devices(page)).toHaveCount(37);
+  await expect(page.locator('.toast[data-kind="undo"]')).toHaveText('Undid: Deleted cn-002 and 3 cables (Ground floor · Row A)');
+  await expect(page.locator('#btn-redo')).toHaveAttribute('title', 'Redo: Deleted cn-002 and 3 cables (Ctrl+Shift+Z)');
+  await expect(page.locator('#btn-undo')).toHaveAttribute('title', 'Undo (Ctrl+Z)');
+
+  // One message says what the last undo or redo did.
+  await page.keyboard.press('Control+Shift+z');
+  await expect(page.locator('.toast[data-kind="undo"]')).toHaveText('Redid: Deleted cn-002 and 3 cables');
+  await expect(devices(page)).toHaveCount(36);
+
+  await device(page, 'cn-004').click();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#btn-undo')).toHaveAttribute('title', 'Undo: Moved cn-004 (Ctrl+Z)');
+});
+
 test('plans are kept in the browser and can be switched', async ({ page }) => {
   await device(page, 'cn-001').click();
   await page.keyboard.press('Delete');

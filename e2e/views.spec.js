@@ -155,3 +155,39 @@ test('a version 4 plan opens with one view, Default', async ({ page }) => {
   const views = await app(page, () => window.RP.app.project().views.map((v) => v.name));
   expect(views).toEqual(['Default']);
 });
+
+test('undo goes back to the view of the change it reverts', async ({ page }) => {
+  await copyView(page, 'InfiniBand');
+  await device(page, 'cn-001').click();
+  await page.click('label.chip:has(input[name="insp-cluster"][value=""]) span');
+  await pickView(page, 'Default');
+  await expect(shown(page)).toHaveText('Default');
+
+  await page.keyboard.press('Control+z');
+  await expect(shown(page)).toHaveText('InfiniBand');
+  await expect(page.locator('.toast[data-kind="undo"]')).toHaveText('Undid: Set the cluster of cn-001 (InfiniBand)');
+
+  // Undoing the delete of the view shown shows that view again.
+  await page.click('#btn-views');
+  await page.click('#view-list li:nth-child(2) [data-view-delete]');
+  await page.click('#confirm-ok');
+  await expect(shown(page)).toHaveText('Default');
+  await page.click('#dlg-views [data-close]');
+  await page.locator('.toast', { hasText: 'Deleted view InfiniBand' }).getByRole('button', { name: 'Undo' }).click();
+  await expect(shown(page)).toHaveText('InfiniBand');
+});
+
+test('undo names the steps of the views dialog', async ({ page }) => {
+  const said = page.locator('.toast[data-kind="undo"]');
+  await page.click('#btn-views');
+  await page.click('#view-add');
+  await page.click('#dlg-views [data-close]');
+  await page.keyboard.press('Control+z');
+  await expect(said).toHaveText(/^Undid: Added view \S/);
+
+  await copyView(page, 'Lustre');
+  await page.keyboard.press('Control+z');
+  await expect(said).toHaveText('Undid: Renamed view Default (copy) to Lustre');
+  await page.keyboard.press('Control+z');
+  await expect(said).toHaveText(/^Undid: Copied view Default as Default \(copy\)/);
+});
