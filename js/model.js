@@ -2051,6 +2051,19 @@
     return firstFree(namesOf(project.views), project.views.length + 1, (i) => `View ${i}`);
   }
 
+  /** Name for a copy of view `id`: "Lustre (copy)", then "Lustre (copy 2)"; no other view has it, in any case. */
+  function copyViewName(project, id) {
+    const base = viewOf(project, id).name.replace(/ \(copy(?: \d+)?\)$/, '');
+    const used = new Set(project.views.map((v) => v.name.toLowerCase()));
+    const name = (i) => {
+      const tail = ` (copy${i > 1 ? ' ' + i : ''})`;
+      return base.slice(0, 60 - tail.length).trim() + tail;
+    };
+    let i = 1;
+    while (used.has(name(i).toLowerCase())) i++;
+    return name(i);
+  }
+
   /**
    * Adds a view at the end, named `name` or View N. With `fromViewId`, the
    * new view starts as a copy of that view: its clusters (with new ids) and
@@ -2788,6 +2801,7 @@
     nextClusterName,
     removeCluster,
     nextViewName,
+    copyViewName,
     addView,
     renameView,
     removeView,

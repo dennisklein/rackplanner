@@ -159,7 +159,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   example by storage system and by InfiniBand island. Each view has clusters
   of its own; the devices, their places, the cables and the networks are the
   same in every view. Open **Views** (the layers icon next to **Clusters**)
-  to add a view, copy the one shown, rename or delete one. With two or more
+  to add a view, copy the one shown, rename or delete one. Views have names
+  of their own: a second copy of Lustre is Lustre (copy 2). With two or more
   views, a menu next to **Racks** and **Cabling** picks the view shown, and
   <kbd>V</kbd> steps to the next one. The view shown colors the devices and
   fills the cluster list, the legend, the search and the fabric groups. The

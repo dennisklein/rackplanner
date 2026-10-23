@@ -238,3 +238,15 @@ test('undo names the steps of the views dialog', async ({ page }) => {
   await page.keyboard.press('Control+z');
   await expect(said).toHaveText(/^Undid: Copied view Default as Default \(copy\)/);
 });
+
+test('copies of a view get names of their own', async ({ page }) => {
+  await page.click('#btn-views');
+  const names = page.locator('#view-list input[data-view-name]');
+  await page.click('#view-copy');
+  await expect(names.last()).toHaveValue('Default (copy)');
+  // Show Default again and copy it once more.
+  await page.click('#view-list li:nth-child(1) [data-view-show]');
+  await page.click('#view-copy');
+  await expect(names).toHaveCount(3);
+  expect(await names.evaluateAll((list) => list.map((e) => e.value))).toEqual(['Default', 'Default (copy)', 'Default (copy 2)']);
+});

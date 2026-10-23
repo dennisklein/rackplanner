@@ -3655,7 +3655,7 @@
   /** Adds a view (a copy of the view shown with `copy`) and shows it. */
   function addClusterView(copy) {
     const from = copy ? ui.clusterView : null;
-    const name = copy ? `${M.viewOf(project, from).name} (copy)` : '';
+    const name = copy ? M.copyViewName(project, from) : '';
     const v = commitAdd((p) => M.addView(p, name, from), (made) => (copy ? `Copied view ${M.viewById(project, from).name} as ${made.name}` : `Added view ${made.name}`));
     if (!v) return;
     setClusterView(v.id);

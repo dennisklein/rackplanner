@@ -998,6 +998,22 @@ test('a copied view has its own clusters with the same devices in them', () => {
   assert.equal(M.clusterOf(p, p.devices[0], 'v1').name, 'Alpha', 'the views do not share clusters');
 });
 
+test('a copy of a view gets a name no other view has', () => {
+  const p = project();
+  M.renameView(p, 'v1', 'Lustre');
+  assert.equal(M.copyViewName(p, 'v1'), 'Lustre (copy)');
+  const first = M.addView(p, M.copyViewName(p, 'v1'), 'v1');
+  assert.equal(M.copyViewName(p, 'v1'), 'Lustre (copy 2)');
+  M.addView(p, M.copyViewName(p, 'v1'), 'v1');
+  // A copy of a copy counts on, and names differing in case only are taken too.
+  assert.equal(M.copyViewName(p, first.id), 'Lustre (copy 3)');
+  M.addView(p, 'LUSTRE (COPY 3)');
+  assert.equal(M.copyViewName(p, 'v1'), 'Lustre (copy 4)');
+  // A long name is cut to keep the suffix within 60 characters.
+  M.renameView(p, 'v1', 'x'.repeat(60));
+  assert.equal(M.copyViewName(p, 'v1'), `${'x'.repeat(53)} (copy)`);
+});
+
 test('views can be renamed, moved and removed; a plan keeps one, and devices drop what goes', () => {
   const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
   for (let i = 2; i <= M.LIMITS.views; i++) assert.ok(M.addView(p, '', i === 2 ? 'v1' : null));
