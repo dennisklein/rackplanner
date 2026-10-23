@@ -74,6 +74,18 @@ test('places several devices by dragging from the parts bin', async ({ page }) =
   await expect(page.locator('.multi-title')).toHaveText('3 devices');
 });
 
+test('the place preview shows the blocks devices split into, and ghosts them around the dialog', async ({ page }) => {
+  await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }));
+  await page.mouse.up();
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(1);
+  await page.fill('#place-qty', '4');
+  await expect(page.locator('#place-preview')).toHaveText('gpu-009 … gpu-012 · U20–23, U36–39 · skips ceph-01 … ceph-03');
+  await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(4);
+  await page.click('#dlg-place [data-close]');
+  await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(0);
+});
+
 test('spreads new devices evenly across the racks of a row', async ({ page }) => {
   await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }));
   await page.mouse.up();

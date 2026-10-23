@@ -2893,7 +2893,10 @@
     $('#place-clusters').innerHTML = clusterChips('place-cluster', initial, true);
     place.newColor = M.nextClusterColor(project, ui.clusterView);
     $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
-    renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => (place.newColor = c));
+    renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => {
+      place.newColor = c;
+      drawPlaceGhosts();
+    });
     $('#place-new').hidden = initial !== '__new';
     showError('#place-error', '');
     openDialog($('#dlg-place'));
@@ -3002,6 +3005,7 @@
       line.hidden = check.ok;
       submit.textContent = 'Place';
       submit.disabled = !place.valid;
+      drawPlaceGhosts();
       return;
     }
     const spread = !$('#place-spread-wrap').hidden && $('#place-spread').checked;
@@ -3047,18 +3051,59 @@
       const names = M.nameSequence(nameInput.value.trim(), qty);
       const per = new Map();
       for (const p of place.positions) per.set(p.rack, (per.get(p.rack) || 0) + 1);
-      const h = M.heightOf(project, type.id, height);
-      const lo = Math.min(...place.positions.map((p) => p.at));
-      const hi = Math.max(...place.positions.map((p) => p.at)) + h - 1;
       const where =
         per.size > 1
           ? [...per].map(([r, n]) => `${shortRack(M.rackById(project, r).name)} ×${n}`).join(', ')
-          : M.formatSpan(lo, hi);
+          : blocksText(place.positions[0].rack, place.positions.map((p) => p.at), M.heightOf(project, type.id, height));
       line.textContent = `${names[0]}${qty > 1 ? ` … ${names[qty - 1]}` : ''} · ${where}`;
     }
     line.hidden = !line.textContent;
     submit.textContent = qty > 1 ? `Place ${qty}` : 'Place';
     submit.disabled = !place.valid;
+    drawPlaceGhosts();
+  }
+
+  /** "a", "a, b" or "a … z": names in a short line. */
+  const nameRange = (names) => (names.length > 2 ? `${names[0]} … ${names[names.length - 1]}` : names.join(', '));
+
+  /**
+   * The blocks devices `h` units tall at units `ats` of a rack take, and
+   * what they go around: "U20–23, U36–39 · skips ceph-01 … ceph-03".
+   */
+  function blocksText(rackId, ats, h) {
+    const runs = [];
+    for (const at of ats.slice().sort((a, b) => a - b)) {
+      const last = runs[runs.length - 1];
+      if (last && last[1] + 1 === at) last[1] = at + h - 1;
+      else runs.push([at, at + h - 1]);
+    }
+    const text = runs.map(([lo, hi]) => M.formatSpan(lo, hi)).join(', ');
+    if (runs.length < 2) return text;
+    const lo = runs[0][1];
+    const hi = runs[runs.length - 1][0];
+    const skipped = M.sortedDevices(project, rackId).filter((d) => {
+      if (d.loc.kind !== 'u') return false;
+      const [b, t] = M.deviceSpan(project, d);
+      return t > lo && b < hi;
+    });
+    return skipped.length ? `${text} · skips ${nameRange(skipped.map((d) => d.name))}` : text;
+  }
+
+  /** Ghosts of the devices the place dialog would add, in the row shown around the dialog. */
+  function drawPlaceGhosts() {
+    if (!$('#dlg-place').open) return;
+    const picked = ($('input[name="place-cluster"]:checked') || { value: '' }).value;
+    const color = picked === '__new' ? place.newColor : clusterColor(picked);
+    const height = placeHeight();
+    const names = M.nameSequence($('#place-name').value.trim(), place.positions.length);
+    const items = place.positions.map((pos, i) => ({
+      typeId: place.typeId,
+      loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at },
+      height,
+      name: names[i],
+      color,
+    }));
+    setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare' }));
   }
 
   $('#place-name').addEventListener('input', () => {
@@ -3090,7 +3135,9 @@
     const isNew = e.target.value === '__new';
     $('#place-new').hidden = !isNew;
     if (isNew) $('#place-new-name').select();
+    drawPlaceGhosts();
   });
+  $('#dlg-place').addEventListener('close', () => setGhosts(''));
 
   $('#place-form').addEventListener('submit', (e) => {
     e.preventDefault();
