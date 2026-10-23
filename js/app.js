@@ -122,9 +122,11 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastCluster: null, view: 'sheet', metric: 'space', rows: {}, views: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastClusters: {}, view: 'sheet', metric: 'space', rows: {}, views: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
   if (!prefs.views || typeof prefs.views !== 'object') prefs.views = {};
+  if (!prefs.lastClusters || typeof prefs.lastClusters !== 'object') prefs.lastClusters = {};
+  delete prefs.lastCluster;
   if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   if (prefs.detail !== 'bare') prefs.detail = 'full';
@@ -1451,7 +1453,7 @@
           openClusterDialog(null, (p, cid) => M.setClusterOf(p, M.deviceById(p, id), view, cid), () => renderInspector());
           return;
         }
-        prefs.lastCluster = r.value || null;
+        prefs.lastClusters[d.type] = r.value || null;
         savePrefs();
         commit((p) => M.setClusterOf(p, M.deviceById(p, id), view, r.value || null), { label: `Set the cluster of ${d.name}` });
       })
@@ -2192,10 +2194,21 @@
     return c ? c.color : null;
   }
 
+  /**
+   * The cluster a new device of `typeId` starts in, `hint` being its
+   * suggestPlacement: the reference device's, else the one last given to
+   * that type, else none.
+   */
+  function startCluster(typeId, hint) {
+    if (hint.cluster !== undefined) return hint.cluster;
+    const last = prefs.lastClusters[typeId];
+    return last && clusterColor(last) ? last : null;
+  }
+
   function drawGhost(typeId, loc, ok, device, height) {
     if (!loc) return setGhosts('');
     const hint = device ? null : M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
-    const clusterId = device ? clusterIdOf(device) : hint.cluster !== undefined ? hint.cluster : prefs.lastCluster;
+    const clusterId = device ? clusterIdOf(device) : startCluster(typeId, hint);
     setGhosts(
       R.renderGhost(project, typeId, loc, ok, {
         theme: ui.theme,
@@ -2902,8 +2915,7 @@
     $('#place-spread').checked = false;
     setPlaceLoc(loc);
     const hint = M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
-    const last = prefs.lastCluster && clusterColor(prefs.lastCluster) ? prefs.lastCluster : null;
-    const initial = hint.cluster !== undefined ? hint.cluster : type.variable ? null : last || (viewClusters().length ? null : '__new');
+    const initial = startCluster(typeId, hint);
     $('#place-clusters').innerHTML = clusterChips('place-cluster', initial, true);
     place.newColor = M.nextClusterColor(project, ui.clusterView);
     $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
@@ -3194,10 +3206,8 @@
       if (newCluster) M.clustersOf(p, view).push(newCluster);
       p.devices.push(...devices);
     });
-    if (!type.variable) {
-      prefs.lastCluster = clusterId;
-      savePrefs();
-    }
+    prefs.lastClusters[type.id] = clusterId;
+    savePrefs();
     $('#dlg-place').close('ok');
     toast(count > 1 ? `Placed ${count} devices, ${names[0]} to ${names[count - 1]}` : `Placed ${names[0]}`);
   });
@@ -3273,8 +3283,6 @@
         },
         { label: `Added cluster ${name}` }
       );
-      prefs.lastCluster = nc.id;
-      savePrefs();
     }
     clusterDlg.saved = true;
     $('#dlg-cluster').close('ok');

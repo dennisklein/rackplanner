@@ -99,6 +99,37 @@ test('spreads new devices evenly across the racks of a row', async ({ page }) =>
   await expect(where(page)).toHaveText('Rack A02 · U38–39', { timeout: 2000 });
 });
 
+test('a new device is in no cluster unless one of its type shows which', async ({ page }) => {
+  await page.click('#btn-start-empty');
+  const open = async (typeId) => {
+    await page.locator(`.part[data-type="${typeId}"]`).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#dlg-place')).toBeVisible();
+  };
+  const picked = page.locator('input[name="place-cluster"]:checked');
+  await open('switch-rj45');
+  await expect(picked).toHaveValue('');
+  await expect(page.locator('#place-new')).toBeHidden();
+  await page.click('label.chip:has(input[name="place-cluster"][value="__new"]) span');
+  await page.fill('#place-new-name', 'Core');
+  await page.click('#place-submit');
+
+  // Another type does not follow the cluster used last; the same type follows its own.
+  await open('compute-node');
+  await expect(picked).toHaveValue('');
+  await page.click('#dlg-place [data-close]');
+  await open('switch-rj45');
+  await expect(picked).not.toHaveValue('');
+  await expect(page.locator('label.chip:has(input[name="place-cluster"]:checked)')).toHaveText('Core');
+  await page.click('#dlg-place [data-close]');
+
+  // With no device of its type left, the cluster last given to the type.
+  await page.keyboard.press('Delete');
+  expect(await planDevices(page)).toBe(0);
+  await open('switch-rj45');
+  await expect(page.locator('label.chip:has(input[name="place-cluster"]:checked)')).toHaveText('Core');
+});
+
 test('Enter activates a focused button while a device is selected', async ({ page }) => {
   await device(page, 'cn-001').click();
   await page.locator('#insp-dup').focus();
