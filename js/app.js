@@ -647,6 +647,13 @@
     const covers = r.top <= 1 && r.bottom >= window.innerHeight - 1;
     if (!whole && !covers) el.stage.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
   }
+  /** The example's notice goes above the Devices panel in the one-column layout, to be seen first; beside the drawing, under its nav bar. */
+  function placeNotice() {
+    if (oneColumn.matches) $('#bin').before(el.notice);
+    else $('.nav', el.stage).after(el.notice);
+  }
+  placeNotice();
+  if (oneColumn.addEventListener) oneColumn.addEventListener('change', placeNotice);
   /** Whether keyboard focus was lost: on the page itself, or on a control gone, hidden or disabled. */
   function focusLost() {
     const a = document.activeElement;

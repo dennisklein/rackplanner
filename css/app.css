@@ -926,6 +926,7 @@ kbd {
   .canvas { overscroll-behavior: auto; }
   /* The toolbar scrolls away: the nav bar stays at the top while the stage is in view, with Undo and Redo. */
   .stage { overflow: clip; }
+  .app > .notice { border: 1px solid var(--line); border-radius: var(--r-md); }
   .nav { position: sticky; top: 0; z-index: 6; }
   .nav-history { display: flex; }
   .bin { overflow: visible; }

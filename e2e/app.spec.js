@@ -1396,6 +1396,18 @@ test.describe('on a phone', () => {
     await expect(where(page)).toHaveText('Rack A01 · U4–5');
   });
 
+  test('the example notice comes before the Devices panel, on the first screen', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 });
+    const notice = page.locator('#example-notice');
+    await expect(notice).toBeInViewport({ ratio: 1 });
+    expect((await notice.boundingBox()).y).toBeLessThan((await page.locator('#bin').boundingBox()).y);
+    // Beside the drawing, it is under the stage's nav bar again.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator('#stage > .nav + #example-notice')).toBeVisible();
+    await page.locator('#btn-keep-example').click();
+    await expect(notice).toBeHidden();
+  });
+
   test('adds a device type from a template in the catalog', async ({ page }) => {
     await page.locator('#btn-catalog').tap();
     const list = await page.locator('#cat-list').boundingBox();
