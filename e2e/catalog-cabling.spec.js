@@ -474,7 +474,7 @@ test('a field of the inspector gives up focus when another thing is selected, an
   await page.keyboard.press('[');
   expect(await row()).toBe(rowA);
 
-  // A multi-selection's owner field, then one more device: Delete deletes them.
+  // A multi-selection's owner field, then one more device: Delete deletes them (asking first, as they take cables).
   const devs = page.locator('.scene .dev');
   await devs.nth(3).click();
   await devs.nth(4).click({ modifiers: ['Shift'] });
@@ -483,6 +483,7 @@ test('a field of the inspector gives up focus when another thing is selected, an
   expect(await focused()).not.toBe('multi-owner');
   const before = await plan(page, (p) => p.devices.length);
   await page.keyboard.press('Delete');
+  await page.click('#confirm-ok');
   await expect.poll(() => plan(page, (p) => p.devices.length)).toBe(before - 3);
 
   // A length typed and not yet left, then a click on the same rack: kept and shown.

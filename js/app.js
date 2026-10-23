@@ -2181,11 +2181,22 @@
     return p.length > 1 ? `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}` : p.join('');
   }
 
-  function deleteDevices(ids) {
+  /** Deleting this many devices at once asks first, as deleting several that take cables does. */
+  const ASK_TO_DELETE = 10;
+  async function deleteDevices(ids) {
     const devs = ids.map((id) => M.deviceById(project, id)).filter(Boolean);
     if (!devs.length) return;
     const gone = idSet(devs);
     const cables = cablesGoingWith(gone);
+    if (devs.length > 1 && (cables || devs.length >= ASK_TO_DELETE)) {
+      const ok = await confirmDialog({
+        title: `Delete ${plural(devs.length, 'device')}?`,
+        body: `This deletes ${devicesAndCables(devs)}. Undo brings them back.`,
+        ok: 'Delete',
+        focusCancel: true,
+      });
+      if (!ok) return;
+    }
     ui.selection = null;
     commit((p) => {
       p.devices = p.devices.filter((x) => !gone.has(x.id));
@@ -3749,7 +3760,8 @@
       // Esc closes it without an answer: that counts as Cancel, unless `o.dismissOk`.
       dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok' || (!!o.dismissOk && dlg.returnValue !== 'cancel')), { once: true });
       openDialog(dlg);
-      $('#confirm-ok').focus();
+      // After a key that asked (Delete), a second press of Enter or Space keeps everything.
+      (o.focusCancel ? $('#dlg-confirm button[value="cancel"]') : $('#confirm-ok')).focus();
     });
   }
 

@@ -249,7 +249,7 @@ Rear**); otherwise they ask how it is **Mounted**.
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
 | <kbd>Enter</kbd> on a device type | Place one: the placement dialog picks its rack and position (Racks) |
 | <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling, edit the selected cable's label |
-| <kbd>Del</kbd> | Delete; in Cabling, delete the selected cables or unplug the selected port |
+| <kbd>Del</kbd> or <kbd>Backspace</kbd> | Delete; several devices that take cables, or 10 devices or more, ask first; in Cabling, delete the selected cables or unplug the selected port |
 | <kbd>Tab</kbd> | Walk through rack labels and devices, top to bottom (Racks) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo, redo |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |

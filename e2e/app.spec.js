@@ -661,7 +661,9 @@ test('several devices can be selected and moved together', async ({ page }) => {
   await page.fill('#multi-rename', 'gpu-101');
   await page.click('#multi-rename-go');
   await expect(device(page, 'gpu-103')).toBeVisible();
+  // They take cables with them, so Delete asks first.
   await page.keyboard.press('Delete');
+  await page.click('#confirm-ok');
   await expect(devices(page)).toHaveCount(34);
 });
 
@@ -769,6 +771,31 @@ test('device fields are saved and found by search', async ({ page }) => {
   await expect(page.locator('.sr-item .sr-name')).toHaveText(['cn-007']);
   const csv = fs.readFileSync(await (await exportFile(page, 'csv')).path(), 'utf8');
   expect(csv).toContain('Ground floor,Row A,Rack A01,U16-17,2,Compute node,cn-007,Kestrel HPC,SN-777,,,Team Kestrel,950,25,');
+});
+
+test('asks before deleting many devices, or several that take cables', async ({ page }) => {
+  await device(page, 'cn-005').click();
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  const dlg = page.locator('#dlg-confirm');
+  await expect(dlg).toBeVisible();
+  await expect(page.locator('#confirm-title')).toHaveText('Delete 37 devices?');
+  await expect(page.locator('#confirm-body')).toHaveText(/^This deletes 37 devices and \d+ cables\. Undo brings them back\.$/);
+  // Focus starts on Cancel: one more key press keeps the devices.
+  await expect(page.locator('#dlg-confirm button[value="cancel"]')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dlg).toBeHidden();
+  await expect(devices(page)).toHaveCount(37);
+  await expect(page.locator('.multi-title')).toHaveText('37 devices');
+  await page.click('#multi-del');
+  await page.click('#confirm-ok');
+  await expect(devices(page)).toHaveCount(0);
+  // One device goes at once, cables or not: the toast can undo it.
+  await page.keyboard.press('Control+z');
+  await device(page, 'cn-005').click();
+  await page.keyboard.press('Delete');
+  await expect(dlg).toBeHidden();
+  await expect(devices(page)).toHaveCount(36);
 });
 
 test('asks before replacing an edited example, not an untouched one', async ({ page }) => {
