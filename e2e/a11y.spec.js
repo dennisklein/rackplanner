@@ -1,0 +1,51 @@
+'use strict';
+
+const { test, expect } = require('@playwright/test');
+
+// Every test starts from a fresh browser profile, so the example plan loads.
+test.beforeEach(async ({ page }) => {
+  await page.goto('/index.html');
+  await expect(page.locator('.scene .dev')).toHaveCount(37);
+});
+
+/** Contrast ratio of two CSS colors as the page computes them. */
+function contrastOf(page, sel, fg, bg) {
+  return page.evaluate(
+    ({ sel, fg, bg }) => {
+      const probe = document.createElement('i');
+      document.querySelector(sel).appendChild(probe);
+      const rgb = (v) => {
+        probe.style.color = v;
+        return getComputedStyle(probe).color.match(/\d+/g).slice(0, 3).map(Number);
+      };
+      const lum = (c) => {
+        const [r, g, b] = c.map((x) => {
+          const s = x / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const a = lum(rgb(fg));
+      const b = lum(rgb(bg));
+      probe.remove();
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    },
+    { sel, fg, bg }
+  );
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`secondary text reads at 4.5:1 in the ${theme} theme`, async ({ page }) => {
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    expect(await contrastOf(page, 'body', 'var(--ink-3)', 'var(--surface)')).toBeGreaterThanOrEqual(4.5);
+    expect(await contrastOf(page, 'body', 'var(--ink-3)', 'var(--surface-2)')).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+test.describe('in a dark system theme', () => {
+  test.use({ colorScheme: 'dark' });
+  test('secondary text reads at 4.5:1 too', async ({ page }) => {
+    expect(await contrastOf(page, 'body', 'var(--ink-3)', 'var(--surface)')).toBeGreaterThanOrEqual(4.5);
+    expect(await contrastOf(page, 'body', 'var(--ink-3)', 'var(--surface-2)')).toBeGreaterThanOrEqual(4.5);
+  });
+});
