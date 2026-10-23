@@ -1278,7 +1278,10 @@ test.describe('on a phone', () => {
     // The page scrolls to the drawing, under the devices, with its hint.
     await expect(page.locator('#armed-hint')).toBeInViewport();
     await expect.poll(stageTop(page)).toBe(0);
-    const target = await spot(page, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 30 });
+    // At 100%, U30 is further down the drawing.
+    let target = await spot(page, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 30 });
+    await page.evaluate((y) => (document.querySelector('#canvas').scrollTop += y - window.innerHeight / 2), target.y);
+    target = await spot(page, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 30 });
     await page.touchscreen.tap(target.x, target.y);
     await expect(page.locator('#dlg-place')).toBeVisible();
     await expect(page.locator('#place-where')).toContainText('Rack A01 · U30');
@@ -1292,8 +1295,7 @@ test.describe('on a phone', () => {
     await swipe(page, 200, 500, -250);
     const once = await at();
     expect(once.drawing).toBeGreaterThan(start.drawing);
-    await swipe(page, 200, 500, -250);
-    await swipe(page, 200, 500, -250);
+    for (let i = 0; i < 6; i++) await swipe(page, 200, 500, -250);
     expect((await at()).page).toBeGreaterThan(start.page);
 
     await page.setViewportSize({ width: 750, height: 342 });
@@ -1342,6 +1344,24 @@ test.describe('on a phone', () => {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.locator('.fm-rack[data-rack="r3"]').tap();
     await expect(page.locator('.scene .rack-head[data-rack="r3"]')).toBeInViewport();
+  });
+
+  test('the racks start at 100%, and two fingers zoom the drawing, not the page', async ({ page }) => {
+    await page.locator('#btn-keep-example').tap();
+    await expect(page.locator('#btn-zoom-reset')).toHaveText('100%');
+    await page.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'start' }));
+    const box = await page.locator('#canvas').boundingBox();
+    const x = Math.round(box.x + box.width / 2);
+    const y = Math.round(box.y + box.height / 2);
+    const cdp = await page.context().newCDPSession(page);
+    const fingers = (d) => [{ x: x - d, y, id: 1 }, { x: x + d, y, id: 2 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(40) });
+    for (let d = 44; d <= 80; d += 4) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(d) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.locator('#btn-zoom-reset')).toHaveText('200%');
+    expect(await page.evaluate(() => window.visualViewport.scale)).toBe(1);
+    // The fingers lifted tap nothing.
+    await expect(page.locator('#inspector .insp-where')).toHaveCount(0);
   });
 
   test('adds a device type from a template in the catalog', async ({ page }) => {

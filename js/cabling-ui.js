@@ -3860,6 +3860,7 @@
       reset,
       onRestore,
       cancelPending,
+      cancelPress,
       hasSelection,
       clearSelection,
       clearFocus,

@@ -249,6 +249,8 @@ On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
 <kbd>[</kbd> and <kbd>]</kbd> also work where the keyboard types them with
 <kbd>AltGr</kbd> or <kbd>Option</kbd>.
 In Cabling, the zoom keys work in the elevation and the fabric.
+On a touch screen, pinch the drawing with two fingers to zoom it. The racks
+open at 100% there, so that a unit is big enough to tap.
 
 ## Planning the cabling
 

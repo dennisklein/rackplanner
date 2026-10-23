@@ -2238,10 +2238,13 @@
   // and show it from the top left. The zoom is set without reading the
   // layout of the drawing just drawn (setZoom keeps a point in place, which
   // needs it), so the browser lays it out once, at the zoom it ends at.
+  // On a touch screen, the racks start at 100%, where a unit is big enough to tap.
+  const coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)') : { matches: false };
   function fitWidth() {
     if (!zoomable()) return;
     const cw = canvasWidth();
-    ui.zoom = clamp(Math.round(clamp(Math.min(1, cw / ui.sceneW), 0.5, 3) * 1000) / 1000, 0.1, 3);
+    const least = coarse.matches && (ui.workspace === 'racks' || ui.cabView === 'elevation') ? 1 : 0.5;
+    ui.zoom = clamp(Math.round(clamp(Math.min(1, cw / ui.sceneW), least, 3) * 1000) / 1000, 0.1, 3);
     applyZoom();
     scrollToOrigin();
     // A Cabling drawing still too wide may show its middle instead (the fabric's switches).
@@ -2723,6 +2726,36 @@
     },
     { passive: false }
   );
+
+  // Two fingers on a drawing zoom it around their midpoint, as Ctrl+scroll
+  // does; one finger still scrolls it (touch-action in css/app.css).
+  const touches = new Map();
+  let pinch = null;
+  function spread() {
+    const [a, b] = [...touches.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 };
+  }
+  el.canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size !== 2 || !zoomable()) return;
+    // Lifted, the fingers tap nothing.
+    ui.press = null;
+    cab.cancelPress();
+    pinch = { d: spread().d, zoom: ui.zoom };
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinch || touches.size !== 2) return;
+    const s = spread();
+    if (pinch.d > 0) setZoom(pinch.zoom * (s.d / pinch.d), s);
+  });
+  const lift = (e) => {
+    if (touches.delete(e.pointerId) && touches.size < 2) pinch = null;
+  };
+  window.addEventListener('pointerup', lift);
+  window.addEventListener('pointercancel', lift);
 
   // ------------------------------------------------------ cluster sidebar
 

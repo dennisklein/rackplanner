@@ -366,6 +366,8 @@ p { margin: 0; }
   overscroll-behavior: contain;
 }
 .canvas.is-panning { cursor: grabbing; }
+/* A drawing that zooms takes the pinch itself (js/app.js), not the page. */
+.canvas:not(.is-map):not([data-cab]) { touch-action: pan-x pan-y; }
 .canvas.is-map { display: block; padding: 0; }
 
 /* Floor and row navigation */
