@@ -129,7 +129,9 @@ its fans or power supplies, and its front ports are at the rack's rear.
   whatever is selected. A device or a group of devices is copied into the
   nearest free space, below it first, then above, then in the neighbouring
   racks, keeping the group's layout; names continue each series (`cn-013`,
-  `cn-014`) and take the code of the copy's rack. A rack, row or floor is copied with all its devices and
+  `cn-014`) and take the code of the copy's rack. A device in a side slot is
+  copied into a free side slot only: in its rack, then in the nearest racks.
+  A rack, row or floor is copied with all its devices and
   inserted right after the original.
 - **Clusters**: click one in the left panel to highlight its devices. Use the
   pencil icon to rename or recolor it, and the eye to hide its devices in the

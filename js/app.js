@@ -1951,7 +1951,8 @@
       const u = below.length ? below[0] : above[0];
       if (u) loc = { rack: d.loc.rack, kind: 'u', at: u };
     } else if (!loc) {
-      loc = M.nearestLoc(project, d.type, d.loc.rack, M.rackUnits(project, d.loc.rack), null, true, d.height);
+      loc = freeSideSlot(d);
+      if (!loc) return toast(`No side slot is free for a copy of ${d.name}`, { warn: true });
     }
     if (!loc) {
       for (const r of currentRow().row.racks.concat(M.allRacks(project).map((x) => x.rack))) {
@@ -1975,6 +1976,19 @@
       { label: `Added ${copy.name}, a copy of ${d.name}` }
     );
     toast(`Added ${copy.name} at ${M.formatDeviceLoc(project, copy)}`);
+  }
+
+  /** A free side slot for a copy of side-slot device `d`: in its rack, then in the nearest racks of its row, then anywhere. */
+  function freeSideSlot(d) {
+    const pos = M.locateRack(project, d.loc.rack);
+    // By distance, the rack to the right first.
+    const away = (i) => Math.abs(i - pos.index) * 2 + (i < pos.index ? 1 : 0);
+    const row = pos.row.racks.map((r, i) => [r, away(i)]).sort((a, b) => a[1] - b[1]).map(([r]) => r);
+    for (const r of row.concat(M.allRacks(project).map((x) => x.rack))) {
+      const loc = M.validLocs(project, d.type, r.id, null, d.height).find((l) => l.kind === 'side');
+      if (loc) return loc;
+    }
+    return null;
   }
 
   /** Duplicates the selected devices: one like duplicateDevice, several as a block. */

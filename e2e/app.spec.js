@@ -540,6 +540,34 @@ test('duplicates several devices, racks, rows and floors', async ({ page }) => {
   expect(await planDevices(page)).toBe(65);
 });
 
+test('a copy of a side-slot device goes to a side slot, in the next rack when its own are full', async ({ page }) => {
+  await dragPart(page, 'pdu', await spot(page, 'pdu', { rack: 'r1', kind: 'side', at: 1 }));
+  await page.mouse.up();
+  await expect(page.locator('#place-name')).toHaveValue('pdu-a01-a');
+  await page.click('#place-submit');
+  await device(page, 'pdu-a01-a').click();
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('.toast').last()).toContainText('Added pdu-a02-a at Rack A02 · side slot V1');
+
+  // With every side slot taken, no copy goes into the rack units.
+  await page.evaluate(() => {
+    const M = window.RP.model;
+    const p = window.RP.app.project();
+    for (const { rack } of M.allRacks(p)) {
+      for (let at = 0; at < M.rackSideSlots(p, rack.id); at++) {
+        if (!p.devices.some((d) => d.loc.rack === rack.id && d.loc.kind === 'side' && d.loc.at === at)) {
+          p.devices.push(M.newDevice({ type: 'pdu', name: `pdu-${rack.id}-${at}`, loc: { rack: rack.id, kind: 'side', at } }));
+        }
+      }
+    }
+  });
+  const before = await planDevices(page);
+  await device(page, 'pdu-a01-a').click();
+  await page.keyboard.press('Control+d');
+  await expect(page.locator('.toast').last()).toHaveText('No side slot is free for a copy of pdu-a01-a');
+  expect(await planDevices(page)).toBe(before);
+});
+
 test('reserved space gets its own height and counts in the rack stats', async ({ page }) => {
   await dragPart(page, 'reserved', await spot(page, 'reserved', { rack: 'r1', kind: 'u', at: 30 }, 2));
   await page.mouse.up();
