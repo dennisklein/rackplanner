@@ -2880,6 +2880,7 @@
       ['rows', 'Rows', 'map'],
       ['racks', 'Racks', 'rack'],
       ['devices', 'Devices', 'rack'],
+      ['clusters', 'Clusters of other views', 'layers'],
     ];
     if (cabling) {
       const found = cab.searchCables(q, 8);
@@ -2899,11 +2900,13 @@
         html +=
           `<div class="sr-item${i === ui.searchActive ? ' is-active' : ''}" role="option" id="sr-${i}" data-i="${i}" aria-selected="${i === ui.searchActive}">` +
           `<span class="sr-kind">${icon(kind, 'ic-sm')}</span>` +
-          `<span class="sr-name">${esc(it.name)}</span><span class="sr-detail">${esc(it.detail)}</span></div>`;
+          `<span class="sr-name">${esc(it.name)}</span><span class="sr-detail">${esc(it.detail)}${it.kind === 'cluster' ? ' · Show view' : ''}</span></div>`;
       }
       if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' && !cabling ? ' (highlighted in the racks)' : ''}</div>`;
     }
-    if (!items.length) html = `<div class="sr-empty" role="presentation">Nothing matches “${esc(q)}”.</div>`;
+    // With views, say that the search is in the view shown.
+    const where = project.views.length > 1 ? ` in view ${esc(M.viewOf(project, ui.clusterView).name)}` : '';
+    if (!items.length) html = `<div class="sr-empty" role="presentation">Nothing${where} matches “${esc(q)}”.</div>`;
     else if (res.counts.devices && !cabling) html += `<div class="sr-foot" role="presentation">Matching devices stay highlighted; <kbd>Esc</kbd> clears the search.</div>`;
     ui.searchItems = items;
     if (ui.searchActive >= items.length) ui.searchActive = items.length - 1;
@@ -2959,6 +2962,13 @@
   function chooseResult(it) {
     flushSearchStage();
     closeSearch();
+    // A cluster of another view: show that view; the search goes on in it.
+    if (it.kind === 'cluster') {
+      el.search.blur();
+      setClusterView(it.view);
+      toast(`Showing view ${M.viewOf(project, it.view).name}`);
+      return;
+    }
     if (ui.workspace === 'cabling') {
       el.search.blur();
       cab.chooseResult(it);

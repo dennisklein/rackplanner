@@ -1063,6 +1063,10 @@ test('suggestPlacement and search use the clusters of the view asked for', () =>
   assert.equal(p.devices[0].groups.v1, 'c1', 'a copy of them');
   assert.equal(M.search(p, 'hdr').counts.devices, 0);
   assert.equal(M.search(p, 'hdr', 8, ib.id).counts.devices, 1);
+  // A cluster of another view is found as such, with the view it is in.
+  assert.deepEqual(M.search(p, 'hdr').clusters, [{ kind: 'cluster', id: 'c2', view: ib.id, name: 'HDR', detail: 'Cluster in view InfiniBand · 1 device' }]);
+  assert.deepEqual(M.search(p, 'hdr', 8, ib.id).clusters, [], 'not those of the view shown');
+  assert.equal(M.search(p, 'alpha', 8, ib.id).clusters[0].detail, 'Cluster in view Default · 1 device');
   assert.equal(M.deviceMatcher(p, 'alpha', ib.id)(p.devices[0]), false);
 });
 

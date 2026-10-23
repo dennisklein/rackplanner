@@ -178,7 +178,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   elevation.
 - **Search**: type in the search box (or press <kbd>/</kbd>) to find floors,
   rows, racks and devices. Devices are found by name, type, cluster, serial
-  number, asset tag, IP address or owner. Pick a result to jump there. While
+  number, asset tag, IP address or owner. Clusters are those of the view
+  shown; a cluster of another view is listed with its view, and picking it
+  shows that view. Pick a result to jump there. While
   the search is on, matching devices stay highlighted in the drawing and
   marked on the floor map.
 - **Racks, rows and floors**: click a rack's yellow label (or <kbd>Tab</kbd> to

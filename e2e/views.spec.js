@@ -276,3 +276,26 @@ test('a CSV export with a column per view opens as a plan of just those views', 
   await page.click('#btn-cluster-view');
   await expect(viewItems(page).locator('span')).toHaveText(['Lustre', 'InfiniBand']);
 });
+
+test('search finds a cluster of another view and shows that view', async ({ page }) => {
+  await copyView(page, 'InfiniBand');
+  // In InfiniBand, Kestrel HPC becomes HDR island.
+  const row = page.locator('#clusters .cl-row[data-cluster]').filter({ hasText: 'Kestrel HPC' });
+  await row.hover();
+  await row.locator('.cl-edit').click();
+  await page.fill('#cluster-name', 'HDR island');
+  await page.click('#cluster-submit');
+
+  await page.locator('#search').fill('kestrel');
+  const results = page.locator('#search-results');
+  await expect(results.locator('.sr-group')).toHaveText([/Clusters of other views/]);
+  await expect(results.locator('.sr-item')).toHaveText([/Kestrel HPC\s*Cluster in view Default · 12 devices · Show view/]);
+  await results.locator('.sr-item').click();
+  await expect(shown(page)).toHaveText('Default');
+  // The search goes on in that view: its devices are found now.
+  await page.locator('#search').focus();
+  await expect(results.locator('.sr-group').first()).toContainText('Devices');
+
+  await page.locator('#search').fill('no such thing');
+  await expect(results.locator('.sr-empty')).toHaveText('Nothing in view Default matches “no such thing”.');
+});

@@ -2610,12 +2610,13 @@
   /**
    * Finds floors, rows, racks and devices whose names (and, for devices, type,
    * cluster, serial number, asset tag, IP address or owner) contain every word
-   * of `query` (clusters of view `viewId`). Each group is capped at `limit`;
-   * `counts` has the full numbers.
+   * of `query` (clusters of view `viewId`), and the clusters of the other
+   * views whose names do. Each group is capped at `limit`; `counts` has the
+   * full numbers.
    */
   function search(project, query, limit, viewId) {
     const words = queryWords(query);
-    const out = { floors: [], rows: [], racks: [], devices: [], counts: { floors: 0, rows: 0, racks: 0, devices: 0 } };
+    const out = { floors: [], rows: [], racks: [], devices: [], clusters: [], counts: { floors: 0, rows: 0, racks: 0, devices: 0, clusters: 0 } };
     if (!words.length) return out;
     const max = limit || 8;
     const hit = (text) => words.every((w) => text.includes(w));
@@ -2637,6 +2638,16 @@
       if (!match(d)) continue;
       const pos = locateRack(project, d.loc.rack);
       push('devices', { kind: 'device', id: d.id, name: d.name, detail: `${pos.floor.name} · ${pos.row.name} · ${formatDeviceLoc(project, d)}` });
+    }
+    // Clusters of the other views, to show the view they are in.
+    const shown = viewOf(project, viewId);
+    for (const v of project.views) {
+      if (v === shown) continue;
+      for (const c of v.clusters) {
+        if (!hit(c.name.toLowerCase())) continue;
+        const n = project.devices.filter((d) => d.groups && d.groups[v.id] === c.id).length;
+        push('clusters', { kind: 'cluster', id: c.id, view: v.id, name: c.name, detail: `Cluster in view ${v.name} · ${plural(n, 'device')}` });
+      }
     }
     return out;
   }
