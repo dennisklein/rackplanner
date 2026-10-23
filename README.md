@@ -151,7 +151,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   rename or recolor it; on a touch screen they are always shown. Use the eye
   to hide its devices in the racks: they keep their units, drawn as dashed
   outlines. A long name is cut in the middle, so its end stays in sight;
-  pointing at it shows it in full.
+  pointing at it shows it in full. The first eight colors stay apart for
+  color-blind eyes too, and the cluster dialog warns when a color is close to
+  another cluster's.
 - **Views**: one plan can group the same devices in more than one way, for
   example by storage system and by InfiniBand island. Each view has clusters
   of its own; the devices, their places, the cables and the networks are the

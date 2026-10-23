@@ -3540,6 +3540,19 @@
     const type = M.typeOf(project, 'compute-node') || project.deviceTypes.find((t) => t.height === 2) || M.cleanDeviceType({ height: 2, face: 'compute' });
     const pv = R.renderPreview(type, ui.theme, clusterDlg.color, `${sample}-01`);
     $('#cluster-preview').innerHTML = `<svg viewBox="0 0 ${pv.width} ${pv.height}">${pv.body}</svg>`;
+    // A color near another cluster's of the view: some eyes see the two as one.
+    const near = viewClusters()
+      .filter((c) => c.id !== clusterDlg.id)
+      .map((c) => ({ c, d: M.colorDistance(c.color, clusterDlg.color) }))
+      .filter((x) => x.d < M.COLOR_NEAR)
+      .sort((a, b) => a.d - b.d)[0];
+    const note = $('#cluster-near');
+    note.textContent = !near
+      ? ''
+      : near.d < 1
+        ? `${near.c.name} has this color too.`
+        : `Close to the color of ${near.c.name}. Not everyone can tell the two apart.`;
+    note.hidden = !near;
   }
 
   $('#cluster-name').addEventListener('input', () => {

@@ -1486,3 +1486,23 @@ test.describe('on a touch tablet', () => {
     await expect(page.locator('#cluster-name')).toHaveValue('Kestrel HPC');
   });
 });
+
+test('the cluster dialog warns of a color near another cluster’s', async ({ page }) => {
+  await page.click('#btn-add-cluster');
+  const near = page.locator('#cluster-near');
+  await expect(near).toBeHidden();
+  // Violet and cobalt differ in hue only.
+  await page.click('#cluster-colors .swatch[title="Violet"]');
+  await expect(near).toHaveText('Close to the color of Kestrel HPC. Not everyone can tell the two apart.');
+  await page.click('#cluster-colors .swatch[title="Cobalt"]');
+  await expect(near).toHaveText('Kestrel HPC has this color too.');
+  await page.click('#cluster-colors .swatch[title="Brown"]');
+  await expect(near).toBeHidden();
+  await page.click('#dlg-cluster [data-close]');
+  // A cluster's own color is no warning.
+  const row = page.locator('#clusters .cl-row[data-cluster="c-kestrel"]');
+  await row.hover();
+  await row.locator('.cl-edit').click();
+  await expect(page.locator('#cluster-name')).toHaveValue('Kestrel HPC');
+  await expect(near).toBeHidden();
+});
