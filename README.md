@@ -344,7 +344,8 @@ port's inspector offers to pick the other end there (**Or select the other
 end here**), with the cable type armed and a port that it fits. A
 connection goes on from the elevation to the port map and back; another
 view cancels it, with a toast that says so. In Cabling, messages show at the
-foot of the inspector, off the drawing, and each new connection's message
+foot of the left panel, off the drawing and the inspector (on a narrow screen,
+over the stage's nav bar), and each new connection's or unplug's message
 replaces the one before.
 
 **Connect series** (in the schedule, on each faceplate of the port map, and

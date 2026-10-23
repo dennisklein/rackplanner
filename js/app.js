@@ -5548,14 +5548,16 @@
    * cover its buttons (a dialog as tall as a phone's screen), they sit just
    * above it. Placed once the dialog has its content, and again when it
    * changes size. In Cabling they keep off the drawing, whose ports take
-   * the clicks: at the foot of the inspector beside it, above its buttons.
+   * the clicks, and off the inspector, whose fields the user goes on to:
+   * at the foot of the left panel beside the drawing, or over the stage's
+   * nav bar when the drawing takes the width of the screen.
    */
   function placeToasts() {
     const host = el.toasts.parentNode;
     const foot = host && host.tagName === 'DIALOG' && host.open ? $('.dlg-foot', host) : null;
     const style = el.toasts.style;
-    style.bottom = style.left = style.width = '';
-    el.toasts.classList.remove('is-docked');
+    style.top = style.bottom = style.left = style.width = '';
+    el.toasts.classList.remove('is-docked', 'is-top');
     if (!el.toasts.children.length) return;
     if (!foot) {
       if (host === document.body && ui.workspace === 'cabling') dockToasts();
@@ -5566,16 +5568,24 @@
     if (t.bottom > f.top && t.top < f.bottom) style.bottom = `${Math.round(window.innerHeight - f.top + 8)}px`;
   }
   function dockToasts() {
-    const box = el.inspector.getBoundingClientRect();
-    // On a narrow screen the inspector is below the stage: the toasts stay in the middle.
-    if (!box.width || box.left < el.stage.getBoundingClientRect().right) return;
-    const actions = $('.insp-actions', el.inspector);
-    const a = actions && actions.getClientRects().length ? actions.getBoundingClientRect() : null;
-    const top = Math.min(a ? a.top : box.bottom, box.bottom, window.innerHeight);
-    el.toasts.classList.add('is-docked');
-    el.toasts.style.left = `${Math.round(box.left + 8)}px`;
-    el.toasts.style.width = `${Math.round(box.width - 16)}px`;
-    el.toasts.style.bottom = `${Math.round(window.innerHeight - top + 8)}px`;
+    const style = el.toasts.style;
+    const stage = el.stage.getBoundingClientRect();
+    const bin = $('#bin').getBoundingClientRect();
+    if (bin.width && bin.right <= stage.left) {
+      el.toasts.classList.add('is-docked');
+      style.left = `${Math.round(bin.left + 8)}px`;
+      style.width = `${Math.round(bin.width - 16)}px`;
+      style.bottom = `${Math.round(window.innerHeight - Math.min(bin.bottom, window.innerHeight) + 8)}px`;
+      return;
+    }
+    // On a narrow screen the left panel is above the stage: over the nav bar, which stays at the top while the stage is in view.
+    const nav = $('.nav', el.stage).getBoundingClientRect();
+    if (stage.bottom < nav.height || stage.top > window.innerHeight - nav.height) return;
+    el.toasts.classList.add('is-docked', 'is-top');
+    style.left = `${Math.round(stage.left + 8)}px`;
+    style.width = `${Math.round(stage.width - 16)}px`;
+    style.top = `${Math.round(Math.max(nav.top, 0) + 4)}px`;
+    style.bottom = 'auto';
   }
   let toastFrame = 0;
   function placeToastsSoon() {
@@ -5592,6 +5602,8 @@
     $$('dialog').forEach((dlg) => ro.observe(dlg));
   }
   window.addEventListener('resize', placeToastsSoon);
+  // On a narrow screen the nav bar that they sit over scrolls with the page until it sticks.
+  window.addEventListener('scroll', () => el.toasts.children.length && placeToastsSoon(), { passive: true });
 
   function toast(message, opts) {
     const o = opts || {};

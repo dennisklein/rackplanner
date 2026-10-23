@@ -2931,7 +2931,7 @@
       // The cable as it is now: one without a label may have been given one.
       const now = left ? cableById(id) : null;
       const name = (now && now.label) || c.label || 'the cable';
-      if (!err) toast(left ? `Unplugged leg ${i + 1} of ${name}` : `Deleted ${name}, its last leg unplugged`, { action: 'Undo', onAction: ctx.undo });
+      if (!err) toast(left ? `Unplugged leg ${i + 1} of ${name}` : `Deleted ${name}, its last leg unplugged`, { action: 'Undo', onAction: ctx.undo, kind: 'unplugged' });
     }
 
     /**
@@ -2948,7 +2948,7 @@
         return true;
       }
       ctx.commit((p) => void C.disconnect(p, c.id));
-      toast(`Unplugged ${c.label || 'a cable'}`, { action: 'Undo', onAction: ctx.undo });
+      toast(`Unplugged ${c.label || 'a cable'}`, { action: 'Undo', onAction: ctx.undo, kind: 'unplugged' });
       return true;
     }
 
@@ -3321,7 +3321,7 @@
           return true;
         });
       });
-      toast(`Unplugged ${plural(n, 'cable')} from ${d.name}`, { action: 'Undo', onAction: ctx.undo });
+      toast(`Unplugged ${plural(n, 'cable')} from ${d.name}`, { action: 'Undo', onAction: ctx.undo, kind: 'unplugged' });
     }
 
     /** "Compute node · cable IB-0002", "Compute node · free". */

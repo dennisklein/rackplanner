@@ -1294,15 +1294,24 @@ test('the eye of a network hides its cables in the elevation and shows them agai
   await expect(page.locator('.scene [data-port][opacity]')).toHaveCount(0);
 });
 
-test('toasts keep off the drawing, and a new connection’s toast replaces the one before', async ({ page }) => {
-  await page.click('#btn-zoom-reset');
-  const node = page.locator(`.scene .dev[data-dev="${await idOf(page, 'cn-012')}"]`);
+/** Selects device `name` in the elevation shown and unplugs all its cables. */
+async function unplugAll(page, name) {
+  const node = page.locator(`.scene .dev[data-dev="${await idOf(page, name)}"]`);
   await node.scrollIntoViewIfNeeded();
   const box = await node.boundingBox();
   await page.mouse.click(box.x + box.width * 0.45, box.y + 4);
   await page.click('#cab-dev-unplug');
   await page.click('#confirm-ok');
+}
+
+test('toasts keep off the drawing and the inspector, and a new connection’s toast replaces the one before', async ({ page }) => {
+  await page.click('#btn-zoom-reset');
+  await unplugAll(page, 'cn-011');
+  await unplugAll(page, 'cn-012');
+  // The second unplug's toast replaces the first one's.
   const unplugged = page.locator('.toast', { hasText: 'Unplugged' });
+  await expect(unplugged).toHaveCount(1);
+  await expect(unplugged).toContainText('from cn-012');
   await expect(unplugged.locator('button')).toHaveText('Undo');
 
   await (await port(page, 'ib-leaf-a01', 'p13')).click();
@@ -1317,15 +1326,32 @@ test('toasts keep off the drawing, and a new connection’s toast replaces the o
   // The unplug's Undo went with the first connection: it would undo that instead.
   await expect(unplugged.locator('button')).toHaveCount(0);
 
-  // The toasts sit over the inspector, not over the drawing.
-  const inspector = await page.locator('#inspector').boundingBox();
+  // The toasts sit at the foot of the left panel, not over the drawing or the fields of the cable just made.
+  const bin = await page.locator('#bin').boundingBox();
   for (const box of [await connected.boundingBox(), await unplugged.boundingBox()]) {
-    expect(box.x).toBeGreaterThanOrEqual(inspector.x);
-    expect(box.x + box.width).toBeLessThanOrEqual(inspector.x + inspector.width);
+    expect(box.x).toBeGreaterThanOrEqual(bin.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(bin.x + bin.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(bin.y + bin.height);
   }
   await connected.getByRole('button', { name: 'Undo' }).click();
   expect(await cableAt(page, 'ib-leaf-a01', 'p14')).toBeNull();
   expect((await cableAt(page, 'ib-leaf-a01', 'p13')).label).toBe(first.label);
+});
+
+test.describe('on a narrow screen', () => {
+  test.use({ viewport: { width: 900, height: 900 } });
+
+  test('toasts sit over the nav bar of the stage, not over the drawing', async ({ page }) => {
+    await page.click('#btn-zoom-reset');
+    await (await port(page, 'ib-leaf-a01', 'p13')).click();
+    await (await port(page, 'ib-leaf-a02', 'p12')).click();
+    const toast = page.locator('.toast[data-kind="connected"]');
+    await expect(toast).toBeVisible();
+    const nav = await page.locator('#stage .nav').boundingBox();
+    const box = await toast.boundingBox();
+    expect(box.y).toBeGreaterThanOrEqual(nav.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(nav.y + nav.height);
+  });
 });
 
 test('Show in elevation draws a cable of a hidden network and says that it is hidden', async ({ page }) => {

@@ -898,8 +898,9 @@ kbd {
   border: 0; border-radius: 3px; padding: 5px 9px; cursor: pointer;
   background: var(--tape); color: var(--tape-ink); font-weight: 600; font-size: 13px;
 }
-/* In Cabling, at the foot of the inspector (placed by js/app.js). */
+/* In Cabling, at the foot of the left panel, or over the stage's nav bar (placed by js/app.js). */
 .toasts.is-docked { transform: none; align-items: stretch; max-width: none; }
+.toasts.is-top { flex-direction: column-reverse; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* ----------------------------------------------------------------- print */
