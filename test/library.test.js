@@ -71,3 +71,31 @@ test('a full store refuses the save instead of losing the index', () => {
   assert.deepEqual(lib.list().map((p) => p.id), [id]);
   assert.ok(IO.normalizeProject(JSON.parse(store.get(Library.planKey(id)))).project);
 });
+
+test('each save counts up the revision of its plan', () => {
+  const lib = Library.create(memoryStore());
+  const id = lib.add(M.createEmptyProject());
+  assert.equal(lib.rev(id), 1);
+  const p = lib.load(id).project;
+  p.name = 'Hall 3';
+  assert.ok(lib.save(id, p));
+  assert.equal(lib.rev(id), 2);
+  assert.equal(lib.list()[0].name, 'Hall 3');
+  assert.equal(lib.rev('p-missing'), 0);
+  lib.remove(id);
+  assert.equal(lib.rev(id), 0);
+});
+
+test('a plan name taken by another plan gets the first free number', () => {
+  const lib = Library.create(memoryStore());
+  const p = M.createEmptyProject();
+  p.name = 'Hall 2';
+  assert.equal(lib.uniqueName('Hall 2'), 'Hall 2');
+  const a = lib.add(p);
+  assert.equal(lib.uniqueName('Hall 2'), 'Hall 2 (2)');
+  assert.equal(lib.uniqueName('Hall 2', a), 'Hall 2', 'its own name is free');
+  p.name = 'Hall 2 (2)';
+  lib.add(p);
+  assert.equal(lib.uniqueName('Hall 2'), 'Hall 2 (3)');
+  assert.equal(lib.uniqueName('Hall 2 (2)'), 'Hall 2 (3)');
+});

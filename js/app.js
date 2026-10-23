@@ -133,6 +133,7 @@
   let project = null;
   let projectJSON = '';
   let savedJSON = null; // projectJSON as last loaded or saved
+  let savedRev = 0; // the plan's revision in the library as last loaded or saved (see followOtherTab)
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
   const ui = {
     workspace: prefs.workspace, // 'racks' | 'cabling'; the Cabling workspace keeps its own state (js/cabling-ui.js)
@@ -172,6 +173,7 @@
     project = p;
     projectJSON = JSON.stringify(project);
     savedJSON = projectJSON;
+    savedRev = id ? lib.rev(id) : 0;
     history.past = [];
     history.future = [];
     history.chars = 0;
@@ -208,22 +210,92 @@
     clearTimeout(persistTimer);
     persistTimer = setTimeout(flushPersist, 300);
   }
+  /** Saves the plan if it changed. False when it did not, because another tab saved it since and the user is asked first. */
   function flushPersist() {
     clearTimeout(persistTimer);
     persistTimer = null;
-    if (!project || (planId && projectJSON === savedJSON)) return;
+    if (!project || (planId && projectJSON === savedJSON)) return true;
+    if (planId && (changedElsewhere() || $('#dlg-elsewhere').open)) {
+      askElsewhere();
+      return false;
+    }
     let ok = false;
     if (planId) ok = lib.save(planId, project);
     else if ((planId = lib.add(project))) {
       lib.setCurrent(planId);
       ok = true;
     }
-    if (ok) savedJSON = projectJSON;
+    if (ok) {
+      savedJSON = projectJSON;
+      savedRev = lib.rev(planId);
+    }
     if (!ok && !storageWarned) {
       storageWarned = true;
       toast('This browser did not save the plan: its storage is full or blocked. Export the plan file to keep your work.', { warn: true });
     } else if (ok) storageWarned = false;
+    return true;
   }
+
+  // Other tabs ---------------------------------------------------------
+
+  /** True when another tab saved the open plan after this one loaded or saved it. */
+  function changedElsewhere() {
+    const rev = planId ? lib.rev(planId) : 0;
+    return rev !== 0 && rev !== savedRev;
+  }
+
+  /**
+   * Takes up what another tab saved to the open plan: at once while this
+   * tab has no changes of its own to save, otherwise once the user picks
+   * Reload or Keep mine as a copy. A newer save is never saved over.
+   */
+  function followOtherTab() {
+    if (!changedElsewhere() || $('#dlg-elsewhere').open) return;
+    if (projectJSON === savedJSON) {
+      reloadPlan();
+      toast('This plan changed in a different tab: it shows those changes now');
+    } else askElsewhere();
+  }
+
+  /** Shows the open plan as it is saved; the undo history was of the plan before. */
+  function reloadPlan() {
+    const loaded = lib.load(planId);
+    if (!loaded) return;
+    clearTimeout(persistTimer);
+    persistTimer = null;
+    savedJSON = JSON.stringify(loaded.project);
+    savedRev = lib.rev(planId);
+    history.past = [];
+    history.future = [];
+    history.chars = 0;
+    el.toasts.textContent = '';
+    restore(savedJSON);
+    // The name field shows what was typed while it has focus: here that is gone.
+    el.planName.value = project.name;
+  }
+
+  function askElsewhere() {
+    const dlg = $('#dlg-elsewhere');
+    if (dlg.open) return;
+    $('#elsewhere-name').textContent = project.name;
+    dlg.returnValue = '';
+    openDialog(dlg);
+  }
+  // Nothing goes on before an answer; a dialog closed all the same keeps this tab's changes.
+  $('#dlg-elsewhere').addEventListener('cancel', (e) => e.preventDefault());
+  $('#dlg-elsewhere').addEventListener('close', () => {
+    if ($('#dlg-elsewhere').returnValue === 'reload') return reloadPlan();
+    // This tab's plan, with its undo history, goes on as a new plan; the other tab's stays as it saved it.
+    const theirs = lib.list().find((p) => p.id === planId);
+    planId = null;
+    commit((p) => {
+      p.name = lib.uniqueName(p.name);
+      delete p.meta.example;
+    });
+    flushPersist();
+    setRow(ui.rowId, { render: false });
+    toast(`Kept this tab’s changes as ${project.name}${theirs ? `; ${theirs.name} has the other tab’s` : ''}`);
+  });
 
   // An entry of the history is a plan as it was before a step, and that step.
   function pushPast(entry) {
@@ -4017,8 +4089,7 @@
   }
 
   function switchPlan(id, message) {
-    if (id === planId) return;
-    flushPersist();
+    if (id === planId || !flushPersist()) return;
     const loaded = lib.load(id);
     if (!loaded) return toast('That plan could not be read', { warn: true });
     openPlan(id, loaded.project);
@@ -4029,7 +4100,7 @@
 
   /** Adds `p` as a new plan and opens it. */
   function createPlan(p, message, warnings) {
-    flushPersist();
+    if (!flushPersist()) return;
     const prev = planId;
     const id = lib.add(p);
     lib.setCurrent(id);
@@ -4113,7 +4184,7 @@
   });
   $('#btn-plans').addEventListener('click', () => {
     renderPlans();
-    openDialog($('#dlg-plans'));
+    if (!$('#dlg-elsewhere').open) openDialog($('#dlg-plans'));
   });
 
   function newPlan(kind) {
@@ -4832,12 +4903,17 @@
   window.addEventListener('pagehide', flushPersist);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushPersist();
+    else followOtherTab();
   });
 
   // Another tab may have changed the list of plans or this plan.
   window.addEventListener('storage', (e) => {
-    if ($('#dlg-plans').open && e.key && e.key.startsWith('rackplanner.')) renderPlans();
+    if (e.key && !e.key.startsWith('rackplanner.')) return;
+    followOtherTab();
+    if ($('#dlg-plans').open) renderPlans();
   });
+  // A page back from the browser's cache, or a tab that slept, may have missed saves of other tabs.
+  window.addEventListener('pageshow', followOtherTab);
 
   // ----------------------------------------------------------------- boot
 

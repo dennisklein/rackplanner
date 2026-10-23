@@ -666,6 +666,49 @@ test('deleting the open plan removes it for good; viewing plans does not touch t
   await expect(page.locator('.plan-item.is-current')).toContainText('Untitled rack plan');
 });
 
+test('a plan changed in another tab shows there, and a tab with changes of its own asks first', async ({ page, context }) => {
+  const other = await context.newPage();
+  // Lets the test make this tab miss the saves of the other, as a tab that slept may.
+  await other.addInitScript(() => window.addEventListener('storage', (e) => window.missSaves && e.stopImmediatePropagation()));
+  await other.goto('/index.html');
+  await expect(devices(other)).toHaveCount(37);
+
+  // With nothing of its own to save, the other tab takes up the change at once.
+  await device(page, 'cn-001').click();
+  await page.keyboard.press('Delete');
+  await expect(devices(other)).toHaveCount(36);
+  await expect(other.locator('.toast')).toContainText('This plan changed in a different tab');
+
+  // A tab that missed the other's save asks before it saves over it.
+  await other.evaluate(() => (window.missSaves = true));
+  await device(page, 'cn-002').click();
+  await page.keyboard.press('Delete');
+  await expect(devices(page)).toHaveCount(35);
+  await other.fill('#plan-name', 'Hall 2, tab two');
+  const ask = other.locator('#dlg-elsewhere');
+  await expect(ask).toBeVisible();
+  await expect(ask.locator('h2')).toHaveText('This plan changed in a different tab');
+  // Escape does not dismiss it.
+  await other.keyboard.press('Escape');
+  await expect(ask).toBeVisible();
+  await ask.locator('button[value="reload"]').click();
+  await expect(devices(other)).toHaveCount(35);
+  await expect(other.locator('#plan-name')).toHaveValue('Hall 2 expansion');
+
+  await device(page, 'cn-003').click();
+  await page.keyboard.press('Delete');
+  await other.fill('#plan-name', 'Hall 2, tab two');
+  await expect(ask).toBeVisible();
+  await ask.locator('button[value="copy"]').click();
+  await expect(other.locator('.toast').last()).toContainText('Kept this tab’s changes as Hall 2, tab two');
+  await expect(devices(other)).toHaveCount(35);
+  await page.click('#btn-plans');
+  await expect(page.locator('.plan-item .plan-name-l')).toHaveText(['Hall 2, tab two', 'Hall 2 expansion']);
+  await expect(page.locator('.plan-item.is-current .plan-sub')).toContainText('62 devices');
+  await page.click('#dlg-plans button[value="ok"]');
+  await expect(devices(page)).toHaveCount(34);
+});
+
 test('a share link opens the plan in another browser', async ({ page, browser }) => {
   await device(page, 'cn-001').click();
   await page.fill('#insp-name', 'shared-node');

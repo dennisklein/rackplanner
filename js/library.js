@@ -3,7 +3,9 @@
  *
  * Keeps several plans in a key-value store (localStorage in the browser, a
  * Map in the tests): an index with one entry per plan, and each plan under
- * its own key. The plan in use is the index's `current`.
+ * its own key. The plan in use is the index's `current`. Each entry counts
+ * the saves of its plan in `rev`, so that a browser tab can tell when
+ * another one saved the plan it has open.
  */
 (function (root, factory) {
   'use strict';
@@ -59,14 +61,29 @@
       }
     }
 
-    /** Saves a plan and updates its index entry. False when the store is full. */
+    /** Saves a plan and updates its index entry, counting up its revision. False when the store is full. */
     function save(id, project, opts) {
       if (!store.set(planKey(id), IO.serialize(project, { compact: true }))) return false;
       // Re-read the index so edits from another tab aren't lost.
       const index = readIndex();
-      const entry = Object.assign({ id, created: Date.now() }, index.plans.find((p) => p.id === id), summary(project), { updated: (opts && opts.at) || Date.now() });
+      const old = index.plans.find((p) => p.id === id);
+      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { updated: (opts && opts.at) || Date.now(), rev: ((old && old.rev) || 0) + 1 });
       index.plans = index.plans.filter((p) => p.id !== id).concat([entry]);
       return writeIndex(index);
+    }
+
+    /** The revision of plan `id`: how many times it was saved, by any tab. 0 for a plan not in the list. */
+    function rev(id) {
+      const entry = readIndex().plans.find((p) => p.id === id);
+      return (entry && entry.rev) || 0;
+    }
+
+    /** `name`, or with the first free number, as in 'Hall 2 (2)', when another plan than `except` has it. */
+    function uniqueName(name, except) {
+      const taken = new Set(readIndex().plans.filter((p) => p.id !== except).map((p) => p.name));
+      if (!taken.has(name)) return name;
+      const base = name.replace(/ \(\d+\)$/, '');
+      for (let n = 2; ; n++) if (!taken.has(`${base} (${n})`)) return `${base} (${n})`;
     }
 
     /** Adds a plan and returns its id, or null when the store is full. */
@@ -116,7 +133,7 @@
       return id;
     }
 
-    return { list, load, save, add, remove, current, setCurrent, migrate };
+    return { list, load, save, rev, uniqueName, add, remove, current, setCurrent, migrate };
   }
 
   return { create, summary, INDEX_KEY, LEGACY_KEY, planKey };

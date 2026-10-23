@@ -351,6 +351,10 @@ Plans are saved in the browser's `localStorage` as you work. **Plans** lists
 every plan in this browser to open, duplicate or delete; **New** starts an
 empty plan, one with the current layout but no devices, or the example.
 Plans saved by earlier versions are moved into the list automatically.
+A plan open in two tabs shows in each what the other saves. When both
+changed it, the tab that would save over the newer copy asks first:
+**Reload** takes the other tab's plan, **Keep mine as a copy** saves its own
+as a new plan.
 
 **Export** offers:
 

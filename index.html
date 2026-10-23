@@ -348,6 +348,18 @@
   </form>
 </dialog>
 
+<dialog class="dlg dlg-sm" id="dlg-elsewhere" aria-labelledby="elsewhere-title" aria-describedby="elsewhere-body">
+  <form method="dialog">
+    <header class="dlg-head"><h2 id="elsewhere-title">This plan changed in a different tab</h2></header>
+    <div class="dlg-body"><p id="elsewhere-body">Another tab saved changes to <strong id="elsewhere-name"></strong> after this tab opened it, and this tab has changes that are not saved yet. <strong>Reload</strong> shows the plan as the other tab saved it, without this tab’s changes. <strong>Keep mine as a copy</strong> saves this tab’s plan as a new plan.</p></div>
+    <footer class="dlg-foot">
+      <span class="spacer"></span>
+      <button class="btn" value="copy">Keep mine as a copy</button>
+      <button class="btn primary" value="reload">Reload</button>
+    </footer>
+  </form>
+</dialog>
+
 <dialog class="dlg" id="dlg-report" aria-labelledby="report-title">
   <form method="dialog">
     <header class="dlg-head">
