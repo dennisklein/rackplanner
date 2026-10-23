@@ -826,8 +826,14 @@
     const statW = measure(statText + (warn ? ' !' : ''), FONTS.stat.css);
     const name = fitText(rack.name, FONTS.tape, Math.max(60, RACK_W - statW - 36), measure);
     const tw = measure(name, FONTS.tape.css) + 18;
-    let s = `<g class="rack-head" data-rack="${esc(rack.id)}">`;
-    if (o.interactive) s += `<rect x="${x}" y="${y - 4}" width="${RACK_W}" height="${HEADER - 4}" fill="#000" fill-opacity="0"/>`;
+    let s = `<g class="rack-head" data-rack="${esc(rack.id)}"`;
+    if (o.interactive) {
+      // A button for the keyboard, named with what the label shows.
+      const power = st.powerBudgetW ? `${kw(st.powerW)} of ${kw(st.powerBudgetW)} kW` : formatPower(st.powerW);
+      const label = `${rack.name}, ${st.used + st.reserved} of ${st.units} U used, ${power}${warn ? ', over budget' : ''}`;
+      s += ` tabindex="0" role="button" aria-label="${esc(label)}">`;
+      s += `<rect class="rh-hit" x="${x}" y="${y - 4}" width="${RACK_W}" height="${HEADER - 4}" rx="2" fill="#000" fill-opacity="0"/>`;
+    } else s += '>';
     s += `<rect x="${x + 1}" y="${y + 5}" width="${r1(tw)}" height="21" rx="1.5" fill="${T.tapeShade}"/>`;
     s += `<rect x="${x}" y="${y + 4}" width="${r1(tw)}" height="21" rx="1.5" fill="${T.tape}"/>`;
     s += text(x + 9, y + 18.5, name, FONTS.tape, T.tapeInk);

@@ -443,7 +443,8 @@ p { margin: 0; }
 .scene .dev-hl { opacity: 0; transition: opacity .12s; pointer-events: none; }
 .scene .dev:hover .dev-hl, .scene .dev:focus-visible .dev-hl { opacity: .7; }
 .scene .dev.is-dragging { opacity: .28; }
-.scene .rack-head { cursor: pointer; }
+.scene .rack-head { cursor: pointer; outline: none; }
+.scene .rack-head:focus-visible .rh-hit { stroke: var(--ink); stroke-width: 1.5; }
 .scene .add-rack { cursor: pointer; outline: none; }
 .scene .add-rack:hover rect, .scene .add-rack:focus-visible rect { stroke: var(--ink); fill-opacity: 1; }
 .stage.is-armed .scene, .stage.is-armed .scene .dev, .stage.is-armed .scene .rack-head { cursor: crosshair; }

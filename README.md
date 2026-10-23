@@ -148,12 +148,13 @@ its fans or power supplies, and its front ports are at the rack's rear.
   number, asset tag, IP address or owner. Pick a result to jump there. While
   the search is on, matching devices stay highlighted in the drawing and
   marked on the floor map.
-- **Racks, rows and floors**: click a rack's yellow label to rename it, change
-  its type, move it left or right, insert a rack beside it, duplicate it,
-  move it to another row or delete it. The dashed **Add rack** slot at the end
-  of a row adds one. Row and floor settings (from the row picker, the pencil
-  on the floor map, or a click on the active floor tab) rename, reorder, move
-  and delete them, and show their totals.
+- **Racks, rows and floors**: click a rack's yellow label (or <kbd>Tab</kbd> to
+  it and press <kbd>Enter</kbd>) to rename it, change its type, move it left
+  or right, insert a rack beside it, duplicate it, move it to another row or
+  delete it. The dashed **Add rack** slot at the end of a row adds one. Row
+  and floor settings (from the row picker, the pencil on the floor map, or a
+  click on the active floor tab) rename, reorder, move and delete them, and
+  show their totals.
 - **Catalog**: the **Catalog** button above the devices edits device types,
   rack types, cable types and transceivers. Changes apply at once and are
   checked: a type can't grow if its devices would then overlap or stick out
@@ -201,7 +202,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
 | <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling, edit the selected cable's label |
 | <kbd>Del</kbd> | Delete; in Cabling, delete the selected cables or unplug the selected port |
-| <kbd>Tab</kbd> | Walk through devices, top to bottom (Racks) |
+| <kbd>Tab</kbd> | Walk through rack labels and devices, top to bottom (Racks) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo, redo |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |
 | <kbd>Ctrl</kbd>+scroll | Zoom at the pointer |

@@ -694,7 +694,9 @@
   function renderScene() {
     if (ui.view === 'map' || ui.workspace === 'cabling') return;
     const active = document.activeElement;
-    const focusedId = active && active !== el.svg && el.svg.contains(active) && active.dataset ? active.dataset.id : null;
+    const inside = active && active !== el.svg && el.svg.contains(active) && active.dataset;
+    const focusedId = inside ? active.dataset.id : null;
+    const focusedRack = inside && active.classList.contains('rack-head') ? active.dataset.rack : null;
     const sel = ui.selection;
     const d = ui.drag;
     const out = R.renderScene(project, {
@@ -730,6 +732,8 @@
         restoringFocus = false;
       }
     }
+    const head = focusedRack && el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(focusedRack)}"]`);
+    if (head) head.focus({ preventScroll: true });
   }
 
   // Floor map ----------------------------------------------------------
@@ -2567,9 +2571,14 @@
     render();
   });
   el.svg.addEventListener('keydown', (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('.add-rack')) {
+    if ((e.key !== 'Enter' && e.key !== ' ') || ui.workspace === 'cabling' || !e.target.closest) return;
+    const head = e.target.closest('.rack-head');
+    if (e.target.closest('.add-rack')) {
       e.preventDefault();
       addRackTo(ui.rowId);
+    } else if (head) {
+      e.preventDefault();
+      selectThing('rack', head.dataset.rack);
     }
   });
 

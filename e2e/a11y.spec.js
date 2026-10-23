@@ -209,3 +209,17 @@ test('C keeps keyboard focus on the drawing', async ({ page }) => {
   await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
   expect(await inStage()).toBe(true);
 });
+
+test('rack labels are buttons in the Tab order that open the rack', async ({ page }) => {
+  const head = page.locator('.rack-head[data-rack="r1"]');
+  await expect(head).toHaveAttribute('role', 'button');
+  await expect(head).toHaveAttribute('aria-label', /^Rack A01, \d+ of 47 U used, [\d.]+ of [\d.]+ kW$/);
+  await head.focus();
+  await page.keyboard.press('Tab');
+  await expect(device(page, 'sw-mgmt-a01')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(head).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#insp-rack-name')).toHaveValue('Rack A01');
+  await expect(head).toBeFocused();
+});
