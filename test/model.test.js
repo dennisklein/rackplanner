@@ -390,10 +390,11 @@ test('slugs are plain ASCII words joined by dashes', () => {
 
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }), { name: 'cn-013', cluster: 'c-kestrel' });
-  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }, 4), { name: 'gpu-009', cluster: 'c-osprey' });
+  const v = p.views[0].id;
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }), { name: 'cn-013', cluster: 'c-kestrel', groups: { [v]: 'c-kestrel' }, from: 'cn-012' });
+  assert.deepEqual(M.suggestPlacement(p, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }, 4), { name: 'gpu-009', cluster: 'c-osprey', groups: { [v]: 'c-osprey' }, from: 'gpu-008' });
   const empty = M.createEmptyProject();
-  assert.deepEqual(M.suggestPlacement(empty, 'storage-enclosure', null), { name: 'jbod-01', cluster: undefined });
+  assert.deepEqual(M.suggestPlacement(empty, 'storage-enclosure', null), { name: 'jbod-01', cluster: undefined, groups: {}, from: null });
   assert.equal(M.suggestName(empty, 'compute-node', 3), 'cn-001');
   assert.equal(M.suggestName(empty, 'reserved'), 'reserved-01');
 });
@@ -1004,6 +1005,10 @@ test('suggestPlacement and search use the clusters of the view asked for', () =>
   M.setClusterOf(p, p.devices[0], ib.id, 'c2');
   assert.equal(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 }).cluster, 'c1');
   assert.equal(M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 }, 1, ib.id).cluster, 'c2');
+  const hint = M.suggestPlacement(p, 'compute-node', { rack: 'r1', kind: 'u', at: 5 });
+  assert.deepEqual(hint.groups, { v1: 'c1', [ib.id]: 'c2' }, 'the clusters of every view');
+  hint.groups.v1 = null;
+  assert.equal(p.devices[0].groups.v1, 'c1', 'a copy of them');
   assert.equal(M.search(p, 'hdr').counts.devices, 0);
   assert.equal(M.search(p, 'hdr', 8, ib.id).counts.devices, 1);
   assert.equal(M.deviceMatcher(p, 'alpha', ib.id)(p.devices[0]), false);

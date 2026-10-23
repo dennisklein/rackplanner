@@ -144,9 +144,13 @@ its fans or power supplies, and its front ports are at the rack's rear.
   to add a view, copy the one shown, rename or delete one. With two or more
   views, a menu next to **Racks** and **Cabling** picks the view shown, and
   <kbd>V</kbd> steps to the next one. The view shown colors the devices and
-  fills the cluster list, the legend, the search and the fabric groups. A new
-  device gets a cluster in the view shown only. The browser remembers the
-  view shown for each plan.
+  fills the cluster list, the legend, the search and the fabric groups. The
+  cluster fields then say which view they are for (**Cluster in
+  InfiniBand**). A new device takes the cluster you pick in the view shown
+  and, in the other views, the clusters of the device its name follows; the
+  placement dialog lists them, and the message after placing names any view
+  where the new device has none, with a button to show it. The browser
+  remembers the view shown for each plan.
 - **Move around**: the bar above the drawing has a tab per floor, the row
   picker with previous and next buttons, and a switch between the
   **Elevation** of the current row and the **Floor map**. The floor map shows

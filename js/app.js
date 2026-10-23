@@ -1249,6 +1249,9 @@
 
   // ------------------------------------------------------------ inspector
 
+  /** "Cluster", or "Cluster in InfiniBand" when the plan has more views than the one shown. */
+  const clusterHeading = () => (project.views.length > 1 ? `Cluster in ${M.viewOf(project, ui.clusterView).name}` : 'Cluster');
+
   /** Cluster chips; each has an id, so that an inspector drawn again after a change puts focus back on it and arrow keys go on through the chips. */
   function clusterChips(name, selected, withNew) {
     const chip = (value, label, color, checked, cls) =>
@@ -1419,7 +1422,7 @@
       `<div class="insp-where">${esc(M.formatDeviceLoc(project, d))}</div>` +
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
       `</div>` +
-      `<section class="insp-sec"><h3 id="insp-cluster-label">Cluster</h3>` +
+      `<section class="insp-sec"><h3 id="insp-cluster-label">${esc(clusterHeading())}</h3>` +
       `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', clusterIdOf(d), true)}</div></section>` +
       `<section class="insp-sec"><h3>Position</h3>` +
       `<div class="pos-grid">` +
@@ -1527,7 +1530,7 @@
       `<div class="multi-title">${plural(devs.length, 'device')}</div>` +
       `<div class="insp-where">${esc(summary)}</div>` +
       `<div class="insp-sub">${units} U · ${esc(fmtPower(power))}</div></div>` +
-      `<section class="insp-sec"><h3 id="multi-cluster-label">Cluster</h3>` +
+      `<section class="insp-sec"><h3 id="multi-cluster-label">${esc(clusterHeading())}</h3>` +
       `<div class="chips" role="radiogroup" aria-labelledby="multi-cluster-label">${clusterChips('multi-cluster', same === undefined ? undefined : same, true)}</div>` +
       (same === undefined ? `<p class="sec-hint">Mixed clusters; pick one to give it to all.</p>` : '') +
       `</section>` +
@@ -2902,7 +2905,7 @@
 
   // Place dialog -------------------------------------------------------
 
-  const place = { typeId: null, loc: null, nameTouched: false, newColor: null, positions: [], valid: true };
+  const place = { typeId: null, loc: null, nameTouched: false, newColor: null, positions: [], valid: true, groups: {} };
 
   function openPlaceDialog(typeId, loc) {
     const type = M.typeOf(project, typeId);
@@ -2916,7 +2919,18 @@
     setPlaceLoc(loc);
     const hint = M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
     const initial = startCluster(typeId, hint);
+    // The other views take the clusters of the device the suggestion follows.
+    place.groups = hint.groups;
+    $('#place-cluster-label').textContent = clusterHeading();
     $('#place-clusters').innerHTML = clusterChips('place-cluster', initial, true);
+    const others = project.views.filter((v) => v.id !== ui.clusterView);
+    const inView = (v) => `${(M.clusterOf(project, { groups: hint.groups }, v.id) || { name: 'none' }).name} in ${v.name}`;
+    $('#place-views').textContent = !others.length
+      ? ''
+      : hint.from
+        ? `Like ${hint.from}: ${listAnd(others.map(inView))}`
+        : `No cluster in ${listAnd(others.map((v) => v.name))}`;
+    $('#place-views').hidden = !others.length;
     place.newColor = M.nextClusterColor(project, ui.clusterView);
     $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
     renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => {
@@ -3188,28 +3202,37 @@
       newCluster = { id: M.uid('c'), name: cname, color: place.newColor };
     }
     const clusterId = newCluster ? newCluster.id : picked || null;
-    // A new device gets a cluster in the view shown only; in other views it is unassigned.
+    // The cluster picked is for the view shown; the others keep the suggestion's.
     const view = ui.clusterView;
+    const groups = Object.assign({}, place.groups, { [view]: clusterId });
+    if (!clusterId) delete groups[view];
     const count = place.positions.length;
     const names = M.nameSequence(name, count);
     const height = placeHeight();
     const devices = place.positions.map((pos, i) =>
       M.newDevice(
         Object.assign(
-          { type: type.id, name: names[i], groups: clusterId ? { [view]: clusterId } : {}, loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
+          { type: type.id, name: names[i], groups: Object.assign({}, groups), loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
           type.variable ? { height } : {}
         )
       )
     );
     ui.selection = { kind: 'devices', ids: count > 1 ? devices.map((d) => d.id) : [devices[0].id] };
-    commit((p) => {
-      if (newCluster) M.clustersOf(p, view).push(newCluster);
-      p.devices.push(...devices);
-    });
+    const placed = count > 1 ? `Placed ${count} devices, ${names[0]} to ${names[count - 1]}` : `Placed ${names[0]}`;
+    commit(
+      (p) => {
+        if (newCluster) M.clustersOf(p, view).push(newCluster);
+        p.devices.push(...devices);
+      },
+      { label: placed }
+    );
     prefs.lastClusters[type.id] = clusterId;
     savePrefs();
     $('#dlg-place').close('ok');
-    toast(count > 1 ? `Placed ${count} devices, ${names[0]} to ${names[count - 1]}` : `Placed ${names[0]}`);
+    // Reserved space is in no legend: only devices are missed in another view.
+    const missing = type.variable ? [] : project.views.filter((v) => v.id !== view && !M.clusterOf(project, devices[0], v.id));
+    if (!missing.length) return toast(placed);
+    toast(`${placed} · no cluster in ${listAnd(missing.map((v) => v.name))}`, { action: 'Show', onAction: () => setClusterView(missing[0].id) });
   });
 
   // Cluster dialog -----------------------------------------------------
@@ -3226,7 +3249,7 @@
       saved: false,
     });
     $('#cluster-kicker').textContent = c ? 'Edit cluster' : 'New cluster';
-    $('#cluster-title').textContent = c ? c.name : 'Create a cluster';
+    $('#cluster-title').textContent = c ? c.name : project.views.length > 1 ? `Create a cluster in ${M.viewOf(project, ui.clusterView).name}` : 'Create a cluster';
     $('#cluster-name').value = c ? c.name : M.nextClusterName(project, ui.clusterView);
     $('#cluster-delete').hidden = !c;
     $('#cluster-submit').textContent = c ? 'Save' : 'Create';

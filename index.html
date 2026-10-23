@@ -281,6 +281,7 @@
       <div class="field">
         <span class="label" id="place-cluster-label">Cluster</span>
         <div class="chips" id="place-clusters" role="radiogroup" aria-labelledby="place-cluster-label"></div>
+        <p class="sec-hint" id="place-views" hidden></p>
       </div>
       <div class="new-cluster" id="place-new" hidden>
         <div class="field">
@@ -333,7 +334,7 @@
     <header class="dlg-head">
       <span class="tape">Plan</span>
       <h2 id="views-title">Views</h2>
-      <p class="dlg-sub">A view groups the devices in clusters of its own, with its own colors. All views share the devices, their places, the cables and the networks. A new device gets a cluster in the view shown only.</p>
+      <p class="dlg-sub">A view groups the devices in clusters of its own, with its own colors. All views share the devices, their places, the cables and the networks. A new device takes the clusters of the device its name follows in the other views.</p>
     </header>
     <div class="dlg-body">
       <ul class="view-list" id="view-list"></ul>

@@ -63,12 +63,14 @@ test('a copied view has its own clusters; the switch shows the views and V steps
   await expect(shown(page)).toHaveText('InfiniBand');
 });
 
-test('a new device gets a cluster in the view shown only', async ({ page }) => {
+test('a new device takes the clusters of the device it follows in the other views', async ({ page }) => {
   await copyView(page, 'Power');
   await page.click('#btn-add-cluster');
+  await expect(page.locator('#cluster-title')).toHaveText('Create a cluster in Power');
   await page.fill('#cluster-name', 'Feed A');
   await page.click('#cluster-submit');
   await device(page, 'cn-012').click();
+  await expect(page.locator('#insp-cluster-label')).toHaveText('Cluster in Power');
   await page.click('#insp-dup');
   const copy = await app(page, () => {
     const p = window.RP.app.project();
@@ -77,23 +79,46 @@ test('a new device gets a cluster in the view shown only', async ({ page }) => {
   });
   expect(copy, 'a duplicate keeps its clusters in every view').toEqual(['Kestrel HPC', 'Kestrel HPC']);
 
-  await page.click('.part[data-type="switch-rj45"]');
-  const slot = await app(page, () => {
-    const svg = document.querySelector('#scene');
-    const box = svg.getBoundingClientRect();
-    const zoom = box.width / svg.viewBox.baseVal.width;
-    const r = window.RP.render.locRect(window.RP.app.project(), { rack: 'r3', kind: 'u', at: 40 }, 'switch-rj45');
-    return { x: box.left + (r.x + r.w / 2) * zoom, y: box.top + (r.y + r.h / 2) * zoom };
-  });
-  await page.mouse.click(slot.x, slot.y);
+  /** Clicks unit `at` of Rack A03 with a 48-port switch armed. */
+  const placeSwitch = async (at) => {
+    await page.click('.part[data-type="switch-rj45"]');
+    const slot = await app(page, (at) => {
+      const svg = document.querySelector('#scene');
+      const box = svg.getBoundingClientRect();
+      const zoom = box.width / svg.viewBox.baseVal.width;
+      const r = window.RP.render.locRect(window.RP.app.project(), { rack: 'r3', kind: 'u', at }, 'switch-rj45');
+      return { x: box.left + (r.x + r.w / 2) * zoom, y: box.top + (r.y + r.h / 2) * zoom };
+    }, at);
+    await page.mouse.click(slot.x, slot.y);
+    await expect(page.locator('#dlg-place')).toBeVisible();
+  };
+  const lastClusters = () =>
+    app(page, () => {
+      const p = window.RP.app.project();
+      const d = p.devices[p.devices.length - 1];
+      return p.views.map((v) => (window.RP.model.clusterOf(p, d, v.id) || {}).name || null);
+    });
+  await placeSwitch(40);
+  await expect(page.locator('#place-cluster-label')).toHaveText('Cluster in Power');
+  await expect(page.locator('#place-views')).toHaveText('Like sw-bmc-a03: Core network in Default');
   await page.click('label.chip:has(input[name="place-cluster"]) span:text("Feed A")');
   await page.click('#place-submit');
-  const placed = await app(page, () => {
-    const p = window.RP.app.project();
-    const d = p.devices[p.devices.length - 1];
-    return p.views.map((v) => (window.RP.model.clusterOf(p, d, v.id) || {}).name || null);
-  });
-  expect(placed).toEqual([null, 'Feed A']);
+  expect(await lastClusters()).toEqual(['Core network', 'Feed A']);
+  await expect(page.locator('.toast').last()).toHaveText('Placed sw-bmc-a03-2');
+
+  // A view where the device it follows has no cluster: the toast says so and shows it.
+  await page.click('#btn-views');
+  await page.click('#view-add');
+  await page.click('#dlg-views [data-close]');
+  await pickView(page, 'Power');
+  await placeSwitch(41);
+  await expect(page.locator('#place-views')).toHaveText('Like sw-bmc-a03-2: Core network in Default and none in View 3');
+  await page.click('#place-submit');
+  expect(await lastClusters()).toEqual(['Core network', 'Feed A', null]);
+  const note = page.locator('.toast').last();
+  await expect(note).toContainText('Placed sw-bmc-a03-3 · no cluster in View 3');
+  await note.locator('button', { hasText: 'Show' }).click();
+  await expect(shown(page)).toHaveText('View 3');
 });
 
 test('views are renamed and deleted in the views dialog, and undo brings one back', async ({ page }) => {

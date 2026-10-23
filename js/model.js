@@ -1918,7 +1918,8 @@
    * recently added device of that type; without one, the type's default
    * name. The name follows the reference's in rack `loc.rack` (see
    * nameInRack). `cluster` is the reference's cluster in view `viewId`,
-   * undefined when there is no reference.
+   * undefined when there is no reference; `groups` its clusters in every
+   * view ({} without one) and `from` its name (null without one).
    */
   function suggestPlacement(project, typeId, loc, count, viewId) {
     const type = typeOf(project, typeId);
@@ -1943,6 +1944,8 @@
     return {
       name: ref ? nameInRack(project, ref.name, ref.loc.rack, loc ? loc.rack : ref.loc.rack, n, true) : nextInSeries(project, type ? type.defaultName : 'dev-01', n, true),
       cluster: ref ? clusterIdOf(project, ref, viewId) : undefined,
+      groups: ref ? Object.assign({}, ref.groups) : {},
+      from: ref ? ref.name : null,
     };
   }
 

@@ -252,6 +252,7 @@ test('a device is placed with the keyboard: Enter on a type opens the place dial
 
   await expect(page.locator('#dlg-place')).toBeHidden();
   await expect(devices(page)).toHaveCount(2);
+  await expect(page.locator('#btn-undo')).toHaveAttribute('title', /^Undo: Placed 2 devices, \S+ to \S+ \(Ctrl\+Z\)$/);
   const locs = await app(page, () => window.RP.app.project().devices.map((d) => `${d.loc.rack} ${d.loc.at}`));
   expect(locs).toEqual(['r2 10', 'r2 12']);
   await expect(card).toBeFocused();
