@@ -151,8 +151,9 @@ Rear**); otherwise they ask how it is **Mounted**.
 - **Clusters**: click one in the left panel to highlight its devices. Point
   at it for the buttons that select its devices and, with the pencil icon,
   rename or recolor it; on a touch screen they are always shown. Use the eye
-  to hide its devices in the racks: they keep their units, drawn as dashed
-  outlines. Each view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
+  to hide its devices in the racks: they keep their units, drawn hatched
+  with their names in faint ink. A device placed into a hidden cluster says
+  so, with a button that shows it. Each view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
   pointing at it shows it in full. The first eight colors stay apart for
   color-blind eyes too, and the cluster dialog warns when a color is close to
   another cluster's. Each cluster also has a number, in its swatch, in the

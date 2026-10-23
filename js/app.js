@@ -696,6 +696,10 @@
     if (!ui.hiddenClusters.has(ui.clusterView)) ui.hiddenClusters.set(ui.clusterView, new Set());
     return ui.hiddenClusters.get(ui.clusterView);
   }
+  /** Shows a cluster of the view shown that the racks hide. */
+  function showCluster(id) {
+    if (hiddenClusters().delete(id)) render({ inspector: false });
+  }
   /** Whether the view shown hides device `d`, or null when it hides nothing. */
   function hiddenFn() {
     const set = hiddenClusters();
@@ -3542,11 +3546,16 @@
     prefs.lastClusters[type.id] = clusterId;
     savePrefs();
     $('#dlg-place').close('ok');
+    // Into a cluster the racks hide: say so, with a button that shows it.
+    const key = clusterId || '__none';
+    const hidden = hiddenClusters().has(key);
+    const where = hidden ? ` in ${clusterId ? M.clusterById(project, clusterId).name : 'Unassigned'}, which is hidden` : '';
     // Reserved space is in no legend: only devices are missed in another view.
     const missing = type.variable ? [] : project.views.filter((v) => v.id !== view && !M.clusterOf(project, devices[0], v.id));
-    const parts = [placed, over.length ? `over budget: ${overLine(over, 'is at')}` : '', missing.length ? `no cluster in ${listAnd(missing.map((v) => v.name))}` : ''];
+    const parts = [placed + where, over.length ? `over budget: ${overLine(over, 'is at')}` : '', missing.length ? `no cluster in ${listAnd(missing.map((v) => v.name))}` : ''];
     const opts = { warn: over.length > 0 };
-    if (missing.length) Object.assign(opts, { action: 'Show', onAction: () => setClusterView(missing[0].id) });
+    if (hidden) Object.assign(opts, { action: 'Show', onAction: () => showCluster(key) });
+    else if (missing.length) Object.assign(opts, { action: 'Show', onAction: () => setClusterView(missing[0].id) });
     toast(parts.filter(Boolean).join(' · '), opts);
   });
 

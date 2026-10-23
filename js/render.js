@@ -962,13 +962,29 @@
     } else s += '>';
     const w = rect.rotated ? rect.h : rect.w;
     const h = rect.rotated ? rect.w : rect.h;
-    // A hidden device keeps its units taken: a dashed outline in place of its face.
-    if (hidden) s += `<rect x="0.75" y="0.75" width="${w - 1.5}" height="${h - 1.5}" rx="2" fill="${T.paper}" fill-opacity="0.85" stroke="${T.ink2}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+    if (hidden) s += hiddenFace(d.name, cluster ? cluster.color : null, T, measure, w, h, hU === 1 || rect.rotated);
     else s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare, mark: clusterMark(project, cluster, o.view) }, d.reversed);
     if (o.interactive) {
       s += `<rect class="dev-hl" x="-1.5" y="-1.5" width="${w + 3}" height="${h + 3}" rx="3" fill="none" stroke="${T.ink}" stroke-width="1.5"/>`;
     }
     return s + '</g>';
+  }
+
+  /**
+   * A hidden device in place of its face: its units still read as taken,
+   * with a light hatch in its cluster's color, a solid outline and its name
+   * in faint ink (reserved space has a dashed outline and a dark name).
+   */
+  function hiddenFace(name, color, T, measure, w, h, oneLine) {
+    const line = color ? mix(color, T.paper, 0.35) : T.ink3;
+    let s = `<rect x="0.75" y="0.75" width="${w - 1.5}" height="${h - 1.5}" rx="2" fill="${T.paper}"/>`;
+    s += `<path d="${hatch(w, h, 6)}" stroke="${line}" stroke-width="0.8" opacity="0.35"/>`;
+    s += `<rect x="0.75" y="0.75" width="${w - 1.5}" height="${h - 1.5}" rx="2" fill="none" stroke="${T.ink3}" stroke-width="1.2"/>`;
+    const font = oneLine ? FONTS.name1 : FONTS.name;
+    const nm = fitText(name, font, w - 2 * LABEL_X, measure);
+    s += `<rect x="${LABEL_X - 3}" y="${oneLine ? r1(h / 2 - 7) : 5}" width="${r1(measure(nm, font.css) + 6)}" height="${oneLine ? 14 : 16}" fill="${T.paper}"/>`;
+    s += text(LABEL_X, oneLine ? h / 2 + 3.9 : 16, nm, font, T.ink3);
+    return s;
   }
 
   /** CAD-style selection: dashed outline with yellow corner handles. */
@@ -1097,8 +1113,8 @@
    *   rowId (default: the first row), theme: 'light' | 'dark',
    *   interactive: adds focus/hover hooks and the add-rack slot,
    *   selected: Set of device ids, selectedRack, highlight(device) → bool
-   *   (others are dimmed), hidden(device) → bool (drawn as a dashed
-   *   outline only), dragging: Set of device ids, date,
+   *   (others are dimmed), hidden(device) → bool (drawn as taken
+   *   space with its name only), dragging: Set of device ids, date,
    *   sheet: { index, count }, measure(text, cssFont) → px,
    *   view: id of the view whose clusters color the devices (default: the first)
    */

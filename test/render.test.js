@@ -367,14 +367,21 @@ test('the view option picks whose clusters color the devices and fill the legend
   assertWellFormed(R.exportSVG(p, { rowId: 'row1', view: ib.id }));
 });
 
-test('hidden devices keep their place as a dashed outline without a face', () => {
+test('hidden devices keep their place as taken space with a faint name, without a face', () => {
   const p = M.createExampleProject();
   const cn = p.devices.find((d) => d.name === 'cn-001');
   const all = R.renderScene(p, { rowId: 'row1', interactive: true });
   const out = R.renderScene(p, { rowId: 'row1', interactive: true, hidden: (d) => d.id === cn.id });
   assert.equal(R.renderScene(p, { rowId: 'row1', interactive: true, hidden: null }).body, all.body);
   assert.equal(out.body.split('class="dev is-hidden"').length - 1, 1);
-  assert.ok(all.body.includes('>cn-001<') && !out.body.includes('>cn-001<'), 'the face and its name are not drawn');
+  const node = (body) => {
+    const at = body.indexOf(`data-id="${cn.id}"`);
+    return body.slice(at, body.indexOf('</g>', at));
+  };
+  const T = R.THEMES.light;
+  assert.ok(node(all.body).includes('class="dev-mark"') && !node(out.body).includes('class="dev-mark"'), 'the face is not drawn');
+  assert.match(node(out.body), new RegExp(`fill="${T.ink3}"[^>]*>cn-001<`), 'its name is, in faint ink');
+  assert.ok(node(out.body).includes(`stroke="${T.ink3}" stroke-width="1.2"`) && !node(out.body).includes('stroke-dasharray'), 'a solid outline, unlike reserved space');
   assert.equal(out.body.split(`data-id="${cn.id}"`).length - 1, 1, 'the device is still there to select');
   assert.deepEqual(out.layout, all.layout);
   assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);

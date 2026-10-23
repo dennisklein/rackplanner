@@ -1461,6 +1461,25 @@ test('the eye of a cluster hides its devices in the racks and shows them again',
   await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
 });
 
+test('a hidden device still reads as taken space; one placed into a hidden cluster says so', async ({ page }) => {
+  await page.click('#clusters [data-cl-eye="c-kestrel"]');
+  // Its name stays, in faint ink, over a hatch with a solid outline.
+  const cn = device(page, 'cn-001');
+  await expect(cn).toHaveClass(/is-hidden/);
+  await expect(cn.locator('text')).toHaveText('cn-001');
+  await expect(cn.locator('[stroke-dasharray]')).toHaveCount(0);
+
+  await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }));
+  await page.mouse.up();
+  await expect(page.locator('input[name="place-cluster"][value="c-kestrel"]')).toBeChecked();
+  await page.click('#place-submit');
+  const note = page.locator('#toasts .toast').filter({ hasText: 'Placed cn-013 in Kestrel HPC, which is hidden' });
+  await expect(note).toBeVisible();
+  await note.locator('button', { hasText: 'Show' }).click();
+  await expect(page.locator('#clusters .cl-row[data-cluster="c-kestrel"]')).not.toHaveClass(/is-hidden/);
+  await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
+});
+
 test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button takes them', async ({ page }) => {
   await page.click('#clusters [data-cl-eye="c-kestrel"]');
   await page.locator('#scene').focus();
