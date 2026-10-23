@@ -629,6 +629,20 @@
     const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(id)}"]`);
     if (head) ensureVisible(head);
   }
+  /**
+   * In the one-column layout, where the page scrolls, brings the stage into
+   * view after a jump that lands in it (a search result, a rack on the floor
+   * map, a device type to place), unless it already fills the screen.
+   */
+  const oneColumn = window.matchMedia ? window.matchMedia('(max-width: 960px)') : { matches: false };
+  const reducedMotion = () => !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function showStage() {
+    if (!oneColumn.matches) return;
+    const r = el.stage.getBoundingClientRect();
+    const whole = r.top >= -1 && r.bottom <= window.innerHeight + 1;
+    const covers = r.top <= 1 && r.bottom >= window.innerHeight - 1;
+    if (!whole && !covers) el.stage.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }
   /** Whether keyboard focus was lost: on the page itself, or on a control gone, hidden or disabled. */
   function focusLost() {
     const a = document.activeElement;
@@ -844,6 +858,7 @@
     else if (t.dataset.editRow) selectThing('row', t.dataset.editRow);
     else if (t.dataset.rack) {
       selectThing('rack', t.dataset.rack, { sheet: true, reveal: true });
+      showStage();
       // The floor map is gone: the keyboard goes on in the rack's settings.
       if (byKeyboard(e)) focusRackName();
     } else if (t.dataset.addRack) addRackTo(t.dataset.addRack);
@@ -2510,6 +2525,8 @@
     if (ui.armed) ui.selection = null;
     hideDragFeedback();
     render();
+    // The slots to tap, and the hint, are below the devices on a phone.
+    if (ui.armed) showStage();
   }
 
   function disarm() {
@@ -2838,9 +2855,8 @@
     closeSearch();
     if (ui.workspace === 'cabling') {
       el.search.blur();
-      return cab.chooseResult(it);
-    }
-    if (it.kind === 'device') {
+      cab.chooseResult(it);
+    } else if (it.kind === 'device') {
       el.search.blur();
       selectDevices([it.id], { follow: true, focus: true });
     } else if (it.kind === 'rack') selectThing('rack', it.id, { sheet: true, reveal: true });
@@ -2852,6 +2868,7 @@
       setRow(floor.rows[0].id, { view: 'map', render: false });
       selectThing('floor', it.id);
     }
+    showStage();
   }
 
   el.search.addEventListener('input', () => setQuery(el.search.value));

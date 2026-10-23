@@ -40,6 +40,9 @@ async function dragPart(page, typeId, point) {
   await page.mouse.move(point.x, point.y, { steps: 10 });
 }
 
+/** The top of the stage on the screen, rounded, for expect.poll. */
+const stageTop = (page) => () => page.evaluate(() => Math.round(document.querySelector('#stage').getBoundingClientRect().top));
+
 /** Swipes a finger from (`x`, `y`) by `dy` pixels, as a phone's browser scrolls it. */
 async function swipe(page, x, y, dy) {
   const cdp = await page.context().newCDPSession(page);
@@ -1272,8 +1275,9 @@ test.describe('on a phone', () => {
     expect(offscreen).toBe(0);
 
     await page.locator('.part[data-type="switch-qsfp"]').tap();
-    await expect(page.locator('#armed-hint')).toBeVisible();
-    await page.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'start' }));
+    // The page scrolls to the drawing, under the devices, with its hint.
+    await expect(page.locator('#armed-hint')).toBeInViewport();
+    await expect.poll(stageTop(page)).toBe(0);
     const target = await spot(page, 'switch-qsfp', { rack: 'r1', kind: 'u', at: 30 });
     await page.touchscreen.tap(target.x, target.y);
     await expect(page.locator('#dlg-place')).toBeVisible();
@@ -1323,6 +1327,21 @@ test.describe('on a phone', () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect(undo).toBeHidden();
+  });
+
+  test('a search result and a rack on the floor map bring the drawing into view', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 });
+    await page.locator('#search').tap();
+    await page.keyboard.type('cn-00');
+    await page.locator('.sr-item', { hasText: 'cn-003' }).tap();
+    await expect(device(page, 'cn-003')).toBeInViewport();
+    await expect.poll(stageTop(page)).toBe(0);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator('.view-toggle [data-view="map"]').tap();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator('.fm-rack[data-rack="r3"]').tap();
+    await expect(page.locator('.scene .rack-head[data-rack="r3"]')).toBeInViewport();
   });
 
   test('adds a device type from a template in the catalog', async ({ page }) => {
