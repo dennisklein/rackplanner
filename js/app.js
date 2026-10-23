@@ -617,6 +617,27 @@
     const head = el.svg.querySelector(`.rack-head[data-rack="${CSS.escape(id)}"]`);
     if (head) ensureVisible(head);
   }
+  /** Whether keyboard focus was lost: on the page itself, or on a control gone, hidden or disabled. */
+  function focusLost() {
+    const a = document.activeElement;
+    return !a || a === document.body || !a.isConnected || !a.getClientRects().length || !!a.disabled;
+  }
+  /** Puts keyboard focus on what the stage shows: the selected device, the floor map's current row, or the drawing or table itself. */
+  function focusStage() {
+    let t = null;
+    if (ui.workspace === 'racks' && ui.view === 'map') t = el.floormap.querySelector(`[data-open-row="${CSS.escape(ui.rowId)}"]`);
+    else if (ui.workspace === 'racks' && selIds().length) t = findDevEl(selIds()[0]);
+    if (!t) t = [el.svg, $('#cab-host')].find((n) => n.getClientRects().length);
+    if (t) t.focus({ preventScroll: true });
+  }
+  /** Puts keyboard focus in the name field of the rack shown in the inspector. */
+  function focusRackName() {
+    const input = $('#insp-rack-name');
+    if (input) input.focus();
+  }
+  /** Whether a click came from the keyboard: Enter or Space on a button. */
+  const byKeyboard = (e) => e.detail === 0;
+
   /** Replaces the previews drawn over the sheet (placement ghosts, the selection rectangle). */
   function setGhosts(html) {
     const layer = el.svg.querySelector('#ghost-layer');
@@ -805,8 +826,11 @@
       renderStage();
     } else if (t.dataset.openRow) setRow(t.dataset.openRow, { view: 'sheet' });
     else if (t.dataset.editRow) selectThing('row', t.dataset.editRow);
-    else if (t.dataset.rack) selectThing('rack', t.dataset.rack, { sheet: true, reveal: true });
-    else if (t.dataset.addRack) addRackTo(t.dataset.addRack);
+    else if (t.dataset.rack) {
+      selectThing('rack', t.dataset.rack, { sheet: true, reveal: true });
+      // The floor map is gone: the keyboard goes on in the rack's settings.
+      if (byKeyboard(e)) focusRackName();
+    } else if (t.dataset.addRack) addRackTo(t.dataset.addRack);
     else if (t.dataset.addRow) addRowTo(t.dataset.addRow);
   });
 
@@ -842,8 +866,13 @@
     const rows = M.allRows(project);
     const i = rows.findIndex((r) => r.row.id === ui.rowId) + dir;
     if (i < 0 || i >= rows.length) return;
+    // Some browsers move the focus of a button to the page as soon as it is disabled: note it first.
+    const button = dir < 0 ? el.rowPrev : el.rowNext;
+    const focused = document.activeElement === button;
     setRow(rows[i].row.id);
     toast(`${rows[i].floor.name} · ${rows[i].row.name}`, { kind: 'where' });
+    // The first or last row disables its button: the row picker takes focus.
+    if (focused && button.disabled) $('#btn-row').focus();
   }
 
   el.floorTabs.addEventListener('click', (e) => {
@@ -1826,7 +1855,9 @@
     const sel = e.target.closest('[data-select]');
     if (sel) return selectDevices([sel.dataset.select], { follow: true, focus: true });
     const bar = e.target.closest('.rack-bar[data-rack]');
-    if (bar) selectThing('rack', bar.dataset.rack, { sheet: true, reveal: true });
+    if (!bar) return;
+    selectThing('rack', bar.dataset.rack, { sheet: true, reveal: true });
+    if (byKeyboard(e)) focusRackName();
   });
 
   // -------------------------------------------------------------- actions
@@ -4412,6 +4443,8 @@
       toggleMenu(btn, menu);
     });
     menu.addEventListener('keydown', (e) => menuKeydown(e, menu, btn));
+    // Focus goes back to the menu's button before an item does its part, which may move it on (into a dialog, a field).
+    menu.addEventListener('click', (e) => e.target.closest('button') && btn.focus({ preventScroll: true }), true);
   });
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.menu-wrap')) closeMenus();
@@ -5006,7 +5039,10 @@
     if (key === '/') {
       e.preventDefault();
       focusSearch();
-    } else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
+    } else if (letter === 'c') {
+      setWorkspace(cabling ? 'racks' : 'cabling');
+      if (focusLost()) focusStage();
+    }
     else if (letter === 'v') stepClusterView(e.shiftKey ? -1 : 1);
     else if (letter === 'b' && !cabling) setDetail(prefs.detail === 'bare' ? 'full' : 'bare');
     else if (letter === 'm' && !cabling) setView(ui.view === 'map' ? 'sheet' : 'map');
