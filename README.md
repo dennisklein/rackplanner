@@ -159,7 +159,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   inserted right after the original.
 - **Clusters**: click one in the left panel to highlight its devices. Point
   at it for the buttons that select its devices and, with the pencil icon,
-  rename or recolor it; on a touch screen they are always shown. Use the eye
+  rename or recolor it; on a touch screen they are always shown (beside the
+  drawing, in the row of the cluster tapped). Use the eye
   to hide its devices in the racks: they keep their units, drawn hatched
   with their names in faint ink. Selected devices and search matches are
   drawn in full all the same, and the inspector says that their cluster is
