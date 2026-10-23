@@ -225,18 +225,21 @@
     } else if (ok) storageWarned = false;
   }
 
-  function pushPast(s) {
-    history.past.push(s);
-    history.chars += s.length;
+  // An entry of the history is a plan as it was before a step, and that step.
+  function pushPast(entry) {
+    history.past.push(entry);
+    history.chars += entry.json.length;
     while (history.past.length > HISTORY_LIMIT || (history.chars > HISTORY_CHARS && history.past.length > 1)) {
-      history.chars -= history.past.shift().length;
+      history.chars -= history.past.shift().json.length;
     }
   }
   function popPast() {
-    const s = history.past.pop();
-    history.chars -= s.length;
-    return s;
+    const entry = history.past.pop();
+    history.chars -= entry.json.length;
+    return entry;
   }
+  /** The step that undo reverts next, or null. */
+  const lastStep = () => (history.past.length ? history.past[history.past.length - 1].step : null);
 
   /**
    * Applies `mutate` to a copy of the project and records an undo step.
@@ -250,7 +253,7 @@
     if (after === projectJSON) return false;
     const now = Date.now();
     const coalesce = o.key && history.key === o.key && now - history.at < 2000;
-    if (!coalesce) pushPast(projectJSON);
+    if (!coalesce) pushPast({ json: projectJSON, step: {} });
     history.key = o.key || null;
     history.at = now;
     history.future.length = 0;
@@ -258,6 +261,7 @@
     projectJSON = after;
     persist();
     render(o);
+    retireUndoToasts();
     return true;
   }
 
@@ -295,13 +299,17 @@
   }
   function undo() {
     if (!history.past.length) return;
-    history.future.push(projectJSON);
-    restore(popPast());
+    const entry = popPast();
+    history.future.push({ json: projectJSON, step: entry.step });
+    restore(entry.json);
+    retireUndoToasts();
   }
   function redo() {
     if (!history.future.length) return;
-    pushPast(projectJSON);
-    restore(history.future.pop());
+    const entry = history.future.pop();
+    pushPast({ json: projectJSON, step: entry.step });
+    restore(entry.json);
+    retireUndoToasts();
   }
 
   // ------------------------------------------------------------- elements
@@ -4535,13 +4543,15 @@
       clearTimeout(timer);
       t.remove();
     };
+    // An Undo names the step just made: it undoes that step only (see retireUndoToasts).
+    if (o.onAction === undo) t.undoStep = lastStep();
     if (o.action) {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = o.action;
       b.addEventListener('click', () => {
         dismiss();
-        o.onAction();
+        if (!t.undoStep || t.undoStep === lastStep()) o.onAction();
       });
       t.appendChild(b);
     }
@@ -4550,6 +4560,22 @@
     while (el.toasts.children.length > 3) el.toasts.firstElementChild.remove();
     placeToastsSoon();
     timer = setTimeout(dismiss, o.action ? 6000 : o.warn ? 5000 : 3200);
+  }
+
+  /**
+   * A toast's Undo works while its step is the last one: a newer step takes
+   * its button away, and undoing the step takes the toast away, with its
+   * button or without.
+   */
+  function retireUndoToasts() {
+    const last = lastStep();
+    for (const t of [...el.toasts.children]) {
+      if (!t.undoStep || t.undoStep === last) continue;
+      const button = t.querySelector('button');
+      if (!history.past.some((entry) => entry.step === t.undoStep)) t.remove();
+      else if (button) button.remove();
+    }
+    placeToastsSoon();
   }
 
   // -------------------------------------------------------------- toolbar

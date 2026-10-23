@@ -172,6 +172,8 @@ its fans or power supplies, and its front ports are at the rack's rear.
   printouts always use the light theme.
 - **Undo** everything with <kbd>Ctrl</kbd>+<kbd>Z</kbd>, redo with
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+  The **Undo** in a message at the bottom undoes the step that the message
+  names. It goes away once you make a newer step.
 
 <p>
   <img src="docs/screenshots/floor-map.png" width="49%" alt="The floor map of the ground floor: two rows of three racks, each drawn small with its devices and a power meter, with totals per row.">

@@ -549,6 +549,42 @@ test('dismissing the example notice is part of the undo history', async ({ page 
   await expect(devices(page)).toHaveCount(37);
 });
 
+test('the Undo of a toast undoes only the step it names', async ({ page }) => {
+  await device(page, 'cn-002').click();
+  await page.keyboard.press('Delete');
+  // Not the toast of what undo did, which names the step too.
+  const deleted = page.locator('.toast', { hasText: /^Deleted cn-002/ });
+  await expect(deleted.locator('button')).toHaveText('Undo');
+
+  // A newer step takes its Undo away; the toast still says what happened.
+  await device(page, 'cn-004').click();
+  await page.keyboard.press('ArrowRight');
+  await expect(where(page)).toHaveText(/^Rack A02/);
+  await expect(deleted).toBeVisible();
+  await expect(deleted.locator('button')).toHaveCount(0);
+
+  await page.keyboard.press('Control+z');
+  await expect(where(page)).toHaveText('Rack A01 · U10–11');
+  await expect(devices(page)).toHaveCount(36);
+  // Its step undone at last, the toast without its Undo goes too.
+  await expect(deleted).toBeVisible();
+  await page.keyboard.press('Control+z');
+  await expect(devices(page)).toHaveCount(37);
+  // Right away, not when its time is up.
+  await expect(deleted).toHaveCount(0, { timeout: 1000 });
+  await page.keyboard.press('Control+Shift+z');
+  await expect(devices(page)).toHaveCount(36);
+
+  // Undoing the step a toast names takes the toast away.
+  await device(page, 'cn-003').click();
+  await page.keyboard.press('Delete');
+  const again = page.locator('.toast', { hasText: /^Deleted cn-003/ });
+  await expect(again).toBeVisible();
+  await page.keyboard.press('Control+z');
+  await expect(again).toHaveCount(0, { timeout: 1000 });
+  await expect(devices(page)).toHaveCount(36);
+});
+
 test('plans are kept in the browser and can be switched', async ({ page }) => {
   await device(page, 'cn-001').click();
   await page.keyboard.press('Delete');
