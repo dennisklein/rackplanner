@@ -1433,3 +1433,30 @@ test('the eye of a cluster hides its devices in the racks and shows them again',
   await eye.click();
   await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
 });
+
+test('a cluster row shows its full name: buttons over its end on hover, a long name cut in the middle', async ({ page }) => {
+  const row = page.locator('#clusters .cl-row[data-cluster="c-ceph"]');
+  await row.hover();
+  await row.locator('.cl-edit').click();
+  await page.fill('#cluster-name', 'Ceph object store backup site');
+  await page.click('#cluster-submit');
+  await expect(row.locator('.cl-name')).toHaveText('Ceph object store backup site');
+  await expect(row.locator('.cl-main')).toHaveAttribute('title', 'Ceph object store backup site');
+  // The end of the name stays in sight; the cut is in the middle.
+  await expect(row.locator('.cl-tail')).toHaveText(' site');
+  const cut = (loc) => loc.evaluate((e) => e.scrollWidth > e.clientWidth);
+  expect(await cut(row.locator('.cl-head'))).toBe(true);
+  // Select and edit take no width: the count ends where the row does, and they show over it on hover.
+  await page.mouse.move(0, 0);
+  const tools = row.locator('.cl-tools');
+  await expect(tools).toHaveCSS('opacity', '0');
+  const rowBox = await row.boundingBox();
+  const count = await row.locator('.cl-count').boundingBox();
+  expect(rowBox.x + rowBox.width - (count.x + count.width)).toBeLessThan(12);
+  await row.hover();
+  await expect(tools).toHaveCSS('opacity', '1');
+  // Short names are not cut at all.
+  const core = page.locator('#clusters .cl-row[data-cluster="c-net"] .cl-name');
+  await expect(core).toHaveText('Core network');
+  expect(await cut(core)).toBe(false);
+});

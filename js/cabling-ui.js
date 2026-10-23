@@ -44,7 +44,8 @@
    * openDialog(dlg), showError(sel, msg), confirmDialog(o), reportWarnings(
    * title, sub, list), renderSwatches(container, name, value, onChange),
    * openCatalog(tab); download(name, blob), fileBase(rowScoped);
-   * setWorkspace(ws); keepFocus(container, fn); measure(text, font) for
+   * setWorkspace(ws); keepFocus(container, fn); listName(name) → the name
+   * in a row of the network list; measure(text, font) for
    * the drawings, applyZoom() and fitWidth() of the stage's svg; esc,
    * icon, plural.
    */
@@ -2149,11 +2150,11 @@
       const row = (id, name, color, n, editable) =>
         `<li class="cl-row${eyes && ui.hiddenNetworks.has(id) ? ' is-hidden' : ''}" data-network="${esc(id)}">` +
         (eyes ? eye(id, name) : '') +
-        `<button type="button" class="cl-main" data-net-focus="${esc(id)}" aria-pressed="${ui.focusNetwork === id}"><span class="sw sw-net" style="--c:${color}"></span>` +
-        `<span class="cl-name">${esc(name)}</span><span class="cl-count" title="${plural(n, 'cable')}">${n}</span></button>` +
+        `<button type="button" class="cl-main" data-net-focus="${esc(id)}" aria-pressed="${ui.focusNetwork === id}" title="${esc(name)}"><span class="sw sw-net" style="--c:${color}"></span>` +
+        `${ctx.listName(name)}<span class="cl-count" title="${plural(n, 'cable')}">${n}</span></button>` +
         (editable
-          ? `<button type="button" class="btn icon sm subtle cl-edit" data-net-edit="${esc(id)}" aria-label="Edit ${esc(name)}" title="Rename, recolor or change its labels">${icon('pencil')}</button>`
-          : `<span class="btn icon sm subtle" aria-hidden="true" style="visibility:hidden"></span>`) +
+          ? `<span class="cl-tools"><button type="button" class="btn icon sm subtle cl-edit" data-net-edit="${esc(id)}" aria-label="Edit ${esc(name)}" title="Rename, recolor or change its labels">${icon('pencil')}</button></span>`
+          : `<span class="cl-tools"><span class="btn icon sm subtle" aria-hidden="true" style="visibility:hidden"></span></span>`) +
         `</li>`;
       let nets = p.networks.map((n) => row(n.id, n.name, n.color, per.get(n.id) || 0, true)).join('');
       if (per.get(NONE)) nets += row(NONE, 'No network', 'var(--unassigned)', per.get(NONE), false);

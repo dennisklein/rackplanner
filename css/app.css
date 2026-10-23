@@ -322,7 +322,7 @@ p { margin: 0; }
 
 /* Cluster list */
 .clusters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.cl-row { display: flex; align-items: center; gap: 2px; border-radius: var(--r-sm); }
+.cl-row { position: relative; display: flex; align-items: center; gap: 2px; border-radius: var(--r-sm); }
 .cl-row:hover, .cl-row:focus-within { background: var(--surface-2); }
 .cl-main {
   flex: 1; min-width: 0;
@@ -333,14 +333,24 @@ p { margin: 0; }
 .cl-main[aria-pressed="true"] { background: var(--surface-3); }
 .cl-main[aria-pressed="true"] .cl-name { font-weight: 600; }
 .cl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name is cut in the middle: the head takes the ellipsis, the tail stays. In a row too narrow for the tail, the head keeps a letter and the tail is cut at its end. */
+.cl-name.is-split { display: flex; }
+.cl-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.cl-tail { flex: none; max-width: calc(100% - 1.5em); overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .cl-count { font: 500 12px/1 var(--font-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .sec-tools { display: flex; align-items: center; gap: 2px; }
-.cl-edit, .cl-select { opacity: 0; }
+/* Select and edit show over the end of the row on hover, so the name keeps their width. */
+.cl-tools {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 2px; padding-left: 12px;
+  border-radius: var(--r-sm); background: linear-gradient(to right, transparent, var(--surface-2) 12px);
+  opacity: 0;
+}
 /* The eye of a network stays in sight; the row of a hidden network fades. */
 .btn.cl-eye[aria-pressed] { background: transparent; border-color: transparent; color: var(--ink-3); }
 .btn.cl-eye[aria-pressed="false"] { color: var(--ink-2); }
 .cl-row.is-hidden .cl-main { opacity: 0.45; }
-.cl-row:hover .cl-edit, .cl-row:focus-within .cl-edit, .cl-row:hover .cl-select, .cl-row:focus-within .cl-select { opacity: 1; }
+.cl-row:hover .cl-tools, .cl-row:focus-within .cl-tools { opacity: 1; }
 .sw {
   width: 16px; height: 12px; flex: none; border-radius: 2px;
   background: var(--c, var(--unassigned));
@@ -933,7 +943,7 @@ kbd {
   .parts { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
   .part { flex: 0 0 200px; scroll-snap-align: start; }
   .inspector { overflow: visible; }
-  .cl-edit { opacity: 1; }
+  .cl-tools { position: static; padding: 0; background: none; opacity: 1; }
   /* Clusters in columns where there is room, so the drawing moves up the page. */
   .clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); column-gap: 16px; }
 }

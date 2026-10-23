@@ -493,6 +493,7 @@
     download,
     fileBase,
     keepFocus,
+    listName,
     measure,
     applyZoom: () => applyZoom(),
     fitWidth: () => fitWidth(),
@@ -1167,6 +1168,23 @@
     }
   }
 
+  /**
+   * The name in a row of the cluster or network list. A long name that does
+   * not fit is cut in the middle, so its end stays in sight: its last word
+   * or part of up to 8 characters, else its last 5 ("HDR…-GC5A-21").
+   */
+  function listName(name) {
+    if (name.length <= 10) return `<span class="cl-name">${esc(name)}</span>`;
+    let at = name.length - 5;
+    for (let i = name.length - 8; i <= name.length - 3; i++) {
+      if (/[\s._/:-]/.test(name[i])) {
+        at = i;
+        break;
+      }
+    }
+    return `<span class="cl-name is-split"><span class="cl-head">${esc(name.slice(0, at))}</span><span class="cl-tail">${esc(name.slice(at))}</span></span>`;
+  }
+
   function renderClusters() {
     const counts = new Map();
     let unassigned = 0;
@@ -1187,14 +1205,14 @@
     const row = (id, name, color, count, editable) =>
       `<li class="cl-row${ui.hiddenClusters.has(id) ? ' is-hidden' : ''}" data-cluster="${esc(id)}">` +
       eye(id, name) +
-      `<button type="button" class="cl-main" aria-pressed="${ui.focusCluster === id}">` +
+      `<button type="button" class="cl-main" aria-pressed="${ui.focusCluster === id}" title="${esc(name)}">` +
       `<span class="sw" style="--c:${color || 'var(--unassigned)'}"></span>` +
-      `<span class="cl-name">${esc(name)}</span><span class="cl-count" title="${count} devices">${count}</span></button>` +
-      `<button type="button" class="btn icon sm subtle cl-select" aria-label="Select the devices of ${esc(name)}" title="Select its devices">${icon('select')}</button>` +
+      `${listName(name)}<span class="cl-count" title="${count} devices">${count}</span></button>` +
+      `<span class="cl-tools"><button type="button" class="btn icon sm subtle cl-select" aria-label="Select the devices of ${esc(name)}" title="Select its devices">${icon('select')}</button>` +
       (editable
         ? `<button type="button" class="btn icon sm subtle cl-edit" aria-label="Edit ${esc(name)}" title="Rename or recolor">${icon('pencil')}</button>`
         : `<span class="btn icon sm subtle" aria-hidden="true" style="visibility:hidden"></span>`) +
-      `</li>`;
+      `</span></li>`;
     const clusters = viewClusters();
     let html = clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
