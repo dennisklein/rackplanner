@@ -459,7 +459,11 @@ empty plan, one with the current layout but no devices, or the example. A
 new plan whose name another plan has gets a number, as in `Hall 2 (2)`.
 Plans saved by earlier versions are moved into the list automatically.
 When the browser's list of plans is lost or damaged, it is made again
-from the plans themselves. A plan open in two tabs shows in each what the other saves. When both
+from the plans themselves. A saved plan that needs fixing when it is
+opened (an earlier version saved it, or this version reads it with
+tighter rules) lists what was fixed, as **Open** does for a file; the first
+save over it keeps the plan as it was saved as a backup (see
+[Data model](#data-model)). A plan open in two tabs shows in each what the other saves. When both
 changed it, the tab that would save over the newer copy asks first:
 **Reload** takes the other tab's plan, **Keep mine as a copy** saves its own
 as a new plan.
@@ -828,6 +832,15 @@ a share link). An index without a `version` is version 1. An index that is
 missing or cannot be read is made again from the plan keys, with the names
 in the plans; their edit times are lost. An index of a later version is
 never written over, so this version saves no plan there.
+
+A stored plan that reading changed (it needed fixing, so saving it would
+not give the text stored), or whose `version` is not the one this version
+writes, is kept as it was under `rackplanner.backup.<id>` before it is
+first saved over, when the browser has room for it. A plan has one backup,
+the latest, and deleting the plan deletes it. A plan moved in from the
+single-plan version keeps that plan as its backup in the same cases. To
+get a backup back, copy its text from the browser's developer tools and
+paste it into **Open**.
 
 ## Tests
 

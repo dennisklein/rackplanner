@@ -6,7 +6,9 @@
  * its own key. The plan in use is the index's `current`. Each entry counts
  * the saves of its plan in `rev`, so that a browser tab can tell when
  * another one saved the plan it has open. An index that is lost or cannot
- * be read is made again from the plans in the store.
+ * be read is made again from the plans in the store. A plan that reading
+ * changed, or that an earlier version saved, keeps the text it had under a
+ * backup key when it is first saved over.
  */
 (function (root, factory) {
   'use strict';
@@ -21,6 +23,8 @@
   const LEGACY_KEY = 'rackplanner.plan.v1';
   const PLAN_PREFIX = 'rackplanner.plan.';
   const planKey = (id) => PLAN_PREFIX + id;
+  // One backup per plan, removed with it.
+  const backupKey = (id) => `rackplanner.backup.${id}`;
   // A plan whose index entry is lost gets this name when the plan itself cannot be read.
   const RECOVERED_NAME = 'Recovered plan';
 
@@ -85,14 +89,31 @@
       return readIndex().plans.slice().sort((a, b) => b.updated - a.updated);
     }
 
+    /**
+     * Reads plan `id`: { project, warnings, backup }, or null when it cannot
+     * be read. `backup` is true when reading changed the plan or it has
+     * another version than this one writes: saving over it may lose what it
+     * had, so backup() keeps it first. Warnings that change nothing, such as
+     * two rows of one name, need no backup.
+     */
     function load(id) {
       const text = store.get(planKey(id));
       if (!text) return null;
       try {
-        return IO.normalizeProject(JSON.parse(text));
+        const raw = JSON.parse(text);
+        const loaded = IO.normalizeProject(raw);
+        return Object.assign(loaded, { backup: needsBackup(raw, text, loaded.project) });
       } catch (e) {
         return null;
       }
+    }
+    // Saved again, a plan this version wrote and read without a change gives the same text.
+    const needsBackup = (raw, text, project) => Number(raw.version) !== M.SCHEMA_VERSION || IO.serialize(project, { compact: true }) !== text;
+
+    /** Keeps plan `id` as it is stored under its backup key, in place of an older backup. False when the store is full. */
+    function backup(id) {
+      const text = store.get(planKey(id));
+      return !!text && store.set(backupKey(id), text);
     }
 
     /**
@@ -143,6 +164,7 @@
       if (index.current === id) index.current = null;
       if (!writeIndex(index)) return false;
       store.remove(planKey(id));
+      store.remove(backupKey(id));
       return true;
     }
 
@@ -156,27 +178,34 @@
       writeIndex(index);
     }
 
-    /** Moves a plan saved by an earlier version (a single plan) into the library. */
+    /**
+     * Moves a plan saved by an earlier version (a single plan) into the
+     * library: { id, warnings, backup } with what needed fixing, or null.
+     * The plan as it was saved becomes its backup (`backup` true) when
+     * reading changed it or it has another version.
+     */
     function migrate() {
       if (store.get(INDEX_KEY)) return null;
       const text = store.get(LEGACY_KEY);
       if (!text) return null;
-      let project;
+      let raw, loaded;
       try {
-        project = IO.normalizeProject(JSON.parse(text)).project;
+        raw = JSON.parse(text);
+        loaded = IO.normalizeProject(raw);
       } catch (e) {
         return null;
       }
-      const id = add(project);
-      if (id) {
-        setCurrent(id);
-        store.remove(LEGACY_KEY);
-      }
-      return id;
+      const id = add(loaded.project);
+      if (!id) return null;
+      setCurrent(id);
+      const backup = needsBackup(raw, text, loaded.project);
+      if (backup) store.set(backupKey(id), text);
+      store.remove(LEGACY_KEY);
+      return { id, warnings: loaded.warnings, backup };
     }
 
-    return { list, load, save, rev, uniqueName, add, remove, current, setCurrent, migrate };
+    return { list, load, backup, save, rev, uniqueName, add, remove, current, setCurrent, migrate };
   }
 
-  return { create, summary, INDEX_KEY, INDEX_VERSION, LEGACY_KEY, planKey };
+  return { create, summary, INDEX_KEY, INDEX_VERSION, LEGACY_KEY, planKey, backupKey };
 });

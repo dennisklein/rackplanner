@@ -151,6 +151,7 @@
   let savedJSON = null; // projectJSON as last loaded or saved
   let savedRev = 0; // the plan's revision in the library as last loaded or saved (see followOtherTab)
   let standIn = false; // the open plan only stands in for a shared one that is being read (see bootPlan)
+  let backupDue = false; // the open plan needed fixing on load or has another version: the first save keeps it as stored (see flushPersist)
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
   // The next change of the address replaces the entry instead of adding one; none is written while one is followed (see writeAddress).
   const address = { replace: true, following: false };
@@ -187,10 +188,11 @@
     storage.set(PREFS_KEY, JSON.stringify(prefs));
   }
 
-  /** Makes `p`, saved as plan `id`, the open plan, with a fresh undo history. */
-  function openPlan(id, p) {
+  /** Makes `p`, saved as plan `id`, the open plan, with a fresh undo history. `backup` as from lib.load. */
+  function openPlan(id, p, backup) {
     planId = id;
     standIn = false;
+    backupDue = !!backup;
     project = p;
     projectJSON = JSON.stringify(project);
     savedJSON = projectJSON;
@@ -216,7 +218,7 @@
   }
 
   function bootPlan() {
-    lib.migrate();
+    const moved = lib.migrate();
     let id = lib.current() || (lib.list()[0] || {}).id || null;
     let loaded = id ? lib.load(id) : null;
     if (!loaded && location.hash.startsWith(SHARE_PREFIX)) {
@@ -230,9 +232,15 @@
     if (!loaded) {
       const p = M.createExampleProject();
       id = lib.add(p);
-      loaded = { project: p };
+      loaded = { project: p, warnings: [] };
     }
-    openPlan(id, loaded.project);
+    openPlan(id, loaded.project, loaded.backup);
+    reportLoad((moved && moved.id === id ? moved.warnings : []).concat(loaded.warnings));
+  }
+
+  /** Lists what reading the saved plan that was just opened fixed, as Open does for a file. */
+  function reportLoad(warnings) {
+    reportWarnings(`Opened ${project.name}`, `${plural(warnings.length, 'thing')} in the saved plan needed fixing. A backup keeps the plan as it was saved.`, warnings);
   }
 
   let persistTimer = null;
@@ -251,14 +259,17 @@
       return false;
     }
     let ok = false;
-    if (planId) ok = lib.save(planId, project);
-    else if ((planId = lib.add(project))) {
+    if (planId) {
+      if (backupDue) lib.backup(planId);
+      ok = lib.save(planId, project);
+    } else if ((planId = lib.add(project))) {
       lib.setCurrent(planId);
       ok = true;
     }
     if (ok) {
       savedJSON = projectJSON;
       savedRev = lib.rev(planId);
+      backupDue = false;
     }
     if (!ok && !storageWarned) {
       storageWarned = true;
@@ -296,6 +307,7 @@
     persistTimer = null;
     savedJSON = JSON.stringify(loaded.project);
     savedRev = lib.rev(planId);
+    backupDue = loaded.backup;
     history.past = [];
     history.future = [];
     history.chars = 0;
@@ -4901,10 +4913,11 @@
     if (id === planId || !flushPersist()) return;
     const loaded = lib.load(id);
     if (!loaded) return toast('That plan could not be read', { warn: true });
-    openPlan(id, loaded.project);
+    openPlan(id, loaded.project, loaded.backup);
     render();
     fitWidth();
     toast(message || `Opened ${project.name}`);
+    reportLoad(loaded.warnings);
   }
 
   /** Adds `p` as a new plan, under a name no other plan has, and opens it. `source` marks a plan from a share link. */
@@ -5018,6 +5031,7 @@
         else {
           const loaded = lib.load(id);
           loaded.project.name = name;
+          if (loaded.backup) lib.backup(id);
           lib.save(id, loaded.project);
         }
         if (name !== typed) toast(`Named it ${name}: another plan is named ${typed}`);

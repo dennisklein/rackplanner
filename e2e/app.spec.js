@@ -1032,6 +1032,50 @@ test('plans stay in the list when the list of plans in the browser is lost', asy
   await expect(page.locator('.plan-item:has-text("Hall 2 expansion") .plan-sub')).toHaveText('2 floors · 8 racks · 65 devices');
 });
 
+test('a saved plan that needed fixing says what was fixed and keeps a backup', async ({ page }) => {
+  // Two plans; the one not open gets a device of a type its catalog lacks.
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  const broken = await page.evaluate(() => {
+    const index = JSON.parse(localStorage.getItem('rackplanner.library.v1'));
+    const id = index.plans.find((p) => p.name === 'Hall 2 expansion').id;
+    const raw = JSON.parse(localStorage.getItem(`rackplanner.plan.${id}`));
+    raw.devices.push({ id: 'x1', type: 'nope', name: 'ghost', loc: { rack: raw.floors[0].rows[0].racks[0].id, kind: 'u', at: 40 } });
+    const text = JSON.stringify(raw);
+    localStorage.setItem(`rackplanner.plan.${id}`, text);
+    return { id, text };
+  });
+  const report = page.locator('#dlg-report');
+  await page.click('#btn-plans');
+  await page.click('.plan-item:has-text("Hall 2 expansion") [data-plan-act="open"]');
+  await expect(report).toBeVisible();
+  await expect(report.locator('#report-title')).toHaveText('Opened Hall 2 expansion');
+  await expect(report.locator('#report-sub')).toHaveText('1 thing in the saved plan needed fixing. A backup keeps the plan as it was saved.');
+  await expect(report.locator('#report-list li')).toHaveText(['Skipped ghost: unknown device type “nope”.']);
+  await report.locator('button[value="ok"]').click();
+
+  // Opened when the page loads, it says so too.
+  await page.reload();
+  await expect(report).toBeVisible();
+  await expect(report.locator('#report-list li')).toHaveText(['Skipped ghost: unknown device type “nope”.']);
+  await report.locator('button[value="ok"]').click();
+  const backup = () => page.evaluate((id) => localStorage.getItem(`rackplanner.backup.${id}`), broken.id);
+  expect(await backup()).toBeNull();
+
+  // The first save over it keeps it as it was.
+  await page.fill('#plan-name', 'Hall 2, fixed');
+  await page.keyboard.press('Enter');
+  await expect.poll(backup).toBe(broken.text);
+  await page.reload();
+  await expect(devices(page)).toHaveCount(37);
+  await expect(report).toBeHidden();
+
+  await page.click('#btn-plans');
+  await page.click('.plan-item:has-text("Hall 2, fixed") [data-plan-act="del"]');
+  await page.click('#confirm-ok');
+  expect(await backup()).toBeNull();
+});
+
 test('a plan changed in another tab shows there, and a tab with changes of its own asks first', async ({ page, context }) => {
   const other = await context.newPage();
   // Lets the test make this tab miss the saves of the other, as a tab that slept may.

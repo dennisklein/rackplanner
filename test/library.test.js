@@ -50,13 +50,60 @@ test('a plan saved by the single-plan version moves into the library', () => {
   const old = { version: 2, name: 'Old hall', racks: [{ id: 'r1', name: 'A' }], devices: [{ id: 'x', type: 'compute-node', name: 'cn-1', loc: { rack: 'r1', kind: 'u', at: 3 } }] };
   store.set(Library.LEGACY_KEY, JSON.stringify(old));
   const lib = Library.create(store);
-  const id = lib.migrate();
+  const moved = lib.migrate();
+  const id = moved.id;
   assert.ok(id);
+  assert.deepEqual(moved.warnings, []);
   assert.equal(lib.current(), id);
   assert.equal(lib.load(id).project.name, 'Old hall');
   assert.equal(lib.load(id).project.devices[0].loc.at, 3);
+  assert.equal(lib.load(id).backup, false, 'the plan is saved as this version writes it');
   assert.equal(store.get(Library.LEGACY_KEY), null, 'the old key is cleaned up');
+  assert.equal(store.get(Library.backupKey(id)), JSON.stringify(old), 'the plan as the old version saved it is kept');
   assert.equal(lib.migrate(), null, 'only once');
+  lib.remove(id);
+  assert.equal(store.get(Library.backupKey(id)), null, 'the backup goes with its plan');
+});
+
+test('a single plan that needed fixing says what was fixed when it moves into the library', () => {
+  const store = memoryStore();
+  const old = { version: 3, name: 'Old hall', racks: [{ id: 'r1', name: 'A' }], devices: [{ id: 'x', type: 'nope', name: 'ghost', loc: { rack: 'r1', kind: 'u', at: 3 } }] };
+  store.set(Library.LEGACY_KEY, JSON.stringify(old));
+  const moved = Library.create(store).migrate();
+  assert.deepEqual(moved.warnings, ['Skipped ghost: unknown device type “nope”.']);
+  assert.equal(store.get(Library.backupKey(moved.id)), JSON.stringify(old));
+});
+
+test('a stored plan that needed fixing or has another version is kept as a backup before it is saved over', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const id = lib.add(M.createEmptyProject());
+  const fresh = lib.load(id);
+  assert.deepEqual([fresh.warnings, fresh.backup], [[], false], 'a plan this version saved needs no backup');
+
+  const raw = JSON.parse(store.get(Library.planKey(id)));
+  const rack = raw.floors[0].rows[0].racks[0].id;
+  raw.devices.push({ id: 'x1', type: 'nope', name: 'ghost', loc: { rack, kind: 'u', at: 3 } });
+  const broken = JSON.stringify(raw);
+  store.set(Library.planKey(id), broken);
+  const loaded = lib.load(id);
+  assert.deepEqual(loaded.warnings, ['Skipped ghost: unknown device type “nope”.']);
+  assert.equal(loaded.backup, true);
+  assert.ok(lib.backup(id));
+  assert.ok(lib.save(id, loaded.project));
+  assert.equal(store.get(Library.backupKey(id)), broken);
+  assert.deepEqual([lib.load(id).warnings, lib.load(id).backup], [[], false]);
+
+  // A plan of an earlier version loads without warnings, but is kept all the same.
+  const older = JSON.stringify(Object.assign(JSON.parse(store.get(Library.planKey(id))), { version: 4 }));
+  store.set(Library.planKey(id), older);
+  assert.equal(lib.load(id).backup, true);
+  assert.ok(lib.backup(id));
+  assert.equal(store.get(Library.backupKey(id)), older, 'one backup per plan, the latest');
+  assert.equal(lib.backup('p-missing'), false);
+
+  lib.remove(id);
+  assert.equal(store.get(Library.backupKey(id)), null, 'the backup goes with its plan');
 });
 
 test('a full store refuses the save instead of losing the index', () => {
