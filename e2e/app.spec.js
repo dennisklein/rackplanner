@@ -363,6 +363,17 @@ test('the closed place dialog ignores the browser’s own undo', async ({ page }
   expect(errors).toEqual([]);
 });
 
+test('a new device type is scrolled into view in the type list', async ({ page }) => {
+  await page.click('#btn-catalog');
+  await page.click('#cat-new');
+  await page.click('[data-template="4"]');
+  await expect(page.locator('#cat-label')).toHaveValue('UPS');
+  const list = await page.locator('#cat-list').boundingBox();
+  const item = await page.locator('#cat-list .cat-item[aria-selected="true"]').boundingBox();
+  expect(item.y).toBeGreaterThanOrEqual(list.y);
+  expect(item.y + item.height).toBeLessThanOrEqual(list.y + list.height + 0.5);
+});
+
 test('device and rack types can be reordered in the catalog', async ({ page }) => {
   const parts = page.locator('.part');
   const items = page.locator('#cat-list .cat-item');

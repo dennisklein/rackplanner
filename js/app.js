@@ -4182,6 +4182,7 @@
     if (!made) return toast(`The catalog is full`, { warn: true });
     cat.sub = 'general';
     selectCatalogItem(made.id);
+    revealCatalogItem();
     const first = $('#cat-form input');
     if (first) first.select();
   });
