@@ -99,6 +99,23 @@ test('the place preview shows the blocks devices split into, and ghosts them aro
   await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(0);
 });
 
+test('the place dialog follows the Rack field with the name and the cluster, until a cluster is picked', async ({ page }) => {
+  await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r2', kind: 'u', at: 20 }));
+  await page.mouse.up();
+  await expect(page.locator('#place-name')).toHaveValue('gpu-009');
+  await expect(page.locator('input[name="place-cluster"][value="c-osprey"]')).toBeChecked();
+  await page.selectOption('#place-rack', 'r1');
+  await expect(page.locator('#place-name')).toHaveValue('cn-013');
+  await expect(page.locator('input[name="place-cluster"][value="c-kestrel"]')).toBeChecked();
+  // A cluster picked stays.
+  await page.locator('input[name="place-cluster"][value="c-osprey"]').check({ force: true });
+  await page.selectOption('#place-rack', 'r2');
+  await expect(page.locator('#place-name')).toHaveValue('gpu-009');
+  await expect(page.locator('input[name="place-cluster"][value="c-osprey"]')).toBeChecked();
+  await page.selectOption('#place-rack', 'r1');
+  await expect(page.locator('input[name="place-cluster"][value="c-osprey"]')).toBeChecked();
+});
+
 test('names other devices have are flagged, with a free series to use instead', async ({ page }) => {
   await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 32 }));
   await page.mouse.up();

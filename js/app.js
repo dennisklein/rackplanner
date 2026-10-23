@@ -3221,11 +3221,11 @@
 
   // Place dialog -------------------------------------------------------
 
-  const place = { typeId: null, loc: null, nameTouched: false, newColor: null, positions: [], valid: true, groups: {}, over: [] };
+  const place = { typeId: null, loc: null, nameTouched: false, clusterTouched: false, newColor: null, positions: [], valid: true, groups: {}, over: [] };
 
   function openPlaceDialog(typeId, loc) {
     const type = M.typeOf(project, typeId);
-    Object.assign(place, { typeId, loc, nameTouched: false, positions: [], valid: true });
+    Object.assign(place, { typeId, loc, nameTouched: false, clusterTouched: false, positions: [], valid: true });
     $('#place-title').textContent = type.label;
     $('#place-height-field').hidden = !type.variable;
     $('#place-mount').innerHTML = type.face === 'reserved' ? '' : mountRadios('place-mount', M.mountsReversed(type), 'place-mount-label', M.portsSide(type));
@@ -3234,11 +3234,33 @@
     $('input[name="place-dir"][value="down"]').checked = true;
     $('#place-spread').checked = false;
     setPlaceLoc(loc);
-    const hint = M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
-    const initial = startCluster(typeId, hint);
+    $('#place-cluster-label').textContent = clusterHeading();
+    suggestPlaceCluster();
+    place.newColor = M.nextClusterColor(project, ui.clusterView);
+    $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
+    renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => {
+      place.newColor = c;
+      drawPlaceGhosts();
+    });
+    showError('#place-error', '');
+    openDialog($('#dlg-place'));
+    updatePlacePreview();
+    const name = $('#place-name');
+    name.focus();
+    name.select();
+  }
+
+  /**
+   * Picks in the place dialog the cluster that the name suggestion follows,
+   * for where it places the devices now, unless the user picked one: the
+   * cluster of the reference device in every view.
+   */
+  function suggestPlaceCluster() {
+    if (place.clusterTouched) return;
+    const hint = M.suggestPlacement(project, place.typeId, place.loc, 1, ui.clusterView);
+    const initial = startCluster(place.typeId, hint);
     // The other views take the clusters of the device the suggestion follows.
     place.groups = hint.groups;
-    $('#place-cluster-label').textContent = clusterHeading();
     $('#place-clusters').innerHTML = clusterChips('place-cluster', initial, true);
     const others = project.views.filter((v) => v.id !== ui.clusterView);
     const inView = (v) => `${(M.clusterOf(project, { groups: hint.groups }, v.id) || { name: 'none' }).name} in ${v.name}`;
@@ -3248,19 +3270,7 @@
         ? `Like ${hint.from}: ${listAnd(others.map(inView))}`
         : `No cluster in ${listAnd(others.map((v) => v.name))}`;
     $('#place-views').hidden = !others.length;
-    place.newColor = M.nextClusterColor(project, ui.clusterView);
-    $('#place-new-name').value = M.nextClusterName(project, ui.clusterView);
-    renderSwatches($('#place-new-colors'), 'place-new-color', place.newColor, (c) => {
-      place.newColor = c;
-      drawPlaceGhosts();
-    });
     $('#place-new').hidden = initial !== '__new';
-    showError('#place-error', '');
-    openDialog($('#dlg-place'));
-    updatePlacePreview();
-    const name = $('#place-name');
-    name.focus();
-    name.select();
   }
 
   /** Sets where the dialog places the devices: its Rack and Position fields, and the racks of that row to spread over. */
@@ -3532,10 +3542,12 @@
     const near = place.loc.kind === 'u' ? place.loc.at : 1;
     // The nearest free position there; in a full rack its top unit, which the preview says is taken.
     setPlaceLoc(M.nearestLoc(project, place.typeId, rackId, near, null, place.loc.kind === 'side', placeHeight()) || { rack: rackId, kind: 'u', at: 1 });
+    suggestPlaceCluster();
     updatePlacePreview();
   });
   $('#place-pos').addEventListener('change', (e) => {
     setPlaceLoc(parseLocKey(place.loc.rack, e.target.value));
+    suggestPlaceCluster();
     updatePlacePreview();
   });
   $('#place-spread').addEventListener('change', updatePlacePreview);
@@ -3543,6 +3555,7 @@
   $$('input[name="place-dir"]').forEach((r) => r.addEventListener('change', updatePlacePreview));
   $('#place-clusters').addEventListener('change', (e) => {
     if (e.target.name !== 'place-cluster') return;
+    place.clusterTouched = true;
     const isNew = e.target.value === '__new';
     $('#place-new').hidden = !isNew;
     if (isNew) $('#place-new-name').select();

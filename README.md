@@ -115,6 +115,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   the code of the new one: a PDU next to `pdu-b03-a` in Rack A01 is
   `pdu-a01-a`, and in Rack B03 it is `pdu-b03-b`. With no device of its type
   in the plan, the cluster is the one last given to that type, or none.
+  When the **Rack** or **Position** field changes, the name and the cluster
+  follow, until you type a name or pick a cluster yourself.
   You can create a new cluster with its own color right there.
 - **Several at once**: set a quantity to stack devices downward or upward from
   the drop point. Occupied units are skipped and names count up (`cn-013 … cn-020`).
