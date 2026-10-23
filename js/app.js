@@ -449,6 +449,7 @@
     armedHint: $('#armed-hint'),
     chip: $('#drag-chip'),
     toasts: $('#toasts'),
+    status: $('#status'),
     fileInput: $('#file-input'),
     printRoot: $('#print-root'),
   };
@@ -532,6 +533,7 @@
     const o = opts || {};
     const list = [...new Set(ids)].filter((id) => M.deviceById(project, id));
     ui.selection = list.length ? { kind: 'devices', ids: list } : null;
+    if (list.length > 1) announce(`${plural(list.length, 'device')} selected`);
     if (list.length && o.follow) {
       const row = rowOfRack(M.deviceById(project, list[0]).loc.rack);
       if (row !== ui.rowId || ui.view !== 'sheet') setRow(row, { view: 'sheet', render: false });
@@ -878,6 +880,7 @@
     }
     render();
     placeToastsSoon();
+    announce(ws === 'cabling' ? 'Cabling workspace' : 'Racks workspace');
     if (ws === 'cabling') {
       if (cab.zoomable()) fitWidth();
     } else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
@@ -906,6 +909,7 @@
     savePrefs();
     disarm();
     render();
+    announce(view === 'map' ? `Floor map of ${currentRow().floor.name}` : `Elevation of ${currentRow().row.name}`);
   }
 
   function renderRowMenu() {
@@ -1188,6 +1192,7 @@
     if (opts && opts.render === false) return true;
     render();
     if ($('#dlg-views').open) renderViewList();
+    announce(`View: ${M.viewOf(project, id).name}`);
     return true;
   }
   $('#menu-views').addEventListener('click', (e) => {
@@ -1841,7 +1846,8 @@
       if (row !== ui.rowId) setRow(row, { render: false });
     }
     const changed = commit((p) => void (M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at }), { label: `Moved ${d.name}` });
-    if (!changed) render();
+    if (changed) announce(`Moved ${d.name} to ${M.formatLoc(project, loc, d.type, d.height)}`);
+    else render();
     if (opts && (opts.reveal || opts.follow)) revealDevice(id, opts.reveal);
     return changed;
   }
@@ -1854,9 +1860,10 @@
       return false;
     }
     ui.selection = { kind: 'devices', ids: moves.map((m) => m.id) };
-    return commit((p) => void moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at })), {
-      label: `Moved ${plural(moves.length, 'device')}`,
-    });
+    const label = `Moved ${plural(moves.length, 'device')}`;
+    const changed = commit((p) => void moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at })), { label });
+    if (changed) announce(label);
+    return changed;
   }
 
   // dir follows unit numbers: -1 moves up the rack (toward U1), +1 moves down.
@@ -4857,6 +4864,11 @@
     while (el.toasts.children.length > 3) el.toasts.firstElementChild.remove();
     placeToastsSoon();
     timer = setTimeout(dismiss, o.action ? 6000 : o.warn ? 5000 : 3200);
+  }
+
+  /** Says a short `message` to screen readers through the hidden status line: what a key or a click just did. */
+  function announce(message) {
+    el.status.textContent = message;
   }
 
   /**

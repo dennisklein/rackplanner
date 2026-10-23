@@ -229,7 +229,7 @@
     </div>
   </main>
 
-  <aside class="inspector" id="inspector" aria-label="Details" aria-live="polite"></aside>
+  <aside class="inspector" id="inspector" aria-label="Details"></aside>
 </div>
 
 <dialog class="dlg" id="dlg-place" aria-labelledby="place-title">
@@ -628,6 +628,7 @@
 <input type="file" id="file-input" accept=".json,.csv,.tsv,.txt,application/json,text/csv" hidden>
 <div class="drag-chip" id="drag-chip" hidden></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<p class="sr-only" id="status" role="status"></p>
 <div class="print-root" id="print-root" aria-hidden="true"></div>
 
 <script src="js/model.js"></script>

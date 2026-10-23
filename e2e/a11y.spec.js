@@ -8,6 +8,9 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('.scene .dev')).toHaveCount(37);
 });
 
+const device = (page, name) => page.locator(`.scene .dev[aria-label^="${name},"]`);
+const status = (page) => page.locator('#status');
+
 /** Contrast ratio of two CSS colors as the page computes them. */
 function contrastOf(page, sel, fg, bg) {
   return page.evaluate(
@@ -85,4 +88,31 @@ test('the plan name is the page’s heading; the schedule’s arrow column says 
   await page.click('.ws-switch [data-workspace="cabling"]');
   await page.click('[data-cab-view="schedule"]');
   await expect(page.locator('#sc-table thead th.sc-arrow')).toHaveText('to');
+});
+
+test('the inspector is quiet; a status line says what keys and clicks did', async ({ page }) => {
+  await expect(page.locator('#inspector')).not.toHaveAttribute('aria-live', /.*/);
+  await expect(status(page)).toHaveAttribute('role', 'status');
+  await device(page, 'cn-001').click();
+  await device(page, 'cn-002').click({ modifiers: ['Shift'] });
+  await expect(status(page)).toHaveText('2 devices selected');
+  await page.keyboard.press('ArrowDown');
+  await expect(status(page)).toHaveText('Moved 2 devices');
+  await device(page, 'sw-mgmt-a01').click();
+  await page.keyboard.press('ArrowDown');
+  await expect(status(page)).toHaveText(/^Moved sw-mgmt-a01 to Rack A01 · U\d+$/);
+  await page.keyboard.press('m');
+  await expect(status(page)).toHaveText('Floor map of Ground floor');
+  await page.keyboard.press('c');
+  await expect(status(page)).toHaveText('Cabling workspace');
+});
+
+test('the status line names the view shown', async ({ page }) => {
+  await page.click('#btn-views');
+  await page.click('#view-copy');
+  await page.click('#dlg-views [data-close]');
+  await page.keyboard.press('v');
+  await expect(status(page)).toHaveText(/^View: /);
+  const shown = await page.locator('#clusters-view').textContent();
+  await expect(status(page)).toHaveText(`View: ${shown}`);
 });
