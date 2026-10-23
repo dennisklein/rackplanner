@@ -645,13 +645,16 @@ kbd {
 .seg > button + button { border-left: 1px solid var(--line-strong); }
 .btn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
 .seg > button[aria-pressed="true"], .seg > button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
-.seg > button:focus-visible { outline: 2px solid var(--tape); outline-offset: -3px; }
+/* An ink ring on light segments; the tape ring shows on the dark, pressed ones. */
+.seg > button:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
+.seg > button[aria-pressed="true"]:focus-visible, .seg > button[aria-selected="true"]:focus-visible { outline-color: var(--tape); }
 .seg label { position: relative; display: flex; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg span { display: flex; align-items: center; gap: 5px; padding: 0 11px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .seg label + label span { border-left: 1px solid var(--line-strong); }
 .seg input:checked + span { background: var(--ink); color: var(--surface); }
-.seg input:focus-visible + span { outline: 2px solid var(--tape); outline-offset: -3px; }
+.seg input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: -3px; }
+.seg input:checked:focus-visible + span { outline-color: var(--tape); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { position: relative; display: flex; }

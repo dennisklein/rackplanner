@@ -49,3 +49,20 @@ test.describe('in a dark system theme', () => {
     expect(await contrastOf(page, 'body', 'var(--ink-3)', 'var(--surface-2)')).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+test('the focus ring of a segment stands out from it, pressed or not', async ({ page }) => {
+  await page.focus('#plan-name');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  const cabling = page.locator('.ws-switch [data-workspace="cabling"]');
+  await expect(cabling).toBeFocused();
+  const look = (loc) => loc.evaluate((e) => ({ ring: getComputedStyle(e).outlineColor, ink: getComputedStyle(document.body).color }));
+  const off = await look(cabling);
+  expect(off.ring).toBe(off.ink);
+  await page.keyboard.press('Shift+Tab');
+  const racks = page.locator('.ws-switch [data-workspace="racks"]');
+  await expect(racks).toBeFocused();
+  const on = await look(racks);
+  expect(on.ring).not.toBe(on.ink);
+  expect(await contrastOf(page, 'body', on.ring, 'var(--ink)')).toBeGreaterThanOrEqual(3);
+});
