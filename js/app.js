@@ -442,6 +442,8 @@
     undo: $('#btn-undo'),
     bare: $('#btn-bare'),
     redo: $('#btn-redo'),
+    navUndo: $('#btn-nav-undo'),
+    navRedo: $('#btn-nav-redo'),
     zoom: $('#zoom'),
     zoomLevel: $('#btn-zoom-reset'),
     floorTabs: $('#floor-tabs'),
@@ -1205,10 +1207,13 @@
   function renderUndoButtons() {
     const next = history.future.length ? history.future[history.future.length - 1].step : null;
     const last = lastStep();
-    el.undo.disabled = !last;
-    el.redo.disabled = !next;
+    el.undo.disabled = el.navUndo.disabled = !last;
+    el.redo.disabled = el.navRedo.disabled = !next;
     el.undo.title = last && last.label ? `Undo: ${last.label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
     el.redo.title = next && next.label ? `Redo: ${next.label} (Ctrl+Shift+Z)` : 'Redo (Ctrl+Shift+Z)';
+    // Over the drawing on a phone, where there are no keys.
+    el.navUndo.title = last && last.label ? `Undo: ${last.label}` : 'Undo';
+    el.navRedo.title = next && next.label ? `Redo: ${next.label}` : 'Redo';
   }
 
   /** The menu button of the plan's views, shown when it has more than one; the cluster list names the view shown. */
@@ -5328,6 +5333,8 @@
 
   el.undo.addEventListener('click', undo);
   el.redo.addEventListener('click', redo);
+  el.navUndo.addEventListener('click', undo);
+  el.navRedo.addEventListener('click', redo);
   $('#btn-zoom-in').addEventListener('click', () => setZoom(ui.zoom * 1.2));
   $('#btn-zoom-out').addEventListener('click', () => setZoom(ui.zoom / 1.2));
   $('#btn-zoom-fit').addEventListener('click', () => fitZoom('sheet'));

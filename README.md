@@ -205,7 +205,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   Undo and redo say what they reverted and go to the row and view where you
   made that change; the tooltips of the two buttons name the step. The
   **Undo** in a message at the bottom undoes the step that the message
-  names. It goes away once you make a newer step.
+  names. It goes away once you make a newer step. On a phone, the bar above
+  the drawing has Undo and Redo too, and stays at the top of the screen while
+  the drawing or table is in view.
 - **Help**: the **?** button above the drawing (or <kbd>?</kbd>) lists every
   shortcut of the workspace shown, with short how-tos and a link to the intro
   video.

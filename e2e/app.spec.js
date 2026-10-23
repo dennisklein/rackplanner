@@ -1297,6 +1297,34 @@ test.describe('on a phone', () => {
     expect(stage.height).toBeLessThanOrEqual(342);
   });
 
+  test('the nav bar stays over the drawing, with Undo and Redo', async ({ page }) => {
+    await page.locator('#btn-keep-example').tap();
+    await page.fill('#plan-name', 'Hall 3');
+    await page.press('#plan-name', 'Enter');
+    await page.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'start' }));
+    const undo = page.locator('#btn-nav-undo');
+    await expect(undo).toBeInViewport();
+    await expect(undo).toBeEnabled();
+    await undo.tap();
+    await expect(page.locator('#plan-name')).toHaveValue('Hall 2 expansion');
+    await expect(page.locator('#btn-nav-redo')).toBeEnabled();
+    await page.locator('#btn-nav-redo').tap();
+    await expect(page.locator('#plan-name')).toHaveValue('Hall 3');
+
+    // The schedule is taller than the screen: its nav bar stays at the top.
+    await page.locator('.ws-switch [data-workspace="cabling"]').tap();
+    await page.locator('#cab-toggle [data-cab-view="schedule"]').tap();
+    await page.evaluate(() => {
+      document.querySelector('#stage').scrollIntoView({ block: 'start' });
+      window.scrollBy(0, 400);
+    });
+    expect(Math.round((await page.locator('.nav').boundingBox()).y)).toBe(0);
+    await expect(undo).toBeInViewport();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(undo).toBeHidden();
+  });
+
   test('adds a device type from a template in the catalog', async ({ page }) => {
     await page.locator('#btn-catalog').tap();
     const list = await page.locator('#cat-list').boundingBox();

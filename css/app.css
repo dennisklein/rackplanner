@@ -388,6 +388,7 @@ p { margin: 0; }
 .row-btn span { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .nav-spacer { flex: 1; }
 .view-toggle { background: var(--surface); --seg-pad: 10px; }
+.nav-history { display: none; margin-right: 0; }
 
 .floormap { padding: 18px 20px 72px; display: flex; flex-direction: column; gap: 16px; min-width: max-content; }
 .fm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -921,6 +922,10 @@ kbd {
   /* No taller than the screen, which is short in landscape, and a swipe past the drawing's end scrolls the page. */
   .stage { height: 72vh; min-height: min(420px, calc(100svh - 24px)); }
   .canvas { overscroll-behavior: auto; }
+  /* The toolbar scrolls away: the nav bar stays at the top while the stage is in view, with Undo and Redo. */
+  .stage { overflow: clip; }
+  .nav { position: sticky; top: 0; z-index: 6; }
+  .nav-history { display: flex; }
   .bin { overflow: visible; }
   .parts { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
   .part { flex: 0 0 200px; scroll-snap-align: start; }
@@ -937,6 +942,8 @@ kbd {
   .zoom .btn.sm span { display: none; }
   .view-toggle { --seg-pad: 8px; }
   .nav-spacer { display: none; }
+  /* The view toggles take a line of their own, after the buttons. */
+  .view-toggle, .cab-toggle { order: 1; }
   .row-btn { min-width: 0; }
   .field-grid { grid-template-columns: minmax(0, 1fr); }
   .plan-item { flex-wrap: wrap; }
