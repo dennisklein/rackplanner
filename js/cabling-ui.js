@@ -421,7 +421,7 @@
         pending: ui.pending,
         highlight: searchHits(),
         view: ctx.view(),
-        hiddenNetworks: [...ui.hiddenNetworks].map((k) => (k === NONE ? '' : k)),
+        hiddenNetworks: hiddenNetworkIds(),
         shown: shownAnyway(),
       });
       Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
@@ -429,6 +429,8 @@
       markLegs(el.svg);
     }
 
+    /** The networks the elevation hides, as the drawings take them: '' for the cables without one. */
+    const hiddenNetworkIds = () => [...ui.hiddenNetworks].map((k) => (k === NONE ? '' : k));
     /** The cables the elevation draws even when it hides their network: the cables selected and the search's matches. */
     function shownAnyway() {
       const s = ui.cabSel;
@@ -3858,7 +3860,7 @@
       const p = project();
       if (ui.cabView === 'elevation') {
         const side = prefs.cabSide;
-        return { svg: CR.exportSVG('elevation', p, { rowId: ctx.currentRow().row.id, side, measure: ctx.measure, view: ctx.view() }), file: `${ctx.fileBase(true)}-cabling-${side}`.slice(0, 120) };
+        return { svg: CR.exportSVG('elevation', p, { rowId: ctx.currentRow().row.id, side, measure: ctx.measure, view: ctx.view(), hiddenNetworks: hiddenNetworkIds() }), file: `${ctx.fileBase(true)}-cabling-${side}`.slice(0, 120) };
       }
       if (ui.cabView === 'fabric') {
         const net = fabricNetwork();
@@ -3911,6 +3913,7 @@
       openNetworkDialog,
       exportDrawing,
       drawingName,
+      hiddenNetworkIds,
       showInElevation,
       afterFit,
       useCounts,

@@ -1088,3 +1088,17 @@ test('a hidden network put in focus, or connected to, is shown again; hovering i
   await expect(page.locator('.toast').last()).toContainText(`Connected ${c.label}; Management is shown again`);
   await expect(row).not.toHaveClass(/is-hidden/);
 });
+
+test('the elevation exports without the networks it hides, and the Export menu says so', async ({ page }) => {
+  await page.click('#networks [data-net-eye="n-sas"]');
+  await page.click('#networks [data-net-eye="n-bmc"]');
+  const hint = (kind) => page.locator(`#menu-export [data-export="${kind}"] small`);
+  await page.click('#btn-export');
+  await expect(hint('svg')).toHaveText('This row’s cabling from the rear, opens in vector editors · 2 networks hidden');
+  await expect(hint('print')).toHaveText('One sheet per row, its cabling from the rear · 2 networks hidden');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="svg"]')]);
+  const text = fs.readFileSync(await dl.path(), 'utf8');
+  const ids = await plan(page, (p) => p.cables.filter((c) => c.network === 'n-sas' || c.network === 'n-bmc').map((c) => c.id));
+  for (const id of ids) expect(text).not.toContain(`data-cable="${id}"`);
+  expect(text).toContain('data-cable=');
+});

@@ -1508,6 +1508,16 @@ test('a hidden cluster put in focus is shown; search matches and the selection a
   await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
 });
 
+test('PNG, SVG and print draw hidden clusters as on screen, and the Export menu says so', async ({ page }) => {
+  await page.click('#clusters [data-cl-eye="c-kestrel"]');
+  await page.click('#btn-export');
+  await expect(page.locator('#menu-export [data-export="svg"] small')).toHaveText('This row, opens in vector editors · 1 cluster hidden');
+  await page.keyboard.press('Escape');
+  const svg = await exportFile(page, 'svg');
+  const text = fs.readFileSync(await svg.path(), 'utf8');
+  expect(text.split('class="dev is-hidden"').length - 1).toBe(12);
+});
+
 test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button takes them', async ({ page }) => {
   await page.click('#clusters [data-cl-eye="c-kestrel"]');
   await page.locator('#scene').focus();

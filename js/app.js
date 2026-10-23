@@ -5072,9 +5072,13 @@
     const drawing = cabling ? cab.drawingName() : null;
     const what = drawing || (cabling ? 'This row’s Racks sheet' : 'This row');
     const hint = (kind, text) => ($(`#menu-export [data-export="${kind}"] small`).textContent = text);
-    hint('png', `${what}, for docs, tickets and chat`);
-    hint('svg', `${what}, opens in vector editors`);
-    hint('print', cabling && ui.cabView === 'elevation' ? `One sheet per row, its cabling from the ${prefs.cabSide}` : 'One sheet per row, with title blocks');
+    // Drawings hide what the screen hides, as they leave out the fronts in bare mode; the menu says so.
+    const elevation = cabling && ui.cabView === 'elevation';
+    const hidden = elevation ? cab.hiddenNetworkIds().length : drawing ? 0 : hiddenClusters().size;
+    const note = hidden ? ` · ${plural(hidden, elevation ? 'network' : 'cluster')} hidden` : '';
+    hint('png', `${what}, for docs, tickets and chat${note}`);
+    hint('svg', `${what}, opens in vector editors${note}`);
+    hint('print', (elevation ? `One sheet per row, its cabling from the ${prefs.cabSide}` : 'One sheet per row, with title blocks') + note);
   }
 
   $('#menu-export').addEventListener('click', (e) => {
@@ -5140,7 +5144,7 @@
   }
 
   function exportOpts() {
-    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView };
+    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn() };
   }
 
   /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
@@ -5389,8 +5393,8 @@
       .map((rowId) => {
         const sc =
           drawing === 'front' || drawing === 'rear'
-            ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure })
-            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView });
+            ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure, hiddenNetworks: cab.hiddenNetworkIds() })
+            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn() });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
       })
       .join('');

@@ -429,7 +429,10 @@ as a new plan.
   elevation from the side shown, or the fabric of the network shown (from
   the port map or the schedule, the row's Racks sheet). They use the
   clusters of the view shown, and the legend names that view when the plan
-  has more than one.
+  has more than one. Like bare mode, they keep what is hidden on screen:
+  hidden clusters are drawn as taken space, and the elevation leaves out
+  hidden networks. The Export menu says how many are hidden; printing does
+  the same.
 - **Print or PDF**: one sheet per row, for the current row, floor or the whole
   plan, on A4, A3, Letter, Legal or Tabloid, with its **Racks** or its
   cabling (**Cabling front**, **Cabling rear**). The title block names the site,
