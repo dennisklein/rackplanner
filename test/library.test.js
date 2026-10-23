@@ -18,6 +18,7 @@ function memoryStore(limit) {
       return true;
     },
     remove: (k) => map.delete(k),
+    keys: () => [...map.keys()],
   };
 }
 
@@ -109,4 +110,67 @@ test('a plan added from a share link keeps its source through later saves', () =
   assert.equal(lib.list().find((x) => x.id === id).source, 'abc123');
   const other = lib.add(p);
   assert.equal(lib.list().find((x) => x.id === other).source, undefined);
+});
+
+test('a lost or unreadable index is made again from the plans in the store', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const a = lib.add(M.createExampleProject());
+  const empty = M.createEmptyProject();
+  empty.name = 'Empty';
+  const b = lib.add(empty);
+  store.set(Library.planKey('p-broken'), '{"name": "Cut');
+  store.set(Library.LEGACY_KEY, JSON.stringify(M.createEmptyProject()));
+
+  for (const broken of ['{"plans": [', JSON.stringify({ current: a, plans: 'all' }), null]) {
+    if (broken === null) store.remove(Library.INDEX_KEY);
+    else store.set(Library.INDEX_KEY, broken);
+    const plans = lib.list();
+    assert.deepEqual(plans.map((p) => p.id).sort(), [a, b, 'p-broken'].sort(), 'the old single plan is not one of them');
+    const byId = Object.fromEntries(plans.map((p) => [p.id, p]));
+    assert.equal(byId[a].name, 'Hall 2 expansion');
+    assert.deepEqual([byId[a].floors, byId[a].racks, byId[a].devices], [2, 8, 65]);
+    assert.equal(byId[b].name, 'Empty');
+    assert.equal(byId['p-broken'].name, 'Recovered plan', 'a plan that cannot be read gets a name all the same');
+    assert.equal(lib.current(), null);
+    const index = JSON.parse(store.get(Library.INDEX_KEY));
+    assert.equal(index.version, Library.INDEX_VERSION, 'the index made again is written back');
+    assert.equal(index.plans.length, 3);
+  }
+  assert.ok(lib.save(b, empty));
+  assert.equal(lib.rev(b), 2);
+  assert.ok(lib.remove('p-broken'));
+  assert.deepEqual(lib.list().map((p) => p.id).sort(), [a, b].sort());
+});
+
+test('an index without a version is read, and one of a later version is never written over', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const id = lib.add(M.createEmptyProject());
+  const index = JSON.parse(store.get(Library.INDEX_KEY));
+  assert.equal(index.version, 1);
+  delete index.version;
+  store.set(Library.INDEX_KEY, JSON.stringify(index));
+  assert.deepEqual(lib.list().map((p) => p.id), [id]);
+  assert.ok(lib.save(id, M.createEmptyProject()));
+  assert.equal(JSON.parse(store.get(Library.INDEX_KEY)).version, 1);
+
+  const newer = JSON.stringify(Object.assign(JSON.parse(store.get(Library.INDEX_KEY)), { version: 2 }));
+  store.set(Library.INDEX_KEY, newer);
+  const planText = store.get(Library.planKey(id));
+  assert.deepEqual(lib.list().map((p) => p.id), [id], 'its list is still shown');
+  const p = M.createEmptyProject();
+  p.name = 'Changed';
+  assert.equal(lib.save(id, p), false);
+  assert.equal(lib.add(p), null);
+  assert.equal(lib.remove(id), false);
+  lib.setCurrent(null);
+  assert.equal(store.get(Library.INDEX_KEY), newer);
+  assert.equal(store.get(Library.planKey(id)), planText);
+  assert.equal(store.map.size, 2, 'no plan is added');
+
+  // Nor is a later index that this version cannot read.
+  store.set(Library.INDEX_KEY, JSON.stringify({ version: 2, plans: { [id]: {} } }));
+  assert.deepEqual(lib.list().map((x) => x.id), [id]);
+  assert.equal(JSON.parse(store.get(Library.INDEX_KEY)).version, 2);
 });

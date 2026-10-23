@@ -1020,6 +1020,18 @@ test('deleting the open plan removes it for good; viewing plans does not touch t
   await expect(page.locator('.plan-item.is-current')).toContainText('Untitled rack plan');
 });
 
+test('plans stay in the list when the list of plans in the browser is lost', async ({ page }) => {
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  await page.evaluate(() => localStorage.setItem('rackplanner.library.v1', '{"plans":'));
+  await page.reload();
+  await page.click('#btn-plans');
+  await expect(page.locator('.plan-item')).toHaveCount(2);
+  expect((await page.locator('.plan-item .plan-name-l').allInnerTexts()).sort()).toEqual(['Hall 2 expansion', 'Untitled rack plan']);
+  // Their times are lost with the list.
+  await expect(page.locator('.plan-item:has-text("Hall 2 expansion") .plan-sub')).toHaveText('2 floors · 8 racks · 65 devices');
+});
+
 test('a plan changed in another tab shows there, and a tab with changes of its own asks first', async ({ page, context }) => {
   const other = await context.newPage();
   // Lets the test make this tab miss the saves of the other, as a tab that slept may.

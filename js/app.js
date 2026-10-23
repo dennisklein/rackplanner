@@ -83,6 +83,13 @@
         /* nothing to clean up */
       }
     },
+    keys() {
+      try {
+        return Object.keys(window.localStorage);
+      } catch (e) {
+        return [];
+      }
+    },
   };
   function readJSON(key) {
     const raw = storage.get(key);
@@ -4877,7 +4884,7 @@
             return (
               `<li class="plan-item${cur ? ' is-current' : ''}" data-plan="${esc(p.id)}">` +
               `<div class="plan-meta"><span class="plan-name-l">${esc(p.name)}</span>` +
-              `<span class="plan-sub">${esc(`${plural(p.floors || 1, 'floor')} · ${plural(p.racks || 0, 'rack')} · ${plural(p.devices || 0, 'device')} · edited ${relTime(p.updated)}`)}</span></div>` +
+              `<span class="plan-sub">${esc(`${plural(p.floors || 1, 'floor')} · ${plural(p.racks || 0, 'rack')} · ${plural(p.devices || 0, 'device')}${p.updated ? ` · edited ${relTime(p.updated)}` : ''}`)}</span></div>` +
               `<div class="plan-actions">` +
               (cur ? `<span class="plan-now">Open now</span>` : `<button type="button" class="btn sm primary" data-plan-act="open">Open</button>`) +
               `<button type="button" class="btn icon sm" data-plan-act="rename" title="Rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button>` +
@@ -4959,6 +4966,7 @@
       if (!ok) return;
       const saved = lib.load(id);
       const wasOpen = id === planId;
+      const kept = project;
       if (wasOpen) {
         // Nothing may save the deleted plan back while switching away from it.
         clearTimeout(persistTimer);
@@ -4966,7 +4974,10 @@
         planId = null;
         project = null;
       }
-      lib.remove(id);
+      if (!lib.remove(id)) {
+        if (wasOpen) [planId, project] = [id, kept];
+        return toast(`${entry.name} was not deleted: a newer version of Rackplanner wrote the list of plans in this browser`, { warn: true });
+      }
       if (wasOpen) {
         const next = lib.list().find((p) => lib.load(p.id));
         if (next) switchPlan(next.id);

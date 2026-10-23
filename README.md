@@ -458,7 +458,8 @@ every plan in this browser to open, rename, duplicate or delete; **New** starts 
 empty plan, one with the current layout but no devices, or the example. A
 new plan whose name another plan has gets a number, as in `Hall 2 (2)`.
 Plans saved by earlier versions are moved into the list automatically.
-A plan open in two tabs shows in each what the other saves. When both
+When the browser's list of plans is lost or damaged, it is made again
+from the plans themselves. A plan open in two tabs shows in each what the other saves. When both
 changed it, the tab that would save over the newer copy asks first:
 **Reload** takes the other tab's plan, **Keep mine as a copy** saves its own
 as a new plan.
@@ -817,6 +818,16 @@ catalog does not change how an old file opens. `test/fixtures` holds the
 example plan of each earlier version, as that version wrote it, and what it
 becomes. A hand-made file without a version reads as version 2, and a flat
 list of racks in place of `floors` becomes one row in a file of any version.
+
+In the browser's `localStorage`, each plan is kept as compact plan JSON
+under `rackplanner.plan.<id>`, and an index under `rackplanner.library.v1`
+lists them for **Plans**: `{ "version": 1, "current": "<id>", "plans": [...] }`,
+with an entry per plan (`id`, `name`, `floors`, `racks`, `devices`,
+`created`, `updated`, `rev`, the counted saves, and `source` for a plan from
+a share link). An index without a `version` is version 1. An index that is
+missing or cannot be read is made again from the plan keys, with the names
+in the plans; their edit times are lost. An index of a later version is
+never written over, so this version saves no plan there.
 
 ## Tests
 
