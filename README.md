@@ -348,8 +348,9 @@ plugged in.
 ## Saving, sharing and exporting
 
 Plans are saved in the browser's `localStorage` as you work. **Plans** lists
-every plan in this browser to open, duplicate or delete; **New** starts an
-empty plan, one with the current layout but no devices, or the example.
+every plan in this browser to open, rename, duplicate or delete; **New** starts an
+empty plan, one with the current layout but no devices, or the example. A
+new plan whose name another plan has gets a number, as in `Hall 2 (2)`.
 Plans saved by earlier versions are moved into the list automatically.
 A plan open in two tabs shows in each what the other saves. When both
 changed it, the tab that would save over the newer copy asks first:
@@ -384,7 +385,8 @@ as a new plan.
 - **Plan file (.json)**, which **Open** reads back as a new plan. You can also
   copy the plan as JSON and paste it into Open on another machine.
 - **Share link**: the whole plan, compressed into the link itself. Whoever opens
-  it gets their own copy in their browser; nothing is uploaded. Very large
+  it gets their own copy in their browser; nothing is uploaded. Opened again,
+  the link offers the plan made from it before, or one more copy. Very large
   plans make long links, so send the file instead if a chat program cuts it off.
 
 <p align="center">

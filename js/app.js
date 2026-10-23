@@ -134,6 +134,7 @@
   let projectJSON = '';
   let savedJSON = null; // projectJSON as last loaded or saved
   let savedRev = 0; // the plan's revision in the library as last loaded or saved (see followOtherTab)
+  let standIn = false; // the open plan only stands in for a shared one that is being read (see bootPlan)
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
   const ui = {
     workspace: prefs.workspace, // 'racks' | 'cabling'; the Cabling workspace keeps its own state (js/cabling-ui.js)
@@ -170,6 +171,7 @@
   /** Makes `p`, saved as plan `id`, the open plan, with a fresh undo history. */
   function openPlan(id, p) {
     planId = id;
+    standIn = false;
     project = p;
     projectJSON = JSON.stringify(project);
     savedJSON = projectJSON;
@@ -196,6 +198,14 @@
     lib.migrate();
     let id = lib.current() || (lib.list()[0] || {}).id || null;
     let loaded = id ? lib.load(id) : null;
+    if (!loaded && location.hash.startsWith(SHARE_PREFIX)) {
+      // Opened from a share link with no plans yet: the shared plan comes
+      // instead of the example. Till it is read an empty plan stands in,
+      // saved only once it is changed.
+      openPlan(null, M.createEmptyProject());
+      standIn = true;
+      return;
+    }
     if (!loaded) {
       const p = M.createExampleProject();
       id = lib.add(p);
@@ -214,7 +224,7 @@
   function flushPersist() {
     clearTimeout(persistTimer);
     persistTimer = null;
-    if (!project || (planId && projectJSON === savedJSON)) return true;
+    if (!project || ((planId || standIn) && projectJSON === savedJSON)) return true;
     if (planId && (changedElsewhere() || $('#dlg-elsewhere').open)) {
       askElsewhere();
       return false;
@@ -3196,8 +3206,10 @@
       $('#confirm-title').textContent = o.title;
       $('#confirm-body').textContent = o.body;
       $('#confirm-ok').textContent = o.ok || 'OK';
+      $('#dlg-confirm button[value="cancel"]').textContent = o.cancel || 'Cancel';
       dlg.returnValue = '';
-      dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
+      // Esc closes it without an answer: that counts as Cancel, unless `o.dismissOk`.
+      dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok' || (!!o.dismissOk && dlg.returnValue !== 'cancel')), { once: true });
       openDialog(dlg);
       $('#confirm-ok').focus();
     });
@@ -4079,6 +4091,7 @@
               `<span class="plan-sub">${esc(`${plural(p.floors || 1, 'floor')} · ${plural(p.racks || 0, 'rack')} · ${plural(p.devices || 0, 'device')} · edited ${relTime(p.updated)}`)}</span></div>` +
               `<div class="plan-actions">` +
               (cur ? `<span class="plan-now">Open now</span>` : `<button type="button" class="btn sm primary" data-plan-act="open">Open</button>`) +
+              `<button type="button" class="btn icon sm" data-plan-act="rename" title="Rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button>` +
               `<button type="button" class="btn icon sm" data-plan-act="dup" title="Duplicate" aria-label="Duplicate ${esc(p.name)}">${icon('copy')}</button>` +
               `<button type="button" class="btn icon sm danger-text" data-plan-act="del" title="Delete" aria-label="Delete ${esc(p.name)}">${icon('trash')}</button>` +
               `</div></li>`
@@ -4098,11 +4111,12 @@
     toast(message || `Opened ${project.name}`);
   }
 
-  /** Adds `p` as a new plan and opens it. */
-  function createPlan(p, message, warnings) {
+  /** Adds `p` as a new plan, under a name no other plan has, and opens it. `source` marks a plan from a share link. */
+  function createPlan(p, message, warnings, source) {
     if (!flushPersist()) return;
     const prev = planId;
-    const id = lib.add(p);
+    p.name = lib.uniqueName(p.name);
+    const id = lib.add(p, { source });
     lib.setCurrent(id);
     // Opening a plan clears the toasts of the one before: the warning comes after.
     openPlan(id, p);
@@ -4135,11 +4149,13 @@
     if (act === 'open') {
       $('#dlg-plans').close();
       switchPlan(id);
+    } else if (act === 'rename') {
+      renamePlanInList(b.closest('[data-plan]'), id);
     } else if (act === 'dup') {
       flushPersist();
       const loaded = lib.load(id);
       if (!loaded) return;
-      loaded.project.name = `${loaded.project.name} (copy)`;
+      loaded.project.name = lib.uniqueName(`${loaded.project.name} (copy)`);
       delete loaded.project.meta.example;
       if (!lib.add(loaded.project)) toast('The browser storage is full', { warn: true });
       renderPlans();
@@ -4176,6 +4192,50 @@
       });
     }
   });
+  /** Puts a field in place of the name of a plan in the list: Enter or leaving it renames the plan, Esc keeps the name. */
+  function renamePlanInList(item, id) {
+    const label = $('.plan-name-l', item);
+    const entry = lib.list().find((p) => p.id === id);
+    if (!label || !entry) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'plan-name-in';
+    input.maxLength = 120;
+    input.value = entry.name;
+    input.setAttribute('aria-label', `Name of ${entry.name}`);
+    label.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (keep) => {
+      if (done) return;
+      done = true;
+      const typed = input.value.trim();
+      // A name another plan has takes a number, as new plans do.
+      const name = typed && lib.uniqueName(typed, id);
+      if (keep && name && name !== entry.name) {
+        if (id === planId) commit((p) => void (p.name = name), { label: 'Renamed the plan' });
+        else {
+          const loaded = lib.load(id);
+          loaded.project.name = name;
+          lib.save(id, loaded.project);
+        }
+        if (name !== typed) toast(`Named it ${name}: another plan is named ${typed}`);
+      }
+      renderPlans();
+      const again = $(`[data-plan="${CSS.escape(id)}"] [data-plan-act="rename"]`);
+      if (again && document.activeElement === document.body) again.focus();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      // Esc leaves the field, not the dialog.
+      e.preventDefault();
+      e.stopPropagation();
+      finish(e.key === 'Enter');
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
   $('#dlg-plans').addEventListener('click', (e) => {
     const b = e.target.closest('[data-plan-new]');
     if (!b) return;
@@ -4527,19 +4587,41 @@
     );
   });
 
-  /** Opens a plan passed in the address (#plan=…) as a new plan. */
+  /** A short fingerprint of the code of a share link, kept with the plans opened from it. */
+  function shareSource(code) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < code.length; i++) h = Math.imul(h ^ code.charCodeAt(i), 0x01000193);
+    return `${(h >>> 0).toString(36)}-${code.length.toString(36)}`;
+  }
+
+  /** Opens a plan passed in the address (#plan=…) as a new plan, or the plan opened from the same link before. */
   async function openSharedFromHash() {
     const hash = location.hash;
     if (!hash.startsWith(SHARE_PREFIX)) return;
     window.history.replaceState(null, '', location.pathname + location.search);
+    const code = hash.slice(SHARE_PREFIX.length);
     let result;
     try {
-      result = IO.normalizeProject(await IO.decodeShare(hash.slice(SHARE_PREFIX.length)));
+      result = IO.normalizeProject(await IO.decodeShare(code));
     } catch (e) {
       return toast(e.message, { warn: true });
     }
     delete result.project.meta.example;
-    createPlan(result.project, `Opened the shared plan ${result.project.name}`, result.warnings);
+    const source = shareSource(code);
+    const before = lib.list().find((p) => p.source === source && lib.load(p.id));
+    if (before) {
+      const existing = await confirmDialog({
+        title: `Open ${before.name} again?`,
+        body: `This browser has a plan from this link already, edited ${relTime(before.updated)}. Open that plan, or open the link as a new copy.`,
+        ok: 'Open existing',
+        cancel: 'Open as a copy',
+        // Dismissed, it adds no plan.
+        dismissOk: true,
+      });
+      if (existing) return before.id === planId ? toast(`${before.name} is open`) : switchPlan(before.id);
+    }
+    result.project.name = lib.uniqueName(result.project.name);
+    createPlan(result.project, `Opened the shared plan ${result.project.name}`, result.warnings, source);
   }
   window.addEventListener('hashchange', openSharedFromHash);
 

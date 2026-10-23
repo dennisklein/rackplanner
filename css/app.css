@@ -785,6 +785,7 @@ kbd {
 .plan-item.is-current { border-color: var(--tape-edge); background: var(--surface-2); }
 .plan-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .plan-name-l { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-meta .plan-name-in { height: 28px; padding: 2px 8px; font-weight: 600; }
 .plan-sub { font-size: 12.5px; color: var(--ink-3); }
 .plan-actions { display: flex; align-items: center; gap: 6px; }
 .plan-now { font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); padding: 0 6px; }

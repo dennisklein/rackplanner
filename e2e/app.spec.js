@@ -724,9 +724,73 @@ test('a share link opens the plan in another browser', async ({ page, browser })
   await expect(page2.locator('.toast').first()).toContainText('Opened the shared plan Hall 2 expansion');
   await expect(page2.locator('.scene .dev[aria-label^="shared-node,"]')).toBeVisible();
   expect(new URL(page2.url()).hash).toBe('');
+  // The shared plan comes instead of the example.
   await page2.click('#btn-plans');
-  await expect(page2.locator('.plan-item')).toHaveCount(2, { timeout: 2000 });
+  await expect(page2.locator('.plan-item')).toHaveCount(1);
+  await page2.click('#dlg-plans button[value="ok"]');
+
+  // The same link again opens that plan, or one more copy under a name of its own.
+  await page2.goto(url);
+  await expect(page2.locator('#confirm-title')).toHaveText('Open Hall 2 expansion again?');
+  await page2.click('#confirm-ok');
+  await expect(page2.locator('.toast').last()).toContainText('Hall 2 expansion is open');
+  await page2.goto(url);
+  await expect(page2.locator('#dlg-confirm button[value="cancel"]')).toHaveText('Open as a copy');
+  await page2.click('#dlg-confirm button[value="cancel"]');
+  await expect(page2.locator('#plan-name')).toHaveValue('Hall 2 expansion (2)');
+  await page2.click('#btn-plans');
+  await expect(page2.locator('.plan-item .plan-name-l')).toHaveText(['Hall 2 expansion (2)', 'Hall 2 expansion']);
+  await page2.click('#dlg-plans button[value="ok"]');
+
+  // Esc on the question adds no plan: it opens the one there is.
+  await page2.goto(url);
+  await expect(page2.locator('#confirm-title')).toHaveText(/^Open Hall 2 expansion( \(2\))? again\?$/);
+  await page2.keyboard.press('Escape');
+  await expect(page2.locator('#dlg-confirm')).toBeHidden();
+  await expect(page2.locator('.toast').last()).toContainText(/Hall 2 expansion( \(2\))? is open/);
+  await page2.click('#btn-plans');
+  await expect(page2.locator('.plan-item')).toHaveCount(2);
   await other.close();
+});
+
+test('plans are renamed in the plan list', async ({ page }) => {
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  await page.click('#btn-plans');
+  // New plans get names of their own.
+  await expect(page.locator('.plan-item .plan-name-l')).toHaveText(['Untitled rack plan (2)', 'Untitled rack plan', 'Hall 2 expansion']);
+
+  await page.click('.plan-item:has-text("Hall 2 expansion") [data-plan-act="rename"]');
+  const input = page.locator('.plan-item .plan-name-in');
+  await expect(input).toBeFocused();
+  await input.fill('Hall 2, rev B');
+  await input.press('Enter');
+  await expect(page.locator('.plan-item .plan-name-l').first()).toHaveText('Hall 2, rev B');
+
+  // A name another plan has takes a number, as new plans do.
+  await page.click('.plan-item:has-text("Hall 2, rev B") [data-plan-act="rename"]');
+  await input.fill('Untitled rack plan');
+  await input.press('Enter');
+  await expect(page.locator('.plan-item .plan-name-l')).toHaveText(['Untitled rack plan (3)', 'Untitled rack plan (2)', 'Untitled rack plan']);
+  await expect(page.locator('.toast').last()).toHaveText('Named it Untitled rack plan (3): another plan is named Untitled rack plan');
+
+  // Esc keeps the name and the list open.
+  await page.click('.plan-item.is-current [data-plan-act="rename"]');
+  await input.fill('Nothing');
+  await input.press('Escape');
+  await expect(page.locator('#dlg-plans')).toBeVisible();
+  await expect(page.locator('.plan-item.is-current .plan-name-l')).toHaveText('Untitled rack plan (2)');
+
+  // The open plan is renamed as in the toolbar, with undo.
+  await page.click('.plan-item.is-current [data-plan-act="rename"]');
+  await input.fill('Row C test');
+  await input.press('Enter');
+  await page.click('#dlg-plans button[value="ok"]');
+  await expect(page.locator('#plan-name')).toHaveValue('Row C test');
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('#plan-name')).toHaveValue('Untitled rack plan (2)');
 });
 
 test('a CSV export opens as a new plan', async ({ page }) => {

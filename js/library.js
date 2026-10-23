@@ -61,13 +61,18 @@
       }
     }
 
-    /** Saves a plan and updates its index entry, counting up its revision. False when the store is full. */
+    /**
+     * Saves a plan and updates its index entry, counting up its revision.
+     * `opts.source` marks where it came from (a share link). False when the
+     * store is full.
+     */
     function save(id, project, opts) {
       if (!store.set(planKey(id), IO.serialize(project, { compact: true }))) return false;
       // Re-read the index so edits from another tab aren't lost.
       const index = readIndex();
       const old = index.plans.find((p) => p.id === id);
-      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { updated: (opts && opts.at) || Date.now(), rev: ((old && old.rev) || 0) + 1 });
+      const o = opts || {};
+      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { updated: o.at || Date.now(), rev: ((old && old.rev) || 0) + 1 }, o.source ? { source: o.source } : null);
       index.plans = index.plans.filter((p) => p.id !== id).concat([entry]);
       return writeIndex(index);
     }
@@ -86,10 +91,10 @@
       for (let n = 2; ; n++) if (!taken.has(`${base} (${n})`)) return `${base} (${n})`;
     }
 
-    /** Adds a plan and returns its id, or null when the store is full. */
-    function add(project) {
+    /** Adds a plan (with `opts` as for save) and returns its id, or null when the store is full. */
+    function add(project, opts) {
       const id = M.uid('p');
-      if (!save(id, project)) {
+      if (!save(id, project, opts)) {
         store.remove(planKey(id));
         return null;
       }

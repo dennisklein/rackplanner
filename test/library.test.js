@@ -99,3 +99,14 @@ test('a plan name taken by another plan gets the first free number', () => {
   assert.equal(lib.uniqueName('Hall 2'), 'Hall 2 (3)');
   assert.equal(lib.uniqueName('Hall 2 (2)'), 'Hall 2 (3)');
 });
+
+test('a plan added from a share link keeps its source through later saves', () => {
+  const lib = Library.create(memoryStore());
+  const p = M.createEmptyProject();
+  const id = lib.add(p, { source: 'abc123' });
+  p.name = 'Renamed';
+  lib.save(id, p);
+  assert.equal(lib.list().find((x) => x.id === id).source, 'abc123');
+  const other = lib.add(p);
+  assert.equal(lib.list().find((x) => x.id === other).source, undefined);
+});
