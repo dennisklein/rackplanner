@@ -4987,13 +4987,14 @@
       e.preventDefault();
       return selectDevices(M.devicesWithin(project, ui.rowId).map((x) => x.id));
     }
+    // Many layouts type these with AltGr (Ctrl+Alt on Windows) or Option: the character typed counts.
+    const typed = !e.metaKey && (e.altKey || !e.ctrlKey) ? key : '';
+    if (typed === '[' || typed === ']') return stepRow(typed === '[' ? -1 : 1);
     if (mod || e.altKey) return;
     if (key === '/') {
       e.preventDefault();
       focusSearch();
-    } else if (key === '[') stepRow(-1);
-    else if (key === ']') stepRow(1);
-    else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
+    } else if (letter === 'c') setWorkspace(cabling ? 'racks' : 'cabling');
     else if (letter === 'v') stepClusterView(e.shiftKey ? -1 : 1);
     else if (letter === 'b' && !cabling) setDetail(prefs.detail === 'bare' ? 'full' : 'bare');
     else if (letter === 'm' && !cabling) setView(ui.view === 'map' ? 'sheet' : 'map');

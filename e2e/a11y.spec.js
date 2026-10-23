@@ -66,3 +66,15 @@ test('the focus ring of a segment stands out from it, pressed or not', async ({ 
   expect(on.ring).not.toBe(on.ink);
   expect(await contrastOf(page, 'body', on.ring, 'var(--ink)')).toBeGreaterThanOrEqual(3);
 });
+
+test('[ and ] step rows when typed with AltGr or Option', async ({ page }) => {
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  // Windows reports AltGr as Ctrl+Alt, macOS Option as Alt.
+  await page.keyboard.press('Control+Alt+BracketRight');
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+  await page.keyboard.press('Alt+BracketLeft');
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  // Ctrl alone with a bracket is not a row step.
+  await page.keyboard.press('Control+BracketRight');
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+});

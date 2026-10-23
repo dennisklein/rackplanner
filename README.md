@@ -209,6 +209,8 @@ its fans or power supplies, and its front ports are at the rack's rear.
 | <kbd>Esc</kbd> | Cancel placing, dragging or connecting, deselect, clear the search; in Cabling, show all networks again |
 
 On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
+<kbd>[</kbd> and <kbd>]</kbd> also work where the keyboard types them with
+<kbd>AltGr</kbd> or <kbd>Option</kbd>.
 In Cabling, the zoom keys work in the elevation and the fabric.
 
 ## Planning the cabling
