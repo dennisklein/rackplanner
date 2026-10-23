@@ -2650,10 +2650,15 @@
       $$('input[name="cab-net"]', el.inspector).forEach((r) =>
         r.addEventListener('change', () => {
           if (r.value === '__new') {
-            return openNetworkDialog(null, (p, nid) => C.updateCable(p, id, { network: nid }), () => ctx.render(), (nid) => `#${CSS.escape(`cab-net-${nid}`)}`);
+            let moved = null;
+            const apply = (p, nid) => {
+              moved = C.moveToNetwork(p, [id], nid);
+              return moved.refused.length ? moved.refused[0].error : null;
+            };
+            return openNetworkDialog(null, apply, () => ctx.render(), (nid) => `#${CSS.escape(`cab-net-${nid}`)}`, () => relabeledToast(moved.relabeled));
           }
           rememberNetwork(r.value);
-          changeOrToast((p) => C.updateCable(p, id, { network: r.value || null }));
+          setNetwork([id], r.value || null);
         })
       );
       $('#cab-type').addEventListener('change', (e) => changeOrToast((p) => C.updateCable(p, id, { type: e.target.value || null })));
@@ -2688,6 +2693,32 @@
       );
       $$('[data-cab-unplug-leg]', el.inspector).forEach((b) => b.addEventListener('click', () => unplugLeg(id, Number(b.dataset.cabUnplugLeg))));
       $$('[data-cab-plug-leg]', el.inspector).forEach((b) => b.addEventListener('click', () => armLeg(id, Number(b.dataset.cabPlugLeg))));
+    }
+
+    /**
+     * Moves cables to a network in one undo step (C.moveToNetwork): those
+     * labeled in the series of their network take the new one's, which the
+     * toast says, with a way to keep the labels they had. One refused change
+     * leaves them all as they were.
+     */
+    function setNetwork(ids, net) {
+      let moved = null;
+      const err = changeOrToast((p) => {
+        moved = C.moveToNetwork(p, ids, net);
+        return moved.refused.length ? moved.refused[0].error : null;
+      });
+      if (!err) relabeledToast(moved.relabeled);
+    }
+    /** "C-0001 is now IB-0059" for cables relabeled by a change of network, with Keep label. */
+    function relabeledToast(list) {
+      if (!list || !list.length) return;
+      const text = list.length === 1 ? `${list[0].from} is now ${list[0].to}` : `${plural(list.length, 'cable')} relabeled ${list[0].to} … ${list[list.length - 1].to}`;
+      const back = () =>
+        changeOrToast((p) => {
+          const refused = C.updateCables(p, list.map((x) => x.id), (c, i) => ({ label: list[i].from }));
+          return refused.length ? refused[0].error : null;
+        });
+      toast(text, { action: list.length === 1 ? 'Keep label' : 'Keep labels', onAction: back });
     }
 
     /**
@@ -2895,17 +2926,20 @@
         `<button type="button" class="btn danger-text" id="multi-del" title="Delete (Del)">${icon('trash')}Delete ${list.length}</button></div>`;
 
       const ids = list.map((c) => c.id);
-      // One refused change leaves them all as they were.
-      const all = (p2, changes) => {
-        const refused = C.updateCables(p2, ids, changes);
-        return refused.length ? refused[0].error : null;
-      };
       $$('input[name="multi-net"]', el.inspector).forEach((r) =>
         r.addEventListener('change', () => {
-          const apply = (p2, nid) => all(p2, { network: nid });
-          if (r.value === '__new') return openNetworkDialog(null, apply, () => ctx.render(), (nid) => `#${CSS.escape(`multi-net-${nid}`)}`);
+          // Relabeled in the schedule's order, as Renumber does.
+          const order = inScheduleOrder(list).map((c) => c.id);
+          if (r.value === '__new') {
+            let moved = null;
+            const apply = (p2, nid) => {
+              moved = C.moveToNetwork(p2, order, nid);
+              return moved.refused.length ? moved.refused[0].error : null;
+            };
+            return openNetworkDialog(null, apply, () => ctx.render(), (nid) => `#${CSS.escape(`multi-net-${nid}`)}`, () => relabeledToast(moved.relabeled));
+          }
           rememberNetwork(r.value);
-          changeOrToast((p2) => apply(p2, r.value || null));
+          setNetwork(order, r.value || null);
         })
       );
       $('#multi-type').addEventListener('change', (e) => {
@@ -3716,15 +3750,16 @@
 
     // ------------------------------------------------------------ network dialog
 
-    const netDlg = { id: null, color: null, onCreate: null, onCancel: null, focusFor: null, saved: false, labelTouched: false };
+    const netDlg = { id: null, color: null, onCreate: null, onCancel: null, focusFor: null, onCreated: null, saved: false, labelTouched: false };
 
     /**
      * Opens the network dialog for network `id`, or to create one;
-     * `onCreate(draft, id)` runs in the same commit, and `focusFor(id)` is a
+     * `onCreate(draft, id)` runs in the same commit, `focusFor(id)` is a
      * selector of what takes keyboard focus once it is created (the chip of
-     * the new network, rather than “+ New network” that opened it).
+     * the new network, rather than “+ New network” that opened it), and
+     * `onCreated()` runs once the dialog has closed on it.
      */
-    function openNetworkDialog(id, onCreate, onCancel, focusFor) {
+    function openNetworkDialog(id, onCreate, onCancel, focusFor, onCreated) {
       const p = project();
       const n = id && id !== NONE ? M.networkById(p, id) : null;
       if (!n && p.networks.length >= M.LIMITS.networks) {
@@ -3733,7 +3768,7 @@
         return;
       }
       const name = n ? n.name : nextNetworkName(p);
-      Object.assign(netDlg, { id: n ? n.id : null, color: n ? n.color : M.nextNetworkColor(p), onCreate: onCreate || null, onCancel: onCancel || null, focusFor: focusFor || null, saved: false, labelTouched: !!n });
+      Object.assign(netDlg, { id: n ? n.id : null, color: n ? n.color : M.nextNetworkColor(p), onCreate: onCreate || null, onCancel: onCancel || null, focusFor: focusFor || null, onCreated: onCreated || null, saved: false, labelTouched: !!n });
       $('#network-kicker').textContent = n ? 'Edit network' : 'New network';
       $('#network-title').textContent = n ? n.name : 'Create a network';
       $('#network-name').value = name;
@@ -3798,6 +3833,7 @@
       }
       netDlg.saved = true;
       $('#dlg-network').close('ok');
+      if (!netDlg.id && netDlg.onCreated) netDlg.onCreated();
     });
     $('#dlg-network').addEventListener('close', () => {
       if (!netDlg.saved && netDlg.onCancel) netDlg.onCancel();

@@ -375,8 +375,11 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   Clicking a hidden network to show only its cables, or connecting a cable
   in it, shows it again. As for clusters, a line under the list counts the
   hidden networks in every view, with **Show all**, and <kbd>Alt</kbd>-click
-  on an eye shows only that network. Every label can be changed by hand, and **Renumber**
-  relabels selected cables in the schedule's order.
+  on an eye shows only that network. A cable moved to another network
+  takes the next label of its series when it was labeled in the series of
+  the network it was in (`C-0001` becomes `IB-0059`); **Keep label** in the
+  toast keeps the label it had. Every label can be changed by hand, and
+  **Renumber** relabels selected cables in the schedule's order.
 - **Inspector**: select a cable to change its label, network, type,
   transceivers, length and notes, or to plug in or unplug the legs of a
   breakout cable; a device to see each port and where it goes, mount it

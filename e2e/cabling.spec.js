@@ -145,8 +145,11 @@ test('the schedule lists the row’s cables in groups that fold, for the row, th
   await expect(rows(page)).toHaveCount(112 - expected[0][1]);
   const other = await rows(page).first().locator('.sc-label').textContent();
   await pick(page, other);
+  // Moved to another network, it takes that network's next label.
+  const otherId = (await cableBy(page, other)).id;
+  const byId = () => plan(page, (p, id) => p.cables.find((c) => c.id === id), otherId);
   await page.locator('label.chip:has(input[name="cab-net"][value="n-sas"]) span').click();
-  expect((await cableBy(page, other)).network).toBe('n-sas');
+  expect((await byId()).network).toBe('n-sas');
   await page.keyboard.press('Escape');
   await page.locator('#sc-title').click();
   await page.keyboard.press('c');
@@ -155,7 +158,8 @@ test('the schedule lists the row’s cables in groups that fold, for the row, th
   await expect(fold).toHaveAttribute('aria-expanded', 'false');
   await expect(rows(page)).toHaveCount(112 - expected[0][1]);
   await page.keyboard.press('Control+z');
-  expect((await cableBy(page, other)).network).not.toBe('n-sas');
+  expect(await byId()).toMatchObject({ label: other });
+  expect((await byId()).network).not.toBe('n-sas');
   await expect(fold).toHaveAttribute('aria-expanded', 'false');
   await page.locator('#sc-body .sc-fold', { hasText: 'Within Rack A01' }).click();
   await expect(rows(page)).toHaveCount(112);
@@ -258,6 +262,37 @@ test('a selected cable is edited in the inspector: label, network, type, length 
     expect(check(c)).toBe(true);
   }
   expect(await plan(page, (p, id) => p.cables.find((x) => x.id === id), before.id)).toEqual(before);
+});
+
+test('a cable moved to another network takes the next label of its series, unless kept', async ({ page }) => {
+  await toCabling(page);
+  const before = await cableBy(page, 'IB-0012');
+  const next = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-mgmt'));
+  await pick(page, 'IB-0012');
+  await page.locator('label.chip:has(input[name="cab-net"][value="n-mgmt"]) span').click();
+  await expect(page.locator('#cab-label')).toHaveValue(next);
+  expect(await plan(page, (p, id) => p.cables.find((x) => x.id === id), before.id)).toMatchObject({ label: next, network: 'n-mgmt' });
+  const toast = page.locator('.toast').last();
+  await expect(toast).toContainText(`IB-0012 is now ${next}`);
+  // Keep label: the network stays, the label goes back.
+  await toast.locator('button', { hasText: 'Keep label' }).click();
+  await expect(page.locator('#cab-label')).toHaveValue('IB-0012');
+  expect(await plan(page, (p, id) => p.cables.find((x) => x.id === id), before.id)).toMatchObject({ label: 'IB-0012', network: 'n-mgmt' });
+  // The move was one step.
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  expect(await plan(page, (p, id) => p.cables.find((x) => x.id === id), before.id)).toEqual(before);
+
+  // Several cables, in the schedule's order.
+  const bmc = await plan(page, (p, a, RP) => RP.model.labeler(p).next('BMC-0001', true));
+  await pick(page, 'IB-0012');
+  await pick(page, 'IB-0013', ['Control']);
+  await page.locator('label.chip:has(input[name="multi-net"][value="n-bmc"]) span').click();
+  await expect(page.locator('.toast').last()).toContainText(`2 cables relabeled ${bmc} … `);
+  expect(await cableBy(page, 'IB-0012')).toBeNull();
+  expect((await cableBy(page, bmc)).id).toBe(before.id);
+  await page.locator('.toast').last().locator('button', { hasText: 'Keep labels' }).click();
+  expect(await cableBy(page, 'IB-0013')).toMatchObject({ network: 'n-bmc' });
 });
 
 test('Delete removes the selected cables, with Undo; Shift and Ctrl clicks and the checkboxes select', async ({ page }) => {
@@ -570,10 +605,11 @@ test('the network dialog adds, renames and deletes a network; its cables keep th
   await expect(page.locator('#networks .cl-name')).toHaveText(['Management', 'BMC', 'InfiniBand', 'Storage 25G', 'SAS', 'Uplinks']);
   const id = await plan(page, (p) => p.networks.find((n) => n.name === 'Uplinks').id);
 
-  // A cable takes it, and a new network straight from the inspector works too.
+  // A cable takes it, and its first label; a new network straight from the inspector works too.
   await pick(page, 'IB-0003');
   await page.locator(`label.chip:has(input[name="cab-net"][value="${id}"]) span`).click();
   await expect(page.locator('#inspector .kicker')).toHaveText('Cable · Uplinks');
+  expect((await cableBy(page, 'UPL-0001')).network).toBe(id);
 
   await page.locator('#networks .cl-row', { hasText: 'Uplinks' }).hover();
   await page.locator('#networks .cl-row', { hasText: 'Uplinks' }).locator('.cl-edit').click();
@@ -593,10 +629,10 @@ test('the network dialog adds, renames and deletes a network; its cables keep th
   await page.click('#confirm-ok');
   await expect(page.locator('.toast').last()).toContainText('Deleted network Spine uplinks');
   expect(await plan(page, (p) => p.networks.length)).toBe(5);
-  expect((await cableBy(page, 'IB-0003')).network).toBeNull();
+  expect((await cableBy(page, 'UPL-0001')).network).toBeNull();
   await expect(page.locator('#networks .cl-name').last()).toHaveText('No network');
   await undoToast(page).click();
-  expect((await cableBy(page, 'IB-0003')).network).toBe(id);
+  expect((await cableBy(page, 'UPL-0001')).network).toBe(id);
 
   // + New network from the inspector gives the cable the network it creates.
   await pick(page, 'IB-0004');

@@ -446,6 +446,39 @@
     return refused;
   }
 
+  /** Whether `label` is one of the series that label `seed` starts: IB-0059 of IB-0001, uplink-0002 of uplink. */
+  function inSeries(label, seed) {
+    const l = label ? M.parseSerial(label) : null;
+    const s = M.parseSerial(seed) || { head: `${seed}-`, tail: '' };
+    return !!l && l.head === s.head && l.tail === s.tail;
+  }
+
+  /**
+   * Moves cables `ids` to network `networkId` (null: none), as updateCables
+   * does. A cable labeled in the series of the network it was in (C-0001 …
+   * without one) takes the next label of the new network's series, in the
+   * order of `ids`; a label set by hand stays. Returns { refused: [{ id,
+   * error }], relabeled: [{ id, from, to }] }.
+   */
+  function moveToNetwork(project, ids, networkId) {
+    const net = M.networkById(project, networkId) ? networkId : null;
+    const seed = M.labelSeed(project, net);
+    const labels = M.labeler(project);
+    const before = new Map(project.cables.map((c) => [c.id, c.label]));
+    const refused = updateCables(project, ids, (c) => {
+      const from = M.networkById(project, c.network) ? c.network : null;
+      const auto = from !== net && inSeries(c.label, M.labelSeed(project, from)) && !inSeries(c.label, seed);
+      return auto ? { network: net, label: labels.next(seed, true) } : { network: net };
+    });
+    const gone = new Set(refused.map((x) => x.id));
+    const relabeled = [];
+    for (const id of ids) {
+      const c = !gone.has(id) && cableById(project, id);
+      if (c && c.label !== before.get(id)) relabeled.push({ id, from: before.get(id), to: c.label });
+    }
+    return { refused, relabeled };
+  }
+
   /** Removes cables by id (one id or a list); returns how many went. */
   function disconnect(project, ids) {
     const gone = new Set([].concat(ids));
@@ -1259,6 +1292,7 @@
     connector,
     updateCable,
     updateCables,
+    moveToNetwork,
     disconnect,
     planSeries,
     connectSeries,

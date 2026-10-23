@@ -617,6 +617,28 @@ test('a new cable takes the network of the cables at the far device, else at the
   assert.equal(C.networkFor(p, null, end('sw1', 'nope')), null);
 });
 
+test('a cable moved to another network takes its series when it was labeled in its own', () => {
+  const p = plan();
+  const ib = C.addNetwork(p, { name: 'InfiniBand', firstLabel: 'IB-0001' }).id;
+  const mgmt = C.addNetwork(p, { name: 'Management', firstLabel: 'MGT-0001' }).id;
+  link(p, end('n1', 'ib0'), end('leaf1', 'p1'), { network: ib });
+  const a = link(p, end('n2', 'ib0'), end('leaf1', 'p2'));
+  const b = link(p, end('n3', 'ib0'), end('leaf1', 'p3'), { label: 'uplink-7' });
+  const c = link(p, end('n1', 'eth0'), end('sw1', 'swp1'), { network: mgmt });
+  assert.equal(a.label, 'C-0001');
+  const r = C.moveToNetwork(p, [a.id, b.id], ib);
+  assert.deepEqual(r, { refused: [], relabeled: [{ id: a.id, from: 'C-0001', to: 'IB-0002' }] });
+  assert.deepEqual([C.cableById(p, b.id).label, C.cableById(p, b.id).network], ['uplink-7', ib], 'a label set by hand stays');
+  // Out of a network: the series of cables without one.
+  assert.deepEqual(C.moveToNetwork(p, [c.id], null).relabeled, [{ id: c.id, from: 'MGT-0001', to: 'C-0001' }]);
+  // Into the network it is in, or one whose series it is in already: nothing.
+  assert.deepEqual(C.moveToNetwork(p, [a.id], ib).relabeled, []);
+  C.updateNetwork(p, mgmt, { firstLabel: 'IB-0100' });
+  assert.deepEqual(C.moveToNetwork(p, [a.id], mgmt).relabeled, []);
+  assert.equal(C.cableById(p, a.id).network, mgmt);
+  assert.deepEqual(C.moveToNetwork(p, ['nope'], ib).refused, [{ id: 'nope', error: 'Unknown cable' }]);
+});
+
 test('routes and groups follow the plan', () => {
   const p = M.createExampleProject();
   const route = (label) => C.routeOf(p, p.cables.find((c) => c.label === label));

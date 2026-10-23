@@ -294,13 +294,16 @@ test('keyboard focus comes back after the network dialog and Connect redraw what
   await expect(page.locator('#networks [data-net-edit="n-ib"]')).toBeFocused();
 
   // (c) A new network from a cable's “+ New network”: focus on its chip.
+  const cid = await plan(page, (p) => p.cables.find((c) => c.label === 'IB-0004').id);
   await row(page, 'IB-0004').locator('td').nth(1).click();
   await page.focus('#cab-net-__new');
   await page.keyboard.press('Space');
   await expect(page.locator('#network-name')).toBeFocused();
   await page.keyboard.press('Enter');
   const nid = await plan(page, (p) => p.networks[p.networks.length - 1].id);
-  expect(await plan(page, (p) => p.cables.find((c) => c.label === 'IB-0004').network)).toBe(nid);
+  // It takes the series of the new network too.
+  expect(await plan(page, (p, cid) => p.cables.find((c) => c.id === cid), cid)).toMatchObject({ network: nid, label: 'NET-0001' });
+  await expect(page.locator('.toast').last()).toContainText('IB-0004 is now NET-0001');
   await expect(page.locator(`#cab-net-${nid}`)).toBeFocused();
 
   // (b) Connect… from a device's free port: the new cable's label.
