@@ -103,7 +103,10 @@ its fans or power supplies, and its front ports are at the rack's rear.
   free slot of the row, and its **Rack** and **Position** fields pick another.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
-  so dropping a node next to `cn-012` offers `cn-013` in the same cluster.
+  in the same rack, else in the same row, so dropping a node next to `cn-012`
+  offers `cn-013` in the same cluster. A name with the code of its rack takes
+  the code of the new one: a PDU next to `pdu-b03-a` in Rack A01 is
+  `pdu-a01-a`, and in Rack B03 it is `pdu-b03-b`.
   You can create a new cluster with its own color right there.
 - **Several at once**: set a quantity to stack devices downward or upward from
   the drop point. Occupied units are skipped and names count up (`cn-013 … cn-020`).
@@ -126,7 +129,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
   whatever is selected. A device or a group of devices is copied into the
   nearest free space, below it first, then above, then in the neighbouring
   racks, keeping the group's layout; names continue each series (`cn-013`,
-  `cn-014`). A rack, row or floor is copied with all its devices and
+  `cn-014`) and take the code of the copy's rack. A rack, row or floor is copied with all its devices and
   inserted right after the original.
 - **Clusters**: click one in the left panel to highlight its devices. Use the
   pencil icon to rename or recolor it, and the eye to hide its devices in the

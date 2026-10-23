@@ -1683,7 +1683,9 @@
     const named = { devices: project.devices.slice() };
     return moves.map((m) => {
       const d = deviceById(project, m.id);
-      const c = Object.assign(clone(d), { id: uid('d'), name: nextFreeName(named, d.name), loc: { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at } });
+      // A name with the code of its rack takes the code of the copy's (see nameInRack).
+      const name = rackCodeIn(project, d.name, d.loc.rack) ? nameInRack(Object.assign({}, project, named), d.name, d.loc.rack, m.loc.rack, 1) : nextFreeName(named, d.name);
+      const c = Object.assign(clone(d), { id: uid('d'), name, loc: { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at } });
       named.devices.push(c);
       return c;
     });
@@ -1855,13 +1857,68 @@
     return formatSerial(s, n);
   }
 
+  /** The code of a rack that device names carry: A01 of Rack A01. */
+  const rackCode = (name) => String(name).replace(/^rack\s+/i, '');
+
+  /** Where device name `name` holds the code of rack `rackId` (b03 in pdu-b03-a, of Rack B03): [start, end), or null. */
+  function rackCodeIn(project, name, rackId) {
+    const rack = rackById(project, rackId);
+    const code = rack ? rackCode(rack.name) : '';
+    // A code of letters only (Rack A) or digits only (Rack 12) is too likely a word or a number of the name.
+    if (!/\d/.test(code) || !/[a-z]/i.test(code)) return null;
+    const lower = name.toLowerCase();
+    const c = code.toLowerCase();
+    const word = (ch) => !!ch && /[a-z0-9]/i.test(ch);
+    for (let i = lower.indexOf(c); i >= 0; i = lower.indexOf(c, i + 1)) {
+      if (!word(name[i - 1]) && !word(name[i + c.length])) return [i, i + c.length];
+    }
+    return null;
+  }
+
+  /**
+   * A free name like `name` (of a device in rack `fromRackId`) for a new
+   * device in rack `toRackId`, leaving room for `count` names in series.
+   * A name with the code of its rack gets the code of the new one
+   * (pdu-b03-a → pdu-a01-a); when the code holds its last number, the code
+   * stays as it is and a letter at the end counts up (pdu-a01-a →
+   * pdu-a01-b). Other names count up in their series (cn-012 → cn-013).
+   * With `fresh` (a new device, not a copy), the letter starts again at a
+   * in another rack: pdu-b02-b in Rack A01 suggests pdu-a01-a.
+   */
+  function nameInRack(project, name, fromRackId, toRackId, count, fresh) {
+    const at = rackCodeIn(project, name, fromRackId);
+    const to = rackById(project, toRackId);
+    if (!at || !to) return nextInSeries(project, name, count, false);
+    const code = rackCode(to.name);
+    const was = name.slice(at[0], at[1]);
+    const seed = name.slice(0, at[0]) + (was === was.toLowerCase() ? code.toLowerCase() : code) + name.slice(at[1]);
+    const moved = seed !== name;
+    const s = parseSerial(name);
+    const end = s ? name.length - s.tail.length : -1;
+    if (!s || end <= at[0] || end > at[1]) return nextInSeries(project, seed, count, moved);
+    const used = namesOf(project.devices);
+    const letter = /^(.*[^a-z])([a-y])$/i.exec(seed);
+    const restart = moved && fresh && letter;
+    if (moved && !restart && !used.has(seed)) return seed;
+    if (letter) {
+      const first = restart ? (letter[2] === letter[2].toLowerCase() ? 97 : 65) : letter[2].charCodeAt(0) + 1;
+      for (let c = first; /[a-z]/i.test(String.fromCharCode(c)); c++) {
+        const next = letter[1] + String.fromCharCode(c);
+        if (!used.has(next)) return next;
+      }
+    }
+    return firstFree(used, 2, (i) => `${seed}-${i}`);
+  }
+
   /**
    * Suggests name and cluster for new devices of `typeId` placed at `loc`.
-   * The nearest device of the same type in the same rack is the reference
-   * (dropping next to cn-012 of cluster Kestrel suggests cn-013, Kestrel);
-   * otherwise the most recently added device of that type, otherwise the
-   * type's default name. `cluster` is the reference's cluster in view
-   * `viewId`, undefined when there is no reference.
+   * The reference is the nearest device of the same type in the same rack
+   * (dropping next to cn-012 of cluster Kestrel suggests cn-013, Kestrel),
+   * otherwise in the nearest rack of the same row, otherwise the most
+   * recently added device of that type; without one, the type's default
+   * name. The name follows the reference's in rack `loc.rack` (see
+   * nameInRack). `cluster` is the reference's cluster in view `viewId`,
+   * undefined when there is no reference.
    */
   function suggestPlacement(project, typeId, loc, count, viewId) {
     const type = typeOf(project, typeId);
@@ -1871,15 +1928,20 @@
     const slots = loc ? Math.max(1, rackSideSlots(project, loc.rack)) : SIDE_SLOTS;
     const pos = (l) => (l.kind === 'u' ? l.at : (l.at + 0.5) * (units / slots));
     let ref = null;
-    if (loc) {
-      for (const d of same) {
-        if (d.loc.rack !== loc.rack) continue;
-        if (!ref || Math.abs(pos(d.loc) - pos(loc)) < Math.abs(pos(ref.loc) - pos(loc))) ref = d;
-      }
+    const here = loc ? locateRack(project, loc.rack) : null;
+    if (here) {
+      // Racks of the row by distance from the target: 0 is its own rack.
+      const away = new Map(here.row.racks.map((r, i) => [r.id, Math.abs(i - here.index)]));
+      const better = (d) => {
+        const a = away.get(d.loc.rack);
+        const b = away.get(ref.loc.rack);
+        return a !== b ? a < b : Math.abs(pos(d.loc) - pos(loc)) < Math.abs(pos(ref.loc) - pos(loc));
+      };
+      for (const d of same) if (away.has(d.loc.rack) && (!ref || better(d))) ref = d;
     }
     if (!ref && same.length) ref = same[same.length - 1];
     return {
-      name: ref ? nextInSeries(project, ref.name, n, false) : nextInSeries(project, type ? type.defaultName : 'dev-01', n, true),
+      name: ref ? nameInRack(project, ref.name, ref.loc.rack, loc ? loc.rack : ref.loc.rack, n, true) : nextInSeries(project, type ? type.defaultName : 'dev-01', n, true),
       cluster: ref ? clusterIdOf(project, ref, viewId) : undefined,
     };
   }
@@ -2630,6 +2692,7 @@
     nextInSeries,
     suggestPlacement,
     suggestName,
+    nameInRack,
     nextFreeName,
     nextClusterColor,
     nextClusterName,

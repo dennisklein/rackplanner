@@ -398,6 +398,43 @@ test('suggestPlacement continues the nearest series and reuses its cluster', () 
   assert.equal(M.suggestName(empty, 'reserved'), 'reserved-01');
 });
 
+test('suggestPlacement takes a device of the same row first and the rack code of the target', () => {
+  const p = M.createExampleProject();
+  // PDUs are in Row B only: one in Rack A01 takes the code A01, not B04, and starts at a.
+  assert.equal(M.suggestPlacement(p, 'pdu', { rack: 'r1', kind: 'side', at: 1 }).name, 'pdu-a01-a');
+  // In Rack B02, its neighbours in B02 come first; the letter counts up after the code.
+  assert.equal(M.suggestPlacement(p, 'pdu', { rack: 'r5', kind: 'side', at: 1 }).name, 'pdu-b02-c');
+  // In a row of its own, the code of the rack counts no further.
+  assert.equal(M.nameInRack(p, 'sw-mgmt-a01', 'r1', 'r1', 1), 'sw-mgmt-a01-2');
+  assert.equal(M.nameInRack(p, 'sw-mgmt-a01', 'r1', 'r3', 1), 'sw-mgmt-a03-2', 'sw-mgmt-a03 is taken');
+  // A number after the code counts on; names without a code are as before.
+  assert.equal(M.nameInRack(p, 'cn-a01-07', 'r1', 'r2', 1), 'cn-a02-07');
+  assert.equal(M.nameInRack(p, 'cn-012', 'r1', 'r2', 1), 'cn-013');
+
+  const q = project([
+    ['compute-node', 'r1', 'u', 1, 'cn-a01-01'],
+    ['compute-node', 'r3', 'u', 1, 'cn-a03-01'],
+  ]);
+  q.floors[0].rows.push({ id: 'row2', name: 'Row B', racks: [{ id: 'r9', name: 'Rack B01', type: 'rack-47', trayM: null, slackM: null }] });
+  q.devices.push(M.newDevice({ id: 'd9', type: 'compute-node', name: 'cn-b01-01', loc: { rack: 'r9', kind: 'u', at: 1 } }));
+  // The nearest rack of the row, not the device added last in another row.
+  assert.equal(M.suggestPlacement(q, 'compute-node', { rack: 'r2', kind: 'u', at: 5 }).name, 'cn-a02-01');
+  // Rack codes of digits or letters only are not taken for codes.
+  q.floors[0].rows[0].racks[0].name = '01';
+  assert.equal(M.nameInRack(q, 'cn-01', 'r1', 'r2', 1), 'cn-02');
+});
+
+test('a copy takes the code of its rack into the name', () => {
+  const p = M.createExampleProject();
+  const pdu = p.devices.find((d) => d.name === 'pdu-b01-b');
+  const [c] = M.copiesAt(p, [{ id: pdu.id, loc: { rack: 'r1', kind: 'side', at: 1 } }]);
+  assert.equal(c.name, 'pdu-a01-b');
+  const [same] = M.copiesAt(p, [{ id: pdu.id, loc: { rack: pdu.loc.rack, kind: 'u', at: 40 } }]);
+  assert.equal(same.name, 'pdu-b01-c', 'in its own rack, the code stays');
+  const cn = p.devices.find((d) => d.name === 'cn-012');
+  assert.equal(M.copiesAt(p, [{ id: cn.id, loc: { rack: 'r2', kind: 'u', at: 40 } }])[0].name, 'cn-013');
+});
+
 test('the example plan is valid and spans floors, rows and custom types', () => {
   const p = M.createExampleProject();
   assert.equal(M.layoutProblem(p), null);
