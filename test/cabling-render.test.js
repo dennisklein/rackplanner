@@ -229,6 +229,12 @@ test('hidden networks leave their cables out and fade their ports', () => {
   assert.equal(count(out.body, '" opacity="0.25"><'), 16, 'both ends of each');
   assert.deepEqual([...out.layout.ports], [...all.layout.ports]);
   assertWellFormed(wrap(out));
+
+  // A cable shown all the same (selected, or a search match) is drawn where it was, its ports not faded.
+  const one = CR.elevation(p, { rowId: 'row1', side: 'rear', hiddenNetworks: ['n-sas'], shown: [sas[0]] });
+  assert.deepEqual([...drawn(one.body)].filter((id) => sas.includes(id)), [sas[0]]);
+  assert.deepEqual(one.layout.cables.get(sas[0]), all.layout.cables.get(sas[0]));
+  assert.equal(count(one.body, '" opacity="0.25"><'), 14);
 });
 
 test('a breakout is one cable drawn as its legs', () => {

@@ -1480,6 +1480,34 @@ test('a hidden device still reads as taken space; one placed into a hidden clust
   await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
 });
 
+test('a hidden cluster put in focus is shown; search matches and the selection are drawn; hovering it dims nothing', async ({ page }) => {
+  await page.click('#clusters [data-cl-eye="c-kestrel"]');
+  const row = page.locator('#clusters .cl-row[data-cluster="c-kestrel"]');
+  const dimmed = page.locator('.scene .dev[opacity="0.2"]');
+  await page.locator('#clusters .cl-row[data-cluster="c-osprey"] .cl-main').hover();
+  await expect.poll(() => dimmed.count()).toBeGreaterThan(0);
+  await row.locator('.cl-main').hover();
+  await expect(dimmed).toHaveCount(0);
+
+  // Search matches are drawn in full; so is a hidden device selected, and its inspector says it is hidden.
+  await page.locator('#search').fill('cn-00');
+  await expect(device(page, 'cn-001')).not.toHaveClass(/is-hidden/);
+  await expect(device(page, 'cn-010')).toHaveClass(/is-hidden/);
+  await page.locator('#search').press('Enter');
+  await page.locator('#search').fill('');
+  await page.locator('#scene').focus();
+  await expect(device(page, 'cn-001')).toHaveClass(/is-selected/);
+  await expect(device(page, 'cn-001')).not.toHaveClass(/is-hidden/);
+  await expect(device(page, 'cn-002')).toHaveClass(/is-hidden/);
+  await expect(page.locator('#inspector')).toContainText('Kestrel HPC is hidden in the racks. Show');
+  await page.keyboard.press('Escape');
+  await expect(device(page, 'cn-001')).toHaveClass(/is-hidden/);
+
+  await row.locator('.cl-main').click();
+  await expect(row).not.toHaveClass(/is-hidden/);
+  await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
+});
+
 test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button takes them', async ({ page }) => {
   await page.click('#clusters [data-cl-eye="c-kestrel"]');
   await page.locator('#scene').focus();

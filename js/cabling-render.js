@@ -181,7 +181,8 @@
    * of a connection being made), highlight: Set of cable ids, view (the
    * view whose clusters color the devices; default: the first),
    * hiddenNetworks (network ids, '' for the cables without one: their
-   * cables are not drawn and their ports fade).
+   * cables are not drawn and their ports fade), shown (cable ids drawn
+   * whatever their network: the selection, search matches).
    * Returns { width, height, body, side, rowId, layout } where layout holds
    * where things are drawn: devices (id → rect), ports ("dev|port" →
    * center), cables (id → bounding box) and exits.
@@ -461,9 +462,10 @@
     let farW = 0;
     // Hidden networks keep their lanes, so the cables still drawn stay put.
     const hidden = new Set(o.hiddenNetworks || []);
+    const shown = o.shown instanceof Set ? o.shown : new Set(o.shown || []);
     for (const c of cables) {
       const net = netKey(ctx, c);
-      if (hidden.has(net)) continue;
+      if (hidden.has(net) && !shown.has(c.id)) continue;
       const lane = laneKey(c);
       const head = endInfo(c, c.a);
       const legs = M.legsOf(c).map((e) => (e ? endInfo(c, e) : null));
@@ -565,7 +567,7 @@
         const hit = idx.get(`${dev.d.id}|${p.name}`);
         const net = hit ? netKey(ctx, hit.cable) : null;
         const color = hit ? nets.get(net).color : null;
-        const fade = hit && hidden.has(net) ? ' opacity="0.25"' : '';
+        const fade = hit && hidden.has(net) && !shown.has(hit.cable.id) ? ' opacity="0.25"' : '';
         ps += `<g class="port" data-port="${esc(`${dev.d.id}|${p.name}`)}"${fade}>${R.portShape(p, color, t)}${hits[i] || ''}</g>`;
       });
       s += `<g transform="${dev.tf}">${ps}</g>`;

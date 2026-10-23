@@ -691,14 +691,24 @@
   const clusterIdOf = (d) => M.clusterIdOf(project, d, ui.clusterView);
   /** The clusters of the view shown. */
   const viewClusters = () => M.clustersOf(project, ui.clusterView);
+  /** The devices the search matches, or null without a search. */
+  const searchMatcher = () => (ui.query.trim() ? M.deviceMatcher(project, ui.query, ui.clusterView) : null);
   /** The clusters the view shown hides: ids, '__none' for its unassigned devices. */
   function hiddenClusters() {
     if (!ui.hiddenClusters.has(ui.clusterView)) ui.hiddenClusters.set(ui.clusterView, new Set());
     return ui.hiddenClusters.get(ui.clusterView);
   }
+  /** The devices the sheet draws hidden: those of hidden clusters, but not the ones selected or matched by the search. */
+  function drawnHidden() {
+    const hide = hiddenFn();
+    if (!hide) return null;
+    const sel = selSet();
+    const match = searchMatcher();
+    return (d) => hide(d) && !sel.has(d.id) && !(match && match(d));
+  }
   /** Shows a cluster of the view shown that the racks hide. */
   function showCluster(id) {
-    if (hiddenClusters().delete(id)) render({ inspector: false });
+    if (hiddenClusters().delete(id)) render();
   }
   /** Whether the view shown hides device `d`, or null when it hides nothing. */
   function hiddenFn() {
@@ -706,10 +716,11 @@
     return set.size ? (d) => set.has(clusterIdOf(d) || '__none') : null;
   }
 
-  /** Devices to show at full strength: the focused cluster and search matches. */
+  /** Devices to show at full strength: the focused cluster (or the one hovered, unless it is hidden) and search matches. */
   function highlightFn() {
-    const focus = ui.hoverCluster || ui.focusCluster;
-    const match = ui.query.trim() ? M.deviceMatcher(project, ui.query, ui.clusterView) : null;
+    const hover = ui.hoverCluster && !hiddenClusters().has(ui.hoverCluster) ? ui.hoverCluster : null;
+    const focus = hover || ui.focusCluster;
+    const match = searchMatcher();
     if (!focus && !match) return null;
     return (d) => (!focus || (focus === '__none' ? !clusterIdOf(d) : clusterIdOf(d) === focus)) && (!match || match(d));
   }
@@ -767,7 +778,7 @@
       selected: selSet(),
       selectedRack: sel && sel.kind === 'rack' ? sel.id : null,
       highlight: highlightFn(),
-      hidden: hiddenFn(),
+      hidden: drawnHidden(),
       view: ui.clusterView,
       dragging: d && d.active && d.source === 'device' && !d.copy ? new Set(d.ids) : null,
     });
@@ -1514,6 +1525,8 @@
         return `<option value="${locKey(l)}"${cur ? ' selected' : ''}>${label}</option>`;
       })
       .join('');
+    const hide = hiddenFn();
+    const hidden = !!hide && hide(d);
     const canUp = !!M.nudgeTarget(project, d, -1);
     const canDown = !!M.nudgeTarget(project, d, 1);
     const fields = M.FIELDS.map(
@@ -1532,7 +1545,9 @@
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
       `</div>` +
       `<section class="insp-sec"><h3 id="insp-cluster-label">${esc(clusterHeading())}</h3>` +
-      `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', clusterIdOf(d), true)}</div></section>` +
+      `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', clusterIdOf(d), true)}</div>` +
+      (hidden ? `<p class="sec-hint">${esc(cluster ? cluster.name : 'Unassigned')} is hidden in the racks. <button type="button" class="btn-link" id="insp-show-cluster">Show</button></p>` : '') +
+      `</section>` +
       `<section class="insp-sec"><h3>Position</h3>` +
       `<div class="pos-grid">` +
       `<div class="field"><label for="insp-rack">Rack</label><select id="insp-rack">${rackOptions(d.loc.rack)}</select></div>` +
@@ -1622,6 +1637,7 @@
     bindField($('#insp-notes'), id, 'notes');
     $('#insp-dup').addEventListener('click', () => duplicateDevice(id));
     $('#insp-del').addEventListener('click', () => deleteDevices([id]));
+    if (hidden) $('#insp-show-cluster').addEventListener('click', () => showCluster(clusterIdOf(d) || '__none'));
   }
 
   function renderMultiInspector(devs) {
@@ -2875,7 +2891,8 @@
     if (e.target.closest('.cl-edit')) return openClusterDialog(id);
     if (e.target.closest('.cl-eye')) {
       if (!hiddenClusters().delete(id)) hiddenClusters().add(id);
-      return render({ inspector: false });
+      // The inspector too: it says what of the selection is hidden.
+      return render();
     }
     if (e.target.closest('.cl-select')) {
       const devs = project.devices.filter((d) => (id === '__none' ? !clusterIdOf(d) && d.type !== M.RESERVED.id : clusterIdOf(d) === id));
@@ -2887,6 +2904,8 @@
     if (e.target.closest('.cl-main')) {
       ui.focusCluster = ui.focusCluster === id ? null : id;
       ui.hoverCluster = null;
+      // A cluster put in focus is shown, if the racks hid it.
+      if (ui.focusCluster) hiddenClusters().delete(id);
       render({ inspector: false });
     }
   });

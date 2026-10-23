@@ -1041,3 +1041,50 @@ test('toasts keep off the drawing, and a new connection’s toast replaces the o
   expect(await cableAt(page, 'ib-leaf-a01', 'p14')).toBeNull();
   expect((await cableAt(page, 'ib-leaf-a01', 'p13')).label).toBe(first.label);
 });
+
+test('Show in elevation draws a cable of a hidden network and says that it is hidden', async ({ page }) => {
+  await page.click('#networks [data-net-eye="n-sas"]');
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  const c = await cableBy(page, 'SAS-0001');
+  await page.locator('#sc-body tr[data-cable]', { has: page.locator('.sc-label', { hasText: /^SAS-0001$/ }) }).locator('td').nth(1).click();
+  await page.click('#inspector [data-cab-show-cable]');
+  await expect(page.locator('#cab-toggle [data-cab-view="elevation"]')).toHaveAttribute('aria-pressed', 'true');
+  // Selected, it is drawn, and only it of its network.
+  await expect(page.locator(`.scene .cable.is-selected[data-cable="${c.id}"]`)).toHaveCount(1);
+  await expect(page.locator('#inspector [data-cab-show-cable]')).toHaveCount(0);
+  const note = page.locator('.toast').filter({ hasText: 'SAS is hidden in the elevation' });
+  await expect(note).toBeVisible();
+  // Ctrl+A takes the cables shown, not it.
+  await page.locator('#scene').focus();
+  await page.keyboard.press('Control+a');
+  expect((await ui(page)).cabSel.ids).not.toContain(c.id);
+  await page.keyboard.press('Escape');
+  await expect(page.locator(`.scene .cable[data-cable="${c.id}"]`)).toHaveCount(0);
+  await note.locator('button', { hasText: 'Show' }).click();
+  await expect(page.locator('#networks .cl-row[data-network="n-sas"]')).not.toHaveClass(/is-hidden/);
+  await expect(page.locator(`.scene .cable[data-cable="${c.id}"]`)).toHaveCount(1);
+});
+
+test('a hidden network put in focus, or connected to, is shown again; hovering it dims nothing', async ({ page }) => {
+  await page.click('#networks [data-net-eye="n-mgmt"]');
+  const row = page.locator('#networks .cl-row[data-network="n-mgmt"]');
+  const dimmed = page.locator('.scene .cable[opacity]');
+  await page.locator('#networks .cl-row[data-network="n-ib"] .cl-main').hover();
+  await expect.poll(() => dimmed.count()).toBeGreaterThan(0);
+  await row.locator('.cl-main').hover();
+  await expect(dimmed).toHaveCount(0);
+  await row.locator('.cl-main').click();
+  await expect(row).not.toHaveClass(/is-hidden/);
+  expect((await ui(page)).focusNetwork).toBe('n-mgmt');
+
+  // Hidden again while in focus, a new cable joins it and shows it.
+  await page.click('#networks [data-net-eye="n-mgmt"]');
+  await expect(row).toHaveClass(/is-hidden/);
+  await page.click('#btn-zoom-reset');
+  await (await port(page, 'sw-mgmt-a01', 'swp13')).click();
+  await (await port(page, 'sw-mgmt-a02', 'swp12')).click();
+  const c = await cableAt(page, 'sw-mgmt-a01', 'swp13');
+  expect(c.network).toBe('n-mgmt');
+  await expect(page.locator('.toast').last()).toContainText(`Connected ${c.label}; Management is shown again`);
+  await expect(row).not.toHaveClass(/is-hidden/);
+});

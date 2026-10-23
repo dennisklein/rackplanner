@@ -152,8 +152,11 @@ Rear**); otherwise they ask how it is **Mounted**.
   at it for the buttons that select its devices and, with the pencil icon,
   rename or recolor it; on a touch screen they are always shown. Use the eye
   to hide its devices in the racks: they keep their units, drawn hatched
-  with their names in faint ink. A device placed into a hidden cluster says
-  so, with a button that shows it. Each view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
+  with their names in faint ink. Selected devices and search matches are
+  drawn in full all the same, and the inspector says that their cluster is
+  hidden. Clicking a hidden cluster to highlight it shows it again. A device
+  placed into a hidden cluster says so, with a button that shows it. Each
+  view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
   pointing at it shows it in full. The first eight colors stay apart for
   color-blind eyes too, and the cluster dialog warns when a color is close to
   another cluster's. Each cluster also has a number, in its swatch, in the
@@ -354,7 +357,10 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   panel to show only its cables; new cables join it (otherwise they get the
   network used last). In the elevation, the eye next to a network hides its
   cables and fades their ports, as for the layers of an image editor; click
-  it again to show them. Every label can be changed by hand, and **Renumber**
+  it again to show them. Selected cables and search matches are drawn all
+  the same; **Show in elevation** says when a cable's network is hidden.
+  Clicking a hidden network to show only its cables, or connecting a cable
+  in it, shows it again. Every label can be changed by hand, and **Renumber**
   relabels selected cables in the schedule's order.
 - **Inspector**: select a cable to change its label, network, type,
   transceivers, length and notes, or to plug in or unplug the legs of a

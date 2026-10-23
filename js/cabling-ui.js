@@ -337,9 +337,10 @@
       if (s.kind === 'port') return { kind: 'port', deviceId: s.device, port: s.port };
       return s.ids.length === 1 ? { kind: 'device', id: s.ids[0] } : { kind: 'cables', ids: cablesOfDevices(s.ids) };
     }
-    /** The network the drawings bring forward: the one hovered or in focus; '' for the cables without one. */
+    /** The network the drawings bring forward: the one hovered (unless the elevation hides it) or in focus; '' for the cables without one. */
     function drawnFocus() {
-      const f = ui.hoverNetwork || ui.focusNetwork;
+      const hover = ui.hoverNetwork && !(ui.cabView === 'elevation' && ui.hiddenNetworks.has(ui.hoverNetwork)) ? ui.hoverNetwork : null;
+      const f = hover || ui.focusNetwork;
       return f ? (f === NONE ? '' : f) : null;
     }
     let searchMatcher = { project: null, query: null, ids: null };
@@ -421,10 +422,27 @@
         highlight: searchHits(),
         view: ctx.view(),
         hiddenNetworks: [...ui.hiddenNetworks].map((k) => (k === NONE ? '' : k)),
+        shown: shownAnyway(),
       });
       Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
       setScene(out, `Cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
       markLegs(el.svg);
+    }
+
+    /** The cables the elevation draws even when it hides their network: the cables selected and the search's matches. */
+    function shownAnyway() {
+      const s = ui.cabSel;
+      const ids = new Set(searchHits() || []);
+      if (s && s.kind === 'cables') for (const id of s.ids) ids.add(id);
+      const at = s && s.kind === 'port' && cableIndex().get(`${s.device}|${s.port}`);
+      if (at) ids.add(at.cable.id);
+      return ids;
+    }
+    /** Whether the elevation hides the network of cable `c`. */
+    const hiddenCable = (c) => ui.hiddenNetworks.has(netKey(c));
+    /** Shows a network the elevation hides. */
+    function showNetwork(key) {
+      if (ui.hiddenNetworks.delete(key)) ctx.render({ inspector: false });
     }
 
     function setSide(side) {
@@ -485,6 +503,9 @@
       if (entering) ctx.fitWidth();
       const L = elev.layout;
       revealBox(L && (o.cable ? L.cables.get(o.cable) : L.devices.get(deviceId)));
+      // A cable selected is drawn though its network is hidden: say so.
+      const c = o.cable && cableById(o.cable);
+      if (c && hiddenCable(c)) toast(`${netName(netKey(c))} is hidden in the elevation`, { action: 'Show', onAction: () => showNetwork(netKey(c)) });
     }
 
     // ------------------------------------------------------------ port map
@@ -1122,6 +1143,12 @@
       ctx.render({ inspector: false });
     }
 
+    /** Shows again the networks the elevation hides that new cables `list` joined; "; SAS is shown again" for the toast, or ''. */
+    function showAgain(list) {
+      const keys = [...new Set(list.map(netKey))].filter((k) => ui.hiddenNetworks.delete(k));
+      return keys.length ? `; ${keys.map(netName).join(', ')} ${keys.length === 1 ? 'is' : 'are'} shown again` : '';
+    }
+
     /** The second end of the connection being made; with a breakout cable armed, its next leg, and the cable once every leg is set. True unless it was refused. */
     function connectTo(end) {
       const pd = ui.pending;
@@ -1173,8 +1200,9 @@
       }
       ui.pending = null;
       ui.cabSel = { kind: 'cables', ids: [made.id] };
+      const again = showAgain([made]);
       ctx.render();
-      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}${again}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
       return true;
     }
 
@@ -2220,6 +2248,8 @@
       if (e.target.closest('.cl-main')) {
         ui.focusNetwork = ui.focusNetwork === id ? null : id;
         ui.hoverNetwork = null;
+        // A network put in focus is shown, if the elevation hid it.
+        if (ui.focusNetwork) ui.hiddenNetworks.delete(id);
         // The fabric follows the network put in focus.
         fab.network = null;
         renderAfterFocus();
@@ -3136,8 +3166,9 @@
         if (err) return ctx.showError('#cab-pc-error', err);
         rememberNetwork(props.network);
         ui.cabSel = { kind: 'cables', ids: [made.id] };
+        const again = showAgain([made]);
         ctx.render();
-        toast(`Connected ${made.label}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+        toast(`Connected ${made.label}${again}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
       });
     }
 
@@ -3558,9 +3589,10 @@
       dlg.close('ok');
       if (!added.length) return toast('Nothing was connected', { warn: true });
       rememberNetwork(items[0].network);
+      const again = showAgain(added);
       selectCables(added.map((c) => c.id), { reveal: true });
       const names = added.length === 1 ? added[0].label : `${plural(added.length, 'cable')}, ${added[0].label} … ${added[added.length - 1].label}`;
-      toast(`Connected ${names}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+      toast(`Connected ${names}${again}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
     });
 
     // ------------------------------------------------------------ network dialog
@@ -3716,7 +3748,7 @@
       if (k.mod && k.letter === 'a' && !e.altKey) {
         e.preventDefault();
         if (ui.cabView === 'schedule') selectCables(sched.visible);
-        else if (ui.cabView === 'elevation' && elev.layout) selectCables([...elev.layout.cables.keys()]);
+        else if (ui.cabView === 'elevation' && elev.layout) selectCables([...elev.layout.cables.keys()].filter((id) => !hiddenCable(cableById(id))));
         else if (ui.cabView === 'ports') selectCables(portMapCables());
         return true;
       }

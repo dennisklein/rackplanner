@@ -264,6 +264,8 @@ p { margin: 0; }
   letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
 }
 .sec-hint { color: var(--ink-3); font-size: 12.5px; line-height: 1.4; }
+.btn-link { padding: 0; border: 0; background: none; color: var(--ink-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.btn-link:hover { color: var(--ink); }
 
 /* Beside the drawing, the device list scrolls on its own so the clusters stay in view. */
 @media (min-width: 961px) {
