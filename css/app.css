@@ -573,6 +573,12 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
   .hint-touch { display: inline; }
   /* No hover to reveal that titles are editable: outline them faintly. */
   .plan-name, .name-input:not(.name-static) { border-color: var(--line); }
+  /* Nor to show the buttons of a cluster or network: they stay in the row. */
+  .cl-tools { position: static; padding: 0; background: none; opacity: 1; }
+}
+/* Beside the drawing a cluster's row has no room for them as well as its name: the cluster tapped shows them. */
+@media (hover: none) and (min-width: 961px) {
+  #clusters .cl-row:not(:has(> .cl-main[aria-pressed="true"])) .cl-tools { display: none; }
 }
 .insp-sec { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .insp-sec + .insp-sec { border-top: 1px solid var(--line); }

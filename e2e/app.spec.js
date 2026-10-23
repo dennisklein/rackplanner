@@ -1460,3 +1460,29 @@ test('a cluster row shows its full name: buttons over its end on hover, a long n
   await expect(core).toHaveText('Core network');
   expect(await cut(core)).toBe(false);
 });
+
+test.describe('on a touch tablet', () => {
+  test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true });
+
+  test('the buttons of a cluster are in sight without hover, in the row of the cluster tapped', async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+    const row = page.locator('#clusters .cl-row[data-cluster="c-kestrel"]');
+    // Beside the drawing the names keep the row: each shows its start and its whole end.
+    await expect(row.locator('.cl-tools')).toBeHidden();
+    const cuts = await page.locator('#clusters .cl-name.is-split').evaluateAll((names) =>
+      names.map((n) => [n.querySelector('.cl-head').clientWidth > 0, n.querySelector('.cl-tail').scrollWidth <= n.querySelector('.cl-tail').clientWidth])
+    );
+    expect(cuts.length).toBeGreaterThan(0);
+    for (const cut of cuts) expect(cut).toEqual([true, true]);
+    await row.locator('.cl-main').tap();
+    await expect(row.locator('.cl-tools')).toBeVisible();
+    await expect(row.locator('.cl-tools')).toHaveCSS('opacity', '1');
+    // They sit after the count, not over it.
+    const count = await row.locator('.cl-count').boundingBox();
+    const select = await row.locator('.cl-select').boundingBox();
+    expect(select.x).toBeGreaterThanOrEqual(count.x + count.width);
+    await row.locator('.cl-edit').tap();
+    await expect(page.locator('#dlg-cluster')).toBeVisible();
+    await expect(page.locator('#cluster-name')).toHaveValue('Kestrel HPC');
+  });
+});

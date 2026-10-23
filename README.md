@@ -148,9 +148,10 @@ Rear**); otherwise they ask how it is **Mounted**.
   inserted right after the original.
 - **Clusters**: click one in the left panel to highlight its devices. Point
   at it for the buttons that select its devices and, with the pencil icon,
-  rename or recolor it. Use the eye to hide its devices in the racks: they
-  keep their units, drawn as dashed outlines. A long name is cut in the
-  middle, so its end stays in sight; pointing at it shows it in full.
+  rename or recolor it; on a touch screen they are always shown. Use the eye
+  to hide its devices in the racks: they keep their units, drawn as dashed
+  outlines. A long name is cut in the middle, so its end stays in sight;
+  pointing at it shows it in full.
 - **Views**: one plan can group the same devices in more than one way, for
   example by storage system and by InfiniBand island. Each view has clusters
   of its own; the devices, their places, the cables and the networks are the
