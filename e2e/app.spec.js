@@ -549,6 +549,26 @@ test('tall device types fit their card in the parts panel', async ({ page }) => 
   }
 });
 
+test('a placement over a rack’s power budget is shown in amber before and said after', async ({ page }) => {
+  await dragPart(page, 'gpu-server', await spot(page, 'gpu-server', { rack: 'r1', kind: 'u', at: 30 }));
+  const chip = page.locator('#drag-chip');
+  await expect(chip).toHaveClass(/warn/);
+  await expect(chip).toContainText('U30–33 · over budget: Rack A01 at 12.1 kW of 12.0 kW');
+  await expect(page.locator('#ghost-layer rect[stroke="#d98a00"]')).toHaveCount(1);
+  await page.mouse.up();
+  await expect(page.locator('#place-budget')).toHaveText('Over budget: Rack A01 will be at 12.1 kW of 12.0 kW');
+  await page.click('#place-submit');
+  const note = page.locator('.toast').last();
+  await expect(note).toContainText('· over budget: Rack A01 is at 12.1 kW of 12.0 kW');
+  await expect(note).toHaveClass(/warn/);
+
+  // Within the budget, the chip is green and the dialog says nothing.
+  await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r3', kind: 'u', at: 40 }));
+  await expect(chip).toHaveClass(/ok/);
+  await page.mouse.up();
+  await expect(page.locator('#place-budget')).toBeHidden();
+});
+
 test('rack types set height and budgets; racks over budget are flagged', async ({ page }) => {
   await page.locator('.rack-head[data-rack="r1"]').click();
   await page.selectOption('#insp-rack-type', 'rack-42');

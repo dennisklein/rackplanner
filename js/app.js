@@ -44,6 +44,9 @@
   const fmtKw = (w) => `${(Math.round(w / 100) / 10).toLocaleString('en', { minimumFractionDigits: 1 })} kW`;
   /** "3.2 kW of 12.0 kW", or just "3.2 kW" without a budget. */
   const withBudget = (fmt, value, budget) => fmt(value) + (budget ? ` of ${fmt(budget)}` : '');
+  /** What of a rack's stats is over budget: "12.1 kW of 12.0 kW", "1,020 kg of 1,000 kg" or both. */
+  const overText = (st) =>
+    [st.overPower && withBudget(fmtKw, st.powerW, st.powerBudgetW), st.overWeight && withBudget(fmtKg, st.weightKg, st.weightBudgetKg)].filter(Boolean).join(' and ');
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const shortRack = (name) => name.replace(/^rack\s+/i, '');
   const FULL = {
@@ -2249,7 +2252,7 @@
     return last && clusterColor(last) ? last : null;
   }
 
-  function drawGhost(typeId, loc, ok, device, height) {
+  function drawGhost(typeId, loc, ok, device, height, warn) {
     if (!loc) return setGhosts('');
     const hint = device ? null : M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
     const clusterId = device ? clusterIdOf(device) : startCluster(typeId, hint);
@@ -2263,8 +2266,20 @@
         name: device ? device.name : hint.name,
         reversed: device ? !!device.reversed : M.mountsReversed(M.typeOf(project, typeId)),
         bare: prefs.detail === 'bare',
+        warn,
       })
     );
+  }
+
+  /**
+   * The rack that one device of `typeId` (`height` for reserved space) at
+   * `loc` would put over a budget, as "Rack A01 at 12.1 kW of 12.0 kW";
+   * '' when none. `device` is the one moved there (a copy when `copy`).
+   */
+  function overBudgetAt(typeId, loc, height, device, copy) {
+    const add = device ? Object.assign({}, device, { id: 'new', loc }) : M.newDevice({ type: typeId, loc, height });
+    const [over] = M.overBudgetWith(project, [add], device && !copy ? [device.id] : []);
+    return over ? `${over.rack.name} at ${overText(over.stats)}` : '';
   }
 
   function drawGhosts(moves, ok) {
@@ -2358,10 +2373,12 @@
     const check = loc ? M.canPlace(project, d.typeId, loc, d.source === 'device' && !d.copy ? d.deviceId : null, primary ? primary.height : d.height) : null;
     d.ok = !!(check && check.ok);
     d.reason = check && !check.ok ? check.reason : '';
-    drawGhost(d.typeId, loc, d.ok, primary, d.height);
+    // Into another rack, or a new device: say when it goes over the budgets.
+    const over = d.ok && (!primary || d.copy || loc.rack !== primary.loc.rack) ? overBudgetAt(d.typeId, loc, d.height, primary, d.copy) : '';
+    drawGhost(d.typeId, loc, d.ok, primary, d.height, !!over);
     const title = primary ? (d.copy ? `Copy of ${primary.name}` : primary.name) : M.typeOf(project, d.typeId).label;
-    const detail = loc ? (d.ok ? M.formatLoc(project, loc, d.typeId, primary ? primary.height : d.height) : d.reason) : 'Drop it on a rack';
-    showChip(e, title, detail, loc ? (d.ok ? 'ok' : 'bad') : '');
+    const detail = loc ? (over ? `${M.formatPosition(project, loc, d.typeId, primary ? primary.height : d.height)} · over budget: ${over}` : d.ok ? M.formatLoc(project, loc, d.typeId, primary ? primary.height : d.height) : d.reason) : 'Drop it on a rack';
+    showChip(e, title, detail, loc ? (over ? 'warn' : d.ok ? 'ok' : 'bad') : '');
   }
 
   function endDrag() {
@@ -2556,8 +2573,10 @@
   el.svg.addEventListener('pointermove', (e) => {
     if (!ui.armed || ui.drag || e.pointerType === 'touch') return;
     const { type, h, loc, check } = armedTarget(e);
-    drawGhost(type.id, loc, !!(check && check.ok), null, h);
-    showChip(e, type.label, loc ? (check.ok ? M.formatLoc(project, loc, type.id, h) : check.reason) : 'Point at a rack', loc ? (check.ok ? 'ok' : 'bad') : '');
+    const over = check && check.ok ? overBudgetAt(type.id, loc, h) : '';
+    drawGhost(type.id, loc, !!(check && check.ok), null, h, !!over);
+    const detail = loc ? (over ? `${M.formatPosition(project, loc, type.id, h)} · over budget: ${over}` : check.ok ? M.formatLoc(project, loc, type.id, h) : check.reason) : 'Point at a rack';
+    showChip(e, type.label, detail, loc ? (over ? 'warn' : check.ok ? 'ok' : 'bad') : '');
   });
   el.svg.addEventListener('pointerleave', () => {
     if (ui.armed && !ui.drag) hideDragFeedback();
@@ -2946,7 +2965,7 @@
 
   // Place dialog -------------------------------------------------------
 
-  const place = { typeId: null, loc: null, nameTouched: false, newColor: null, positions: [], valid: true, groups: {} };
+  const place = { typeId: null, loc: null, nameTouched: false, newColor: null, positions: [], valid: true, groups: {}, over: [] };
 
   function openPlaceDialog(typeId, loc) {
     const type = M.typeOf(project, typeId);
@@ -3088,6 +3107,7 @@
       submit.textContent = 'Place';
       submit.disabled = !place.valid;
       notePlaceClash();
+      notePlaceBudget();
       drawPlaceGhosts();
       return;
     }
@@ -3144,6 +3164,7 @@
     submit.textContent = qty > 1 ? `Place ${qty}` : 'Place';
     submit.disabled = !place.valid;
     notePlaceClash();
+    notePlaceBudget();
     drawPlaceGhosts();
   }
 
@@ -3215,15 +3236,29 @@
     const color = picked === '__new' ? place.newColor : clusterColor(picked);
     const height = placeHeight();
     const names = M.nameSequence($('#place-name').value.trim(), place.positions.length);
-    const items = place.positions.map((pos, i) => ({
+    const items = placeLocs().map((loc, i) => ({
       typeId: place.typeId,
-      loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at },
+      loc,
       height,
       name: names[i],
       color,
       reversed: placeReversed(),
     }));
-    setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare' }));
+    const warn = place.over.length > 0;
+    setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare', warn }));
+  }
+
+  /** Where the place dialog puts its devices: a loc for each of place.positions. */
+  const placeLocs = () => place.positions.map((pos) => ({ rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at }));
+  /** "Rack A01 will be at 12.1 kW of 12.0 kW; …" for racks over a budget (`list` from M.overBudgetWith). */
+  const overLine = (list, verb) => list.map((o) => `${o.rack.name} ${verb} ${overText(o.stats)}`).join('; ');
+
+  /** Says in the place dialog which racks its devices would put over a budget. */
+  function notePlaceBudget() {
+    const height = placeHeight();
+    place.over = place.valid ? M.overBudgetWith(project, placeLocs().map((loc) => M.newDevice({ type: place.typeId, loc, height }))) : [];
+    $('#place-budget').textContent = place.over.length ? `Over budget: ${overLine(place.over, 'will be at')}` : '';
+    $('#place-budget').hidden = !place.over.length;
   }
 
   $('#place-name').addEventListener('input', () => {
@@ -3300,10 +3335,11 @@
     const taken = M.takenNames(project, names);
     if (taken.length && !(await confirmTaken(taken, count > 1 ? `Place ${count} anyway` : 'Place anyway'))) return;
     const height = placeHeight();
-    const devices = place.positions.map((pos, i) =>
+    const over = place.over;
+    const devices = placeLocs().map((loc, i) =>
       M.newDevice(
         Object.assign(
-          { type: type.id, name: names[i], groups: Object.assign({}, groups), reversed: placeReversed(), loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
+          { type: type.id, name: names[i], groups: Object.assign({}, groups), reversed: placeReversed(), loc },
           type.variable ? { height } : {}
         )
       )
@@ -3322,8 +3358,10 @@
     $('#dlg-place').close('ok');
     // Reserved space is in no legend: only devices are missed in another view.
     const missing = type.variable ? [] : project.views.filter((v) => v.id !== view && !M.clusterOf(project, devices[0], v.id));
-    if (!missing.length) return toast(placed);
-    toast(`${placed} · no cluster in ${listAnd(missing.map((v) => v.name))}`, { action: 'Show', onAction: () => setClusterView(missing[0].id) });
+    const parts = [placed, over.length ? `over budget: ${overLine(over, 'is at')}` : '', missing.length ? `no cluster in ${listAnd(missing.map((v) => v.name))}` : ''];
+    const opts = { warn: over.length > 0 };
+    if (missing.length) Object.assign(opts, { action: 'Show', onAction: () => setClusterView(missing[0].id) });
+    toast(parts.filter(Boolean).join(' · '), opts);
   });
 
   // Cluster dialog -----------------------------------------------------

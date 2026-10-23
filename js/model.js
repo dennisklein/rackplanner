@@ -2459,6 +2459,23 @@
     return statsByRack(scoped).get(rackId);
   }
 
+  /**
+   * The racks that adding `devices` (new ones, with type, loc and any
+   * height, power or weight of their own) would leave over their power or
+   * weight budget, the devices in `ignore` (ids) taken out: [{ rack,
+   * stats }], stats as they would be.
+   */
+  function overBudgetWith(project, devices, ignore) {
+    const skip = new Set([].concat(ignore || []));
+    const after = Object.assign({}, project, { devices: project.devices.filter((d) => !skip.has(d.id)).concat(devices) });
+    const out = [];
+    for (const id of new Set(devices.map((d) => d.loc.rack))) {
+      const stats = rackStats(after, id);
+      if (stats && (stats.overPower || stats.overWeight)) out.push({ rack: rackById(project, id), stats });
+    }
+    return out;
+  }
+
   /** Totals over several racks' stats (for a row, floor or the plan). */
   function sumStats(list) {
     const t = { racks: 0, units: 0, used: 0, reserved: 0, free: 0, sideUsed: 0, sideSlots: 0, count: 0, powerW: 0, powerBudgetW: 0, weightKg: 0, weightBudgetKg: 0, overPower: 0, overWeight: 0 };
@@ -2750,6 +2767,7 @@
     remapPorts,
     statsByRack,
     rackStats,
+    overBudgetWith,
     sumStats,
     statsWithin,
     sortedDevices,

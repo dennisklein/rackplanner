@@ -188,7 +188,10 @@ Rear**); otherwise they ask how it is **Mounted**.
 - **Power and weight**: rack labels show units and kW used; a second bar fills
   toward the power budget and turns red, with a “!”, when a rack is over its
   power or weight budget. The inspector shows the numbers for a rack, row,
-  floor or the whole plan.
+  floor or the whole plan. A device that would take a rack over a budget is
+  outlined in amber while you drag it, and the placement dialog and the
+  message after placing say what the rack will draw (`Rack A01 will be at
+  12.1 kW of 12.0 kW`). It can still be placed.
 - **Theme**: the button at the right end of the toolbar picks **Light**,
   **Dark** or **Match system**, which follows your device's setting (the
   default). The choice is remembered in this browser. Exported images and

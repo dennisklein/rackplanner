@@ -411,6 +411,19 @@ test('a new switch is mounted back to front so that its ports face the rear', ()
   assert.equal(M.mountsReversed(type('reserved')), false);
 });
 
+test('overBudgetWith finds the racks that new devices put over a budget', () => {
+  const p = M.createExampleProject();
+  const gpu = M.newDevice({ type: 'gpu-server', loc: { rack: 'r1', kind: 'u', at: 30 } });
+  const [over] = M.overBudgetWith(p, [gpu]);
+  assert.equal(over.rack.name, 'Rack A01');
+  assert.equal(over.stats.overPower, true);
+  assert.equal(over.stats.powerW, M.rackStats(p, 'r1').powerW + 3000);
+  assert.deepEqual(M.overBudgetWith(p, [Object.assign({}, gpu, { powerW: 100 })]), [], 'its own power counts');
+  const cn = p.devices.find((d) => d.name === 'cn-001');
+  assert.deepEqual(M.overBudgetWith(p, [gpu], [cn.id]), [], 'a device moved out is not counted');
+  assert.equal(p.devices.includes(gpu), false, 'the plan is left as it is');
+});
+
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
   const v = p.views[0].id;

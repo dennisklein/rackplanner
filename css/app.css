@@ -16,6 +16,7 @@
   --danger: #c23a3a;
   --danger-soft: #fbeaea;
   --ok: #1f8f4e;
+  --warn: #9a5b00;
   --unassigned: #8c96a3;
   --rack-frame: #2a3038;
   --rack-bay: #e8ecf0;
@@ -53,6 +54,7 @@
     --danger: #f06a6a;
     --danger-soft: #3a1f22;
     --ok: #43c47a;
+    --warn: #f0a43a;
     --unassigned: #7d8794;
     --rack-frame: #48515c;
     --rack-bay: #1e242b;
@@ -80,6 +82,7 @@
   --danger: #f06a6a;
   --danger-soft: #3a1f22;
   --ok: #43c47a;
+  --warn: #f0a43a;
   --unassigned: #7d8794;
   --rack-frame: #48515c;
   --rack-bay: #1e242b;
@@ -500,6 +503,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .drag-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
 .drag-chip.ok::before { background: var(--ok); }
 .drag-chip.bad::before { background: var(--danger); }
+.drag-chip.warn::before { background: var(--warn); }
 .drag-chip .mono { font-size: 11.5px; opacity: .85; }
 
 /* ------------------------------------------------------------ inspector */
@@ -814,6 +818,7 @@ kbd {
 .dlg-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
 .dlg-body p { color: var(--ink-2); }
 .dlg-body .warn-note { color: var(--danger); }
+.budget-note, .dlg-body .budget-note { color: var(--warn); font-size: 13px; }
 .dlg-body .form-error { color: var(--danger); }
 .dlg-foot {
   display: flex; align-items: center; gap: 8px;

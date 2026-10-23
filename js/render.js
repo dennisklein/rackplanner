@@ -139,7 +139,7 @@
       channel: '#30373f', channelSlot: '#e8ecf0', slotDash: '#8e99a6', finger: '#464e59',
       faceBase: '#ffffff', faceMix: 0.15, bayMix: 0.3, deep: '#10151b', edgeMix: 0.32,
       tape: '#f2c230', tapeShade: '#c99b12', tapeInk: '#1b1f24', bar: '#2a3038', barTrack: '#dfe4ea', barReserved: '#9aa5b1', power: '#c98a0c',
-      select: '#18212b', handle: '#f2c230', ok: '#1f9d55', bad: '#d33c3c',
+      select: '#18212b', handle: '#f2c230', ok: '#1f9d55', warn: '#d98a00', bad: '#d33c3c',
       unassigned: '#8c96a3', perf: 'rgba(16,21,27,0.3)', led: '#2fbf64', reserved: '#f1f3f6', display: '#1d2a22', displayInk: '#6fe39a',
       portHole: '#262c33', portMetal: '#bcc4cd', portEdge: '#7d8894', portFree: '#c9d0d7',
     },
@@ -151,7 +151,7 @@
       channel: '#3d4550', channelSlot: '#232a32', slotDash: '#687482', finger: '#525b67',
       faceBase: '#1b2128', faceMix: 0.3, bayMix: 0.44, deep: '#07090c', edgeMix: 0.42,
       tape: '#f2c230', tapeShade: '#a07a0c', tapeInk: '#1b1f24', bar: '#c9d2dc', barTrack: '#2b333c', barReserved: '#5d6875', power: '#e0a529',
-      select: '#f3f6f9', handle: '#f2c230', ok: '#43c47a', bad: '#f06464',
+      select: '#f3f6f9', handle: '#f2c230', ok: '#43c47a', warn: '#f0a43a', bad: '#f06464',
       unassigned: '#7d8794', perf: 'rgba(255,255,255,0.2)', led: '#43d17a', reserved: '#1d232a', display: '#0b1510', displayInk: '#5fd68b',
       portHole: '#0b0e12', portMetal: '#6b7480', portEdge: '#2a3038', portFree: '#3a434d',
     },
@@ -1121,14 +1121,15 @@
 
   /**
    * Translucent preview of devices at their target places, outlined green
-   * (fits) or red. `items`: [{ typeId, loc, height, name, color, reversed }].
+   * (fits), amber (fits, over a budget: `opts.warn`) or red. `items`:
+   * [{ typeId, loc, height, name, color, reversed }].
    */
   function renderGhosts(project, items, ok, opts) {
     const o = opts || {};
     const theme = o.theme === 'dark' ? 'dark' : 'light';
     const T = THEMES[theme];
     const measure = o.measure || approxMeasure;
-    const color = ok ? T.ok : T.bad;
+    const color = ok ? (o.warn ? T.warn : T.ok) : T.bad;
     let s = `<g pointer-events="none">`;
     for (const it of items) {
       const r = locRect(project, it.loc, it.typeId, it.height, o.layout);
