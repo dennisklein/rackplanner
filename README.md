@@ -463,10 +463,18 @@ from the plans themselves. A saved plan that needs fixing when it is
 opened (an earlier version saved it, or this version reads it with
 tighter rules) lists what was fixed, as **Open** does for a file; the first
 save over it keeps the plan as it was saved as a backup (see
-[Data model](#data-model)). A plan open in two tabs shows in each what the other saves. When both
-changed it, the tab that would save over the newer copy asks first:
-**Reload** takes the other tab's plan, **Keep mine as a copy** saves its own
-as a new plan.
+[Data model](#data-model)). A plan open in two tabs shows in each what
+the other saves. When both changed it, the tab that would save over the
+newer copy asks first: **Reload** takes the other tab's plan, **Keep mine
+as a copy** saves its own as a new plan.
+
+All plans share the browser's storage for the site, which usually holds
+about 5 MB; **Plans** shows how much they use and the size of each plan.
+A plan with many thousands of devices and cables can be larger than that
+on its own, so export large plans as files. When the browser cannot save
+the plan, because its storage is full or blocked, a message says so once,
+the **Plans** button says **Not saved** until a save goes through, and
+closing the tab asks first.
 
 **Export** offers:
 
@@ -827,8 +835,8 @@ In the browser's `localStorage`, each plan is kept as compact plan JSON
 under `rackplanner.plan.<id>`, and an index under `rackplanner.library.v1`
 lists them for **Plans**: `{ "version": 1, "current": "<id>", "plans": [...] }`,
 with an entry per plan (`id`, `name`, `floors`, `racks`, `devices`,
-`created`, `updated`, `rev`, the counted saves, and `source` for a plan from
-a share link). An index without a `version` is version 1. An index that is
+`created`, `updated`, `rev`, the counted saves, `size`, the characters of the
+plan at its last save, and `source` for a plan from a share link). An index without a `version` is version 1. An index that is
 missing or cannot be read is made again from the plan keys, with the names
 in the plans; their edit times are lost. An index of a later version is
 never written over, so this version saves no plan there.

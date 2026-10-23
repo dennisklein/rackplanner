@@ -221,3 +221,24 @@ test('an index without a version is read, and one of a later version is never wr
   assert.deepEqual(lib.list().map((x) => x.id), [id]);
   assert.equal(JSON.parse(store.get(Library.INDEX_KEY)).version, 2);
 });
+
+test('each save notes the size of its plan, and usage counts what the app keeps in the store', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const p = M.createExampleProject();
+  const id = lib.add(p);
+  const size = IO.serialize(p, { compact: true }).length;
+  assert.equal(lib.list()[0].size, size);
+  store.set('other.app', 'x'.repeat(1000));
+  store.set(Library.LEGACY_KEY, 'x'.repeat(10));
+  const use = lib.usage();
+  assert.deepEqual(use.plans, { [id]: size }, 'the old single plan is not one of them');
+  const keys = [Library.planKey(id), Library.INDEX_KEY, Library.LEGACY_KEY];
+  assert.equal(use.total, keys.reduce((a, k) => a + k.length + store.get(k).length, 0), 'keys of other apps do not count');
+  // An older version deletes a plan but not its backup: the backup goes too.
+  store.set(Library.backupKey(id), 'x'.repeat(10));
+  store.set(Library.backupKey('p-gone'), 'x'.repeat(10));
+  lib.usage();
+  assert.equal(store.get(Library.backupKey('p-gone')), null);
+  assert.equal(store.get(Library.backupKey(id)), 'x'.repeat(10), 'a backup of a plan that is there stays');
+});

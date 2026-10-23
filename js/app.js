@@ -21,6 +21,8 @@
   const HISTORY_LIMIT = 200;
   // Undo keeps whole snapshots; cap their total size for very large plans.
   const HISTORY_CHARS = 40e6;
+  // Characters a browser usually keeps in localStorage for a site, which all saved plans share.
+  const STORAGE_CHARS = 5 * 1024 * 1024;
   /** "Click" in a hint, which a touch screen reads as "Tap" (css/app.css shows one of the two). */
   const CLICK = '<span class="hint-touch">Tap</span><span class="hint-pointer">Click</span>';
   const COLOR_NAMES = ['Cobalt', 'Amber', 'Sky', 'Teal', 'Vermilion', 'Plum', 'Yellow', 'Brown', 'Violet', 'Green', 'Rose', 'Olive'];
@@ -193,6 +195,7 @@
     planId = id;
     standIn = false;
     backupDue = !!backup;
+    setUnsaved(false);
     project = p;
     projectJSON = JSON.stringify(project);
     savedJSON = projectJSON;
@@ -245,6 +248,7 @@
 
   let persistTimer = null;
   let storageWarned = false;
+  let unsaved = false; // the last save failed: the latest changes are only in this tab
   function persist() {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(flushPersist, 300);
@@ -253,7 +257,11 @@
   function flushPersist() {
     clearTimeout(persistTimer);
     persistTimer = null;
-    if (!project || ((planId || standIn) && projectJSON === savedJSON)) return true;
+    if (!project || ((planId || standIn) && projectJSON === savedJSON)) {
+      // Taken back to what is stored, by Undo, it is saved again.
+      if (project) setUnsaved(false);
+      return true;
+    }
     if (planId && (changedElsewhere() || $('#dlg-elsewhere').open)) {
       askElsewhere();
       return false;
@@ -273,10 +281,21 @@
     }
     if (!ok && !storageWarned) {
       storageWarned = true;
-      toast('This browser did not save the plan: its storage is full or blocked. Export the plan file to keep your work.', { warn: true });
+      toast('This browser did not save the plan: its storage is full or blocked. Delete plans you no longer need, or export the plan file to keep your work.', { warn: true });
     } else if (ok) storageWarned = false;
+    setUnsaved(!ok);
     return true;
   }
+
+  /** Marks the open plan as not saved, on the Plans button, while its saves fail; the toast of the first failure is not repeated. */
+  function setUnsaved(on) {
+    unsaved = on;
+    const b = $('#btn-plans');
+    b.classList.toggle('is-unsaved', on);
+    b.title = on ? 'Plans saved in this browser. The latest changes to this plan are not saved: the browser storage is full or blocked' : 'Plans saved in this browser';
+  }
+  /** A size in characters, as browser storage counts it. */
+  const sizeText = (n) => (n < 1000 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
   // Other tabs ---------------------------------------------------------
 
@@ -4889,6 +4908,7 @@
   function renderPlans() {
     flushPersist();
     const list = lib.list();
+    const use = lib.usage();
     $('#plan-list').innerHTML = list.length
       ? list
           .map((p) => {
@@ -4896,7 +4916,7 @@
             return (
               `<li class="plan-item${cur ? ' is-current' : ''}" data-plan="${esc(p.id)}">` +
               `<div class="plan-meta"><span class="plan-name-l">${esc(p.name)}</span>` +
-              `<span class="plan-sub">${esc(`${plural(p.floors || 1, 'floor')} · ${plural(p.racks || 0, 'rack')} · ${plural(p.devices || 0, 'device')}${p.updated ? ` · edited ${relTime(p.updated)}` : ''}`)}</span></div>` +
+              `<span class="plan-sub">${esc(`${plural(p.floors || 1, 'floor')} · ${plural(p.racks || 0, 'rack')} · ${plural(p.devices || 0, 'device')}${p.updated ? ` · edited ${relTime(p.updated)}` : ''} · ${sizeText(use.plans[p.id] != null ? use.plans[p.id] : p.size || 0)}`)}</span></div>` +
               `<div class="plan-actions">` +
               (cur ? `<span class="plan-now">Open now</span>` : `<button type="button" class="btn sm primary" data-plan-act="open">Open</button>`) +
               `<button type="button" class="btn icon sm" data-plan-act="rename" title="Rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button>` +
@@ -4907,6 +4927,13 @@
           })
           .join('')
       : `<li class="empty-note">No saved plans. Storage may be blocked in this browser.</li>`;
+    const note = $('#plan-unsaved');
+    note.hidden = !unsaved;
+    note.textContent = `The latest changes to ${project.name} are not saved: the browser storage is full or blocked. Delete plans you no longer need, or export this plan to keep your work.`;
+    const full = use.total > STORAGE_CHARS * 0.8;
+    const usage = $('#plan-usage');
+    usage.textContent = `Rackplanner uses ${sizeText(use.total)} of the browser storage, which holds about 5 MB.` + (full ? ' Delete or export plans before it is full.' : '');
+    usage.classList.toggle('budget-note', full);
   }
 
   function switchPlan(id, message) {
@@ -4935,6 +4962,7 @@
       toast('The browser storage is full, so this plan is not saved. Delete old plans or export this one.', { warn: true });
       // Said once: the first edit, which tries to save it again, does not say it twice.
       storageWarned = true;
+      setUnsaved(true);
     }
     const initial = IO.serialize(p, { compact: true });
     toast(message || `Started ${p.name}`, {
@@ -5909,6 +5937,13 @@
   }
 
   window.addEventListener('pagehide', flushPersist);
+  // While saves fail, closing the tab would lose the latest changes: the browser asks first.
+  window.addEventListener('beforeunload', (e) => {
+    flushPersist();
+    if (!unsaved) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushPersist();
     else followOtherTab();

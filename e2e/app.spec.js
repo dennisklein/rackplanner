@@ -1029,7 +1029,7 @@ test('plans stay in the list when the list of plans in the browser is lost', asy
   await expect(page.locator('.plan-item')).toHaveCount(2);
   expect((await page.locator('.plan-item .plan-name-l').allInnerTexts()).sort()).toEqual(['Hall 2 expansion', 'Untitled rack plan']);
   // Their times are lost with the list.
-  await expect(page.locator('.plan-item:has-text("Hall 2 expansion") .plan-sub')).toHaveText('2 floors · 8 racks · 65 devices');
+  await expect(page.locator('.plan-item:has-text("Hall 2 expansion") .plan-sub')).toHaveText(/^2 floors · 8 racks · 65 devices · \d+ KB$/);
 });
 
 test('a saved plan that needed fixing says what was fixed and keeps a backup', async ({ page }) => {
@@ -1074,6 +1074,63 @@ test('a saved plan that needed fixing says what was fixed and keeps a backup', a
   await page.click('.plan-item:has-text("Hall 2, fixed") [data-plan-act="del"]');
   await page.click('#confirm-ok');
   expect(await backup()).toBeNull();
+});
+
+test('while the browser storage is full the plan shows it is not saved, and Plans shows the space used', async ({ page }) => {
+  await page.click('#btn-plans');
+  await expect(page.locator('#plan-unsaved')).toBeHidden();
+  await expect(page.locator('#plan-usage')).toHaveText(/^Rackplanner uses \d+ KB of the browser storage, which holds about 5 MB\.$/);
+  await expect(page.locator('.plan-item .plan-sub')).toHaveText(/ · \d+ KB$/);
+  await page.click('#dlg-plans button[value="ok"]');
+
+  await page.evaluate(() => {
+    // Fill the storage to its quota.
+    const chunk = 'x'.repeat(1 << 20);
+    try {
+      for (let i = 0; i < 64; i++) localStorage.setItem(`fill-${i}`, chunk);
+    } catch (e) {
+      // Full.
+    }
+    for (let size = 1 << 19; size >= 16; size >>= 1) {
+      try {
+        localStorage.setItem(`fill-tail-${size}`, 'x'.repeat(size));
+      } catch (e) {
+        // Full.
+      }
+    }
+  });
+  const plans = page.locator('#btn-plans');
+  await page.fill('#plan-name', 'Hall 2 expansion, with a much longer name');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.toast.warn')).toContainText('This browser did not save the plan');
+  await expect(plans).toHaveClass(/is-unsaved/);
+  await expect(plans).toContainText('Not saved');
+  // Each failed save after the first says nothing more; the Plans button keeps saying it.
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await page.fill('#plan-name', 'Hall 2 expansion, with an even much longer name');
+  await page.keyboard.press('Enter');
+  // After the save that waits for a pause in the typing.
+  await page.waitForTimeout(600);
+  await expect(page.locator('.toast.warn')).toHaveCount(0);
+  await expect(plans).toHaveClass(/is-unsaved/);
+
+  // Closing the tab asks first.
+  const asked = new Promise((resolve) => page.once('dialog', (d) => d.dismiss().then(() => resolve(d.type()))));
+  await page.close({ runBeforeUnload: true });
+  expect(await asked).toBe('beforeunload');
+
+  await plans.click();
+  await expect(page.locator('#plan-unsaved')).toHaveText(
+    'The latest changes to Hall 2 expansion, with an even much longer name are not saved: the browser storage is full or blocked. Delete plans you no longer need, or export this plan to keep your work.'
+  );
+
+  // With room again, the next save goes through.
+  await page.evaluate(() => Object.keys(localStorage).forEach((k) => k.startsWith('fill-') && localStorage.removeItem(k)));
+  await page.click('#dlg-plans button[value="ok"]');
+  await plans.click();
+  await expect(page.locator('#plan-unsaved')).toBeHidden();
+  await expect(plans).not.toHaveClass(/is-unsaved/);
+  await expect(page.locator('.plan-item .plan-name-l')).toHaveText('Hall 2 expansion, with an even much longer name');
 });
 
 test('a plan changed in another tab shows there, and a tab with changes of its own asks first', async ({ page, context }) => {

@@ -103,7 +103,7 @@
         <button class="btn icon" id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic"><use href="#i-undo"/></svg></button>
         <button class="btn icon" id="btn-redo" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic"><use href="#i-redo"/></svg></button>
       </div>
-      <button class="btn" id="btn-plans" type="button" title="Plans saved in this browser"><svg class="ic"><use href="#i-files"/></svg><span>Plans</span></button>
+      <button class="btn" id="btn-plans" type="button" title="Plans saved in this browser"><svg class="ic"><use href="#i-files"/></svg><span>Plans</span><svg class="ic unsaved-mark" aria-hidden="true"><use href="#i-warn"/></svg><span class="unsaved-mark">Not saved</span></button>
       <button class="btn" id="btn-open" type="button" title="Open a plan file or import a CSV"><svg class="ic"><use href="#i-upload"/></svg><span>Open</span></button>
       <div class="menu-wrap">
         <button class="btn" id="btn-export" type="button" title="Export: images, PDF, CSV, plan file, share link" aria-label="Export" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-export"><svg class="ic"><use href="#i-download"/></svg><span>Export</span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
@@ -530,7 +530,11 @@
       <h2 id="plans-title">Plans in this browser</h2>
       <p class="dlg-sub">Changes are saved automatically. Browser storage can be cleared, so export plan files you want to keep.</p>
     </header>
-    <div class="dlg-body"><ul class="plan-list" id="plan-list"></ul></div>
+    <div class="dlg-body">
+      <p class="budget-note" id="plan-unsaved" hidden></p>
+      <ul class="plan-list" id="plan-list"></ul>
+      <p class="plan-usage" id="plan-usage"></p>
+    </div>
     <footer class="dlg-foot">
       <button type="button" class="btn" data-plan-new="empty"><svg class="ic"><use href="#i-plus"/></svg>New empty plan</button>
       <span class="spacer"></span>

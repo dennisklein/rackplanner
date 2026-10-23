@@ -24,7 +24,8 @@
   const PLAN_PREFIX = 'rackplanner.plan.';
   const planKey = (id) => PLAN_PREFIX + id;
   // One backup per plan, removed with it.
-  const backupKey = (id) => `rackplanner.backup.${id}`;
+  const BACKUP_PREFIX = 'rackplanner.backup.';
+  const backupKey = (id) => BACKUP_PREFIX + id;
   // A plan whose index entry is lost gets this name when the plan itself cannot be read.
   const RECOVERED_NAME = 'Recovered plan';
 
@@ -117,20 +118,42 @@
     }
 
     /**
-     * Saves a plan and updates its index entry, counting up its revision.
-     * `opts.source` marks where it came from (a share link). False when the
-     * store is full.
+     * Saves a plan and updates its index entry, counting up its revision
+     * and noting its `size` in characters. `opts.source` marks where it
+     * came from (a share link). False when the store is full.
      */
     function save(id, project, opts) {
       if (newerIndex()) return false;
       // Re-read the index so edits from another tab aren't lost. Read before the plan is written, so a lost index made again does not list it yet.
       const index = readIndex();
-      if (!store.set(planKey(id), IO.serialize(project, { compact: true }))) return false;
+      const text = IO.serialize(project, { compact: true });
+      if (!store.set(planKey(id), text)) return false;
       const old = index.plans.find((p) => p.id === id);
       const o = opts || {};
-      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { updated: o.at || Date.now(), rev: ((old && old.rev) || 0) + 1 }, o.source ? { source: o.source } : null);
+      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { size: text.length, updated: o.at || Date.now(), rev: ((old && old.rev) || 0) + 1 }, o.source ? { source: o.source } : null);
       index.plans = index.plans.filter((p) => p.id !== id).concat([entry]);
       return writeIndex(index);
+    }
+
+    /**
+     * The characters the app keeps in the store, keys included: `total`,
+     * and `plans`, the size of each plan by id. Browsers keep about 5
+     * million for a site. A backup whose plan is gone, as an older version
+     * leaves it when it deletes the plan, is removed first.
+     */
+    function usage() {
+      const plans = {};
+      let total = 0;
+      for (const key of keys()) {
+        if (key.startsWith(BACKUP_PREFIX) && store.get(planKey(key.slice(BACKUP_PREFIX.length))) === null) store.remove(key);
+      }
+      for (const key of keys()) {
+        if (!key.startsWith('rackplanner.')) continue;
+        const size = (store.get(key) || '').length;
+        total += key.length + size;
+        if (key.startsWith(PLAN_PREFIX) && key !== LEGACY_KEY) plans[key.slice(PLAN_PREFIX.length)] = size;
+      }
+      return { total, plans };
     }
 
     /** The revision of plan `id`: how many times it was saved, by any tab. 0 for a plan not in the list. */
@@ -204,7 +227,7 @@
       return { id, warnings: loaded.warnings, backup };
     }
 
-    return { list, load, backup, save, rev, uniqueName, add, remove, current, setCurrent, migrate };
+    return { list, load, backup, save, usage, rev, uniqueName, add, remove, current, setCurrent, migrate };
   }
 
   return { create, summary, INDEX_KEY, INDEX_VERSION, LEGACY_KEY, planKey, backupKey };

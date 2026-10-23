@@ -192,6 +192,11 @@ p { margin: 0; }
 .plan-name:focus { border-color: var(--ink-3); background: var(--surface); outline: none; }
 .tb-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .tb-group { display: flex; gap: 4px; margin-right: 6px; }
+/* Plans shows while the open plan's saves fail. */
+.unsaved-mark { display: none; }
+#btn-plans.is-unsaved { border-color: var(--warn); color: var(--warn); }
+#btn-plans.is-unsaved svg.unsaved-mark { display: block; }
+#btn-plans.is-unsaved span.unsaved-mark { display: inline; }
 
 /* Search */
 .search { position: relative; flex: 0 1 340px; min-width: 180px; display: flex; align-items: center; }
@@ -851,6 +856,7 @@ kbd {
 .plan-meta .plan-name-in { height: 28px; padding: 2px 8px; font-weight: 600; }
 .plan-sub { font-size: 12.5px; color: var(--ink-3); }
 .plan-actions { display: flex; align-items: center; gap: 6px; }
+.dlg-body .plan-usage { font-size: 12.5px; }
 .plan-now { font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); padding: 0 6px; }
 .report-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); max-height: 50vh; overflow: auto; }
 #share-url { font-size: 12px; word-break: break-all; }
