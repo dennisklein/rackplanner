@@ -78,3 +78,11 @@ test('[ and ] step rows when typed with AltGr or Option', async ({ page }) => {
   await page.keyboard.press('Control+BracketRight');
   await expect(page.locator('#row-label')).toHaveText('Row A');
 });
+
+test('the plan name is the page’s heading; the schedule’s arrow column says “to”', async ({ page }) => {
+  await expect(page.locator('h1')).toHaveCount(1);
+  await expect(page.locator('h1 #plan-name')).toHaveCount(1);
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  await page.click('[data-cab-view="schedule"]');
+  await expect(page.locator('#sc-table thead th.sc-arrow')).toHaveText('to');
+});

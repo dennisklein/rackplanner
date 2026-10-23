@@ -1397,7 +1397,7 @@
         `<label class="sc-group-by"><span class="sr-only">Group the cables</span><select id="sc-group">${GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div>` +
         `<div class="sc-scroll" id="sc-scroll"><table class="sched" id="sc-table" aria-label="Cable schedule"><thead><tr>` +
         `<th class="sc-check"><input type="checkbox" id="sc-all" aria-label="Select every cable shown"></th>` +
-        `<th>Label</th><th>From</th><th class="sc-pos">Position</th><th class="sc-arrow" aria-label="to"></th><th>To</th><th class="sc-pos">Position</th>` +
+        `<th>Label</th><th>From</th><th class="sc-pos">Position</th><th class="sc-arrow"><span class="sr-only">to</span></th><th>To</th><th class="sc-pos">Position</th>` +
         `<th>Cable</th><th class="sc-num">Speed</th><th class="sc-num">Length</th><th>Check</th></tr></thead><tbody id="sc-body"></tbody></table></div>` +
         `<div class="bom" id="sc-bom"></div></div>`
       );
