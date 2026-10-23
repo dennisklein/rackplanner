@@ -136,6 +136,7 @@
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   if (prefs.detail !== 'bare') prefs.detail = 'full';
   prefs.compactParts = prefs.compactParts === true;
+  if (!(prefs.binSplit > 0)) delete prefs.binSplit;
   const lib = window.RP.library.create(storage);
   let planId = null;
   let project = null;
@@ -1051,6 +1052,63 @@
   $('#btn-parts-compact').addEventListener('click', () => setCompactParts(!prefs.compactParts));
   el.parts.classList.toggle('is-compact', prefs.compactParts);
   $('#btn-parts-compact').setAttribute('aria-pressed', String(prefs.compactParts));
+
+  /**
+   * The top edge of the Clusters (or Networks) list shares the left panel
+   * out between it and the list above: dragged, or with the arrow keys.
+   * `h` is its height in pixels; null gives it back the height it takes.
+   */
+  function setBinSplit(h, save) {
+    const bin = $('#bin');
+    bin.classList.toggle('is-split', h != null);
+    if (h != null) bin.style.setProperty('--bin-low', `${Math.round(h)}px`);
+    else bin.style.removeProperty('--bin-low');
+    $$('.bin-split').forEach(binSplitValue);
+    if (!save) return;
+    if (h != null) prefs.binSplit = Math.round(h);
+    else delete prefs.binSplit;
+    savePrefs();
+  }
+  /** Says to screen readers how much of the panel the list under split `bar` takes, in percent. */
+  function binSplitValue(bar) {
+    const sec = bar.parentElement.getBoundingClientRect().height;
+    if (sec) bar.setAttribute('aria-valuenow', String(Math.round((100 * sec) / $('#bin').clientHeight)));
+  }
+  /** Height `h` of the section under split `bar`, clamped so that each list keeps two rows or so in sight. */
+  function binSplitHeight(bar, h) {
+    const sec = bar.parentElement;
+    const above = $$('.bin-parts', $('#bin')).find((x) => !x.hidden);
+    const rest = (box, list) => box.getBoundingClientRect().height - $(list, box).getBoundingClientRect().height;
+    return Math.max(rest(sec, '.clusters') + 56, Math.min(h, $('#bin').clientHeight - rest(above, '.parts') - 80));
+  }
+  for (const bar of $$('.bin-split')) {
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const y = e.clientY;
+      const start = bar.parentElement.getBoundingClientRect().height;
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add('is-dragging');
+      const move = (ev) => setBinSplit(binSplitHeight(bar, start + y - ev.clientY));
+      const end = () => {
+        bar.classList.remove('is-dragging');
+        bar.removeEventListener('pointermove', move);
+        if ($('#bin').classList.contains('is-split')) setBinSplit(bar.parentElement.getBoundingClientRect().height, true);
+      };
+      bar.addEventListener('pointermove', move);
+      bar.addEventListener('pointerup', end, { once: true });
+      bar.addEventListener('pointercancel', end, { once: true });
+    });
+    bar.addEventListener('dblclick', () => setBinSplit(null, true));
+    bar.addEventListener('focus', () => binSplitValue(bar));
+    bar.addEventListener('keydown', (e) => {
+      const step = e.key === 'ArrowUp' ? 24 : e.key === 'ArrowDown' ? -24 : 0;
+      if (!step) return;
+      e.preventDefault();
+      setBinSplit(binSplitHeight(bar, bar.parentElement.getBoundingClientRect().height + step), true);
+    });
+  }
+  setBinSplit(prefs.binSplit || null);
 
   function setView(view) {
     if (view === ui.view) return;

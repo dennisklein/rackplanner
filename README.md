@@ -108,6 +108,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   free slot of the row, and its **Rack** and **Position** fields pick another.
   The list button beside **Catalog** makes the list compact, one line per
   device type without drawings, so that more types fit on a small screen.
+  Drag the top edge of the Clusters list (or the Networks list in Cabling),
+  or press the arrow keys on it, to share the panel between the two lists;
+  double-click it to reset.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
   in the same rack, else in the same row, so dropping a node next to `cn-012`

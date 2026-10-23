@@ -617,6 +617,30 @@ test('the compact device list shows most types on a laptop screen, and is kept',
   await expect(page.locator('#dlg-place')).toBeVisible();
 });
 
+test('the edge above the Clusters list shares the panel out, and is kept', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const parts = async () => (await page.locator('#parts').boundingBox()).height;
+  const start = await parts();
+  const bar = page.locator('#racks-clusters-sec .bin-split');
+  const box = await bar.boundingBox();
+  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + 120, { steps: 5 });
+  await page.mouse.up();
+  const dragged = await parts();
+  expect(dragged).toBeGreaterThan(start + 100);
+  // The clusters keep a few rows in sight, however far it goes.
+  expect((await page.locator('#clusters').boundingBox()).height).toBeGreaterThanOrEqual(50);
+  await page.reload();
+  expect(await parts()).toBe(dragged);
+  // The arrow keys move it too; a double-click gives the lists their own heights again.
+  await bar.focus();
+  await page.keyboard.press('ArrowUp');
+  expect(await parts()).toBeLessThan(dragged);
+  await bar.dblclick();
+  expect(await parts()).toBe(start);
+});
+
 test('tall device types fit their card in the parts panel', async ({ page }) => {
   await page.click('#btn-catalog');
   await page.click('#cat-new');
