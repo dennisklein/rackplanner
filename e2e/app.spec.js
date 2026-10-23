@@ -40,6 +40,16 @@ async function dragPart(page, typeId, point) {
   await page.mouse.move(point.x, point.y, { steps: 10 });
 }
 
+/** Swipes a finger from (`x`, `y`) by `dy` pixels, as a phone's browser scrolls it. */
+async function swipe(page, x, y, dy) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  for (let k = 1; k <= 10; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + (dy * k) / 10 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+  await page.waitForTimeout(300);
+}
+
 async function exportFile(page, kind) {
   const download = page.waitForEvent('download');
   await page.click('#btn-export');
@@ -1268,6 +1278,23 @@ test.describe('on a phone', () => {
     await page.touchscreen.tap(target.x, target.y);
     await expect(page.locator('#dlg-place')).toBeVisible();
     await expect(page.locator('#place-where')).toContainText('Rack A01 · U30');
+  });
+
+  test('a swipe past the end of the drawing scrolls the page, and the stage fits a landscape screen', async ({ page }) => {
+    await page.locator('#btn-keep-example').tap();
+    await page.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'start' }));
+    const at = () => page.evaluate(() => ({ page: window.scrollY, drawing: document.querySelector('#canvas').scrollTop }));
+    const start = await at();
+    await swipe(page, 200, 500, -250);
+    const once = await at();
+    expect(once.drawing).toBeGreaterThan(start.drawing);
+    await swipe(page, 200, 500, -250);
+    await swipe(page, 200, 500, -250);
+    expect((await at()).page).toBeGreaterThan(start.page);
+
+    await page.setViewportSize({ width: 750, height: 342 });
+    const stage = await page.locator('#stage').boundingBox();
+    expect(stage.height).toBeLessThanOrEqual(342);
   });
 
   test('adds a device type from a template in the catalog', async ({ page }) => {

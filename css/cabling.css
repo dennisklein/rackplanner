@@ -378,6 +378,9 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
   .stage:has(> .viewport > .canvas[data-cab="ports"]) .pm-scroll { max-height: min(78vh, 720px); }
   /* The page scrolls here: the stage grows with the schedule, whose table keeps a height of its own, and the order list follows it. */
   .stage:has(> .viewport > .canvas[data-cab]) { height: auto; }
+  /* The fabric's header scrolls with the page too, and its graph keeps most of the screen. */
+  .stage:has(> .viewport > .cab-head:not([hidden])) { height: auto; }
+  .cab-head:not([hidden]) + .canvas:not([data-cab]) { flex: none; height: max(60svh, 240px); }
   .canvas[data-cab] { overflow: visible; }
   .sc-scroll { flex: none; max-height: min(70vh, 640px); overscroll-behavior: auto; }
   .bom { max-height: none; }

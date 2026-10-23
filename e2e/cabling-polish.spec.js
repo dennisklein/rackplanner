@@ -229,6 +229,16 @@ test.describe('on a phone', () => {
     expect(await border('#inspector .name-static')).toBe('rgba(0, 0, 0, 0)');
   });
 
+  test('the fabric gets most of the screen, under its header', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 });
+    await toCabling(page, 'fabric');
+    await expect(page.locator('#cab-head')).toBeVisible();
+    const canvas = await page.locator('#canvas').boundingBox();
+    expect(canvas.height).toBeGreaterThanOrEqual(0.6 * 664 - 1);
+    const head = await page.locator('#cab-head').boundingBox();
+    expect(canvas.y).toBeGreaterThanOrEqual(head.y + head.height - 1);
+  });
+
   test('the network dialog’s hint keeps each label of its series on one line', async ({ page }) => {
     await toCabling(page, 'schedule');
     for (const width of [390, 360]) {

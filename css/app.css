@@ -918,7 +918,9 @@ kbd {
   .plan-name-wrap::before { display: none; }
   .plan-name { max-width: none; }
   .tb-actions { margin-left: auto; flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; }
-  .stage { height: 72vh; min-height: 420px; }
+  /* No taller than the screen, which is short in landscape, and a swipe past the drawing's end scrolls the page. */
+  .stage { height: 72vh; min-height: min(420px, calc(100svh - 24px)); }
+  .canvas { overscroll-behavior: auto; }
   .bin { overflow: visible; }
   .parts { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
   .part { flex: 0 0 200px; scroll-snap-align: start; }
