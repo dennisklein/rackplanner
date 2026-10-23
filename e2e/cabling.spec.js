@@ -94,6 +94,25 @@ test('the workspace switches with its button and with C; the Racks workspace sta
   await expect(page.locator('#search')).toHaveAttribute('placeholder', 'Search devices and cables');
 });
 
+test('floor and row settings open in Racks from Cabling, which says so and leads back', async ({ page }) => {
+  await toCabling(page);
+  const tab = page.locator('#floor-tabs [data-floor][aria-pressed="true"]');
+  await expect(tab).toHaveAttribute('title', /floor settings \(opens Racks\)$/);
+  await tab.click();
+  await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
+  const back = page.locator('.toast', { hasText: 'Floor settings open in Racks' }).locator('button', { hasText: 'Back to Cabling' });
+  await back.click();
+  await expect(page.locator('.ws-switch [data-workspace="cabling"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#sc-body tr[data-cable]').first()).toBeVisible();
+
+  await page.click('#btn-row');
+  await expect(page.locator('#menu-row [data-row-action="settings"] small')).toHaveText(/^In Racks: rename/);
+  await page.click('#menu-row [data-row-action="settings"]');
+  await expect(page.locator('.toast', { hasText: 'Row settings open in Racks' })).toBeVisible();
+  // In Racks, the tab says nothing of a switch.
+  await expect(tab).toHaveAttribute('title', /click for floor settings$/);
+});
+
 test('the schedule lists the row’s cables in groups that fold, for the row, the floor or the plan', async ({ page }) => {
   await toCabling(page);
   const expected = await plan(page, (p, a, RP) => RP.cabling.groupCables(p, RP.cabling.cablesWithin(p, 'row1'), 'route').map((g) => [g.label, g.cables.length]));

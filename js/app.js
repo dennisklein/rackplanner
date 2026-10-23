@@ -556,8 +556,12 @@
   }
 
   function selectThing(kind, id, opts) {
-    // Racks, rows and floors are edited in the Racks workspace.
-    if (ui.workspace === 'cabling') setWorkspace('racks');
+    // Racks, rows and floors are edited in the Racks workspace: the toast says so, with the way back.
+    if (ui.workspace === 'cabling') {
+      setWorkspace('racks');
+      const what = { floor: 'Floor', row: 'Row', rack: 'Rack' }[kind];
+      toast(`${what} settings open in Racks`, { kind: 'where', action: 'Back to Cabling', onAction: () => setWorkspace('cabling') });
+    }
     ui.selection = { kind, id };
     if (kind === 'rack') {
       const row = rowOfRack(id);
@@ -866,7 +870,7 @@
         .map((f) => {
           const on = f === pos.floor;
           const picked = sel && sel.kind === 'floor' && sel.id === f.id;
-          return `<button type="button" class="ftab${picked ? ' is-selected' : ''}" data-floor="${esc(f.id)}" aria-pressed="${on}" title="${on ? `${esc(f.name)}: click for floor settings` : `Show ${esc(f.name)}`}">${esc(f.name)}</button>`;
+          return `<button type="button" class="ftab${picked ? ' is-selected' : ''}" data-floor="${esc(f.id)}" aria-pressed="${on}" title="${on ? `${esc(f.name)}: click for floor settings${ui.workspace === 'cabling' ? ' (opens Racks)' : ''}` : `Show ${esc(f.name)}`}">${esc(f.name)}</button>`;
         })
         .join('') +
       (project.floors.length < M.LIMITS.floors ? `<button type="button" class="ftab ftab-add" data-add-floor title="Add a floor" aria-label="Add a floor">${icon('plus', 'ic-sm')}</button>` : '');
@@ -977,7 +981,7 @@
         .join('') +
       `<hr>` +
       (pos.floor.rows.length < M.LIMITS.rows ? `<button type="button" role="menuitem" data-row-action="add"><span>${icon('plus', 'ic-sm')} Add row</span><small>A new row of racks on ${esc(pos.floor.name)}</small></button>` : '') +
-      `<button type="button" role="menuitem" data-row-action="settings"><span>${icon('pencil', 'ic-sm')} Row settings</span><small>Rename, reorder racks, move or delete ${esc(pos.row.name)}</small></button>`;
+      `<button type="button" role="menuitem" data-row-action="settings"><span>${icon('pencil', 'ic-sm')} Row settings</span><small>${ui.workspace === 'cabling' ? 'In Racks: rename' : 'Rename'}, reorder racks, move or delete ${esc(pos.row.name)}</small></button>`;
   }
   el.rowMenu.addEventListener('click', (e) => {
     const t = e.target.closest('button');

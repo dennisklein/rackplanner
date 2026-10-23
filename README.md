@@ -179,7 +179,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   delete it. The dashed **Add rack** slot at the end of a row adds one. Row
   and floor settings (from the row picker, the pencil on the floor map, or a
   click on the active floor tab) rename, reorder, move and delete them, and
-  show their totals.
+  show their totals. From Cabling they open in Racks, and the toast's **Back
+  to Cabling** returns.
 - **Catalog**: the **Catalog** button above the devices edits device types,
   rack types, cable types and transceivers. Changes apply at once and are
   checked: a type can't grow if its devices would then overlap or stick out
