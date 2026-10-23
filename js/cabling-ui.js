@@ -1152,28 +1152,57 @@
       return keys.length ? `; ${keys.map(netName).join(', ')} ${keys.length === 1 ? 'is' : 'are'} shown again` : '';
     }
 
-    /** The second end of the connection being made; with a breakout cable armed, its next leg, and the cable once every leg is set. True unless it was refused. */
+    /**
+     * The second end of the connection being made; with a breakout cable
+     * armed, its next leg, and the cable once every leg is set. The head of
+     * a breakout goes into the port its plug fits, whichever was clicked
+     * first: a node's port clicked before the switch's is a leg. True unless
+     * it was refused.
+     */
     function connectTo(end) {
       const pd = ui.pending;
       if (pd.fill) return fillLeg(end);
       const t = armedType();
-      const network = networkFor(pd, pd.legs[0] || end);
       if (t && t.legs > 1) {
-        const legs = pd.legs.concat([{ device: end.device, port: end.port }]);
+        const [head, leg] = pd.legs.length ? [pd, end] : headFirst(t, pd, end);
+        const legs = pd.legs.concat([{ device: leg.device, port: leg.port }]);
         const b = legs.concat(new Array(t.legs - legs.length).fill(null));
-        const err = C.checkConnect(project(), { a: { device: pd.device, port: pd.port }, b, type: t.id, network });
+        const err = C.checkConnect(project(), { a: { device: head.device, port: head.port }, b, type: t.id, network: networkFor(head, legs[0]) });
         if (err) {
           toast(err, { warn: true });
           return false;
         }
+        const turned = head !== pd;
+        if (turned) {
+          ui.pending = Object.assign({}, pd, { device: head.device, port: head.port });
+          ui.cabSel = { kind: 'port', device: head.device, port: head.port };
+        }
         if (legs.length < t.legs) {
-          pd.legs = legs;
-          ctx.render({ inspector: false });
+          ui.pending.legs = legs;
+          ctx.render(turned ? {} : { inspector: false });
           return true;
         }
-        return finishConnect(legs);
+        if (finishConnect(legs)) return true;
+        ui.pending = pd;
+        return false;
       }
       return finishConnect([{ device: end.device, port: end.port }]);
+    }
+
+    /** The head and the first leg of breakout type `t` from ends `first` and `second`: `first` is the head, unless only `second` takes the head's plug. */
+    function headFirst(t, first, second) {
+      const takes = (e) => C.takesPlug(project(), e, t, t.connector, fresh().ctx);
+      return !takes(first) && takes(second) ? [second, first] : [first, second];
+    }
+
+    /**
+     * The toast of a cable connected: "Connected IB-0012" (`text`) and
+     * `again` (see showAgain), with Undo. A cable whose plug does not fit
+     * its port, or that no cable type joins, warns with that check.
+     */
+    function connectedToast(made, text, again) {
+      const bad = describe(made).issues.find((x) => x.code === 'plug' || x.code === 'type');
+      toast(`${text}${bad ? `: ${bad.text}` : ''}${again || ''}`, { warn: !!bad, action: 'Undo', onAction: ctx.undo, kind: 'connected' });
     }
 
     /** Connects the port pending to `legs` (one end, or the legs of a breakout cable, the others left unplugged); false when it was refused. */
@@ -1205,7 +1234,7 @@
       ui.cabSel = { kind: 'cables', ids: [made.id] };
       const again = showAgain([made]);
       ctx.render();
-      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}${again}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+      connectedToast(made, `Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}`, again);
       return true;
     }
 
@@ -1352,10 +1381,14 @@
           msg = `${CLICK} a free port for leg ${pd.fill.leg + 1} of <strong>${esc(c ? c.label || 'the cable' : 'the cable')}</strong> from ${from}${keys(', <kbd>Esc</kbd> to cancel')}`;
         } else if (t && t.legs > 1) {
           const n = pd.legs.length;
+          // A port that does not take the head's plug is a leg: the head goes into the port clicked next.
+          const leg = !n && !C.takesPlug(project(), pd, t, t.connector, fresh().ctx);
           msg = n
             ? `${CLICK} leg ${n + 1} of ${t.legs} of ${with_}${inNet} from ${from}${keys(`; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`)}` +
               `<span class="hint-touch">, or <button type="button" class="hint-link" data-cab-finish>finish with ${n}</button></span>`
-            : `${CLICK} the first of ${t.legs} legs to connect ${from} with ${with_}${inNet}${keys(', <kbd>Esc</kbd> to cancel')}`;
+            : leg
+              ? `${CLICK} the ${esc(connLabel(t.connector))} port for the head of ${with_}${inNet}, with ${from} as its first leg${keys('; <kbd>Esc</kbd> to cancel')}`
+              : `${CLICK} the first of ${t.legs} legs to connect ${from} with ${with_}${inNet}${keys(', <kbd>Esc</kbd> to cancel')}`;
         } else {
           // New switches face the rear, but a plan may have their ports on the other side.
           const other = prefs.cabSide === 'front' ? 'rear' : 'front';
@@ -2716,7 +2749,7 @@
       ui.pending = null;
       ui.cabSel = { kind: 'cables', ids: [id] };
       ctx.render();
-      toast(`Plugged leg ${i + 1} of ${c.label || 'the cable'} into ${endText(end)}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+      connectedToast(cableById(id), `Plugged leg ${i + 1} of ${c.label || 'the cable'} into ${endText(end)}`);
       return true;
     }
 
@@ -3214,7 +3247,7 @@
         ui.cabSel = { kind: 'cables', ids: [made.id] };
         const again = showAgain([made]);
         ctx.render();
-        toast(`Connected ${made.label}${again}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
+        connectedToast(made, `Connected ${made.label}`, again);
       });
     }
 

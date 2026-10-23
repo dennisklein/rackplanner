@@ -579,6 +579,12 @@ test('joins says whether a cable can join two ports', () => {
   assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'swp49'), M.cableTypeById(p, 'lc-om4')), true, 'fiber meets a cage through a transceiver');
   assert.equal(C.joins(p, end('n1', 'eth0'), end('sw1', 'nope')), false);
   assert.equal(C.joins(p, end('n1', 'nope'), end('sw1', 'swp1')), false);
+  // Which plug of a type a port takes: a breakout's head, or its legs.
+  const osfp = M.cableTypeById(p, 'dac-osfp-2x');
+  assert.equal(C.takesPlug(p, end('osw', 'p1'), osfp, 'osfp', ctx), true);
+  assert.equal(C.takesPlug(p, end('n1', 'ib0'), osfp, 'osfp', ctx), false);
+  assert.equal(C.takesPlug(p, end('n1', 'ib0'), osfp, 'qsfp56', ctx), true);
+  assert.equal(C.takesPlug(p, end('n1', 'nope'), osfp, 'qsfp56', ctx), false);
 });
 
 test('a new cable takes the network of the cables at the far device, else at the near one', () => {

@@ -226,6 +226,41 @@ test('a breakout cable takes its head, then each leg; Enter finishes with fewer 
   expect(await cableAt(page, 'ib-leaf-b02', 'p9')).toBeNull();
 });
 
+test('a breakout cable takes its head where the head plugs in, whichever port is clicked first; a plug that does not fit warns', async ({ page }) => {
+  await page.click('#btn-row-next');
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+  await page.click('#btn-zoom-reset');
+  await clickDevice(page, 'gpu-srv-03');
+  await page.click('#cab-dev-unplug');
+  await page.click('#confirm-ok');
+  expect(await cableAt(page, 'ib-leaf-b02', 'p5')).toBeNull();
+  await page.click('.cab-card[data-cab-type="dac-osfp-2x"]');
+  // The server's QSFP56 port first: it is a leg.
+  await (await port(page, 'gpu-srv-03', 'ib0')).click();
+  await expect(page.locator('#armed-hint')).toContainText('Click the OSFP port for the head of OSFP to 2 × QSFP56 DAC');
+  await expect(page.locator('#armed-hint')).toContainText('with gpu-srv-03 ib0 as its first leg');
+  await (await port(page, 'ib-leaf-b02', 'p5')).click();
+  await expect(page.locator('#armed-hint')).toContainText('Click leg 2 of 2 of OSFP to 2 × QSFP56 DAC in InfiniBand from ib-leaf-b02 p5');
+  expect((await ui(page)).pending).toMatchObject({ port: 'p5', legs: [{ device: await idOf(page, 'gpu-srv-03'), port: 'ib0' }] });
+  await expect(page.locator('#inspector .name-static')).toHaveText('ib-leaf-b02 · p5');
+  await page.keyboard.press('Enter');
+  const c = await cableAt(page, 'ib-leaf-b02', 'p5');
+  expect(c).toMatchObject({ type: 'dac-osfp-2x', network: 'n-ib', b: [{ device: await idOf(page, 'gpu-srv-03'), port: 'ib0' }, null] });
+  await expect(page.locator('.toast span').last()).toHaveText(`Connected ${c.label}, 1 of 2 legs`);
+  await expect(page.locator('.toast').last()).not.toHaveClass(/warn/);
+
+  // A cable type whose plug does not fit: connected, with a warning and Undo.
+  await page.click('.cab-card[data-cab-type="cat6a"]');
+  await (await port(page, 'gpu-srv-03', 'ib1')).click();
+  await (await port(page, 'ib-leaf-b02', 'p6')).click();
+  const bad = await cableAt(page, 'gpu-srv-03', 'ib1');
+  expect(bad.type).toBe('cat6a');
+  const toast = page.locator('.toast.warn').last();
+  await expect(toast).toContainText(`Connected ${bad.label}: Cat6a patch cord does not plug into gpu-srv-03 ib1 (QSFP56)`);
+  await toast.locator('button', { hasText: 'Undo' }).click();
+  expect(await cableAt(page, 'gpu-srv-03', 'ib1')).toBeNull();
+});
+
 test('hovering a port shows it and what it connects to', async ({ page }) => {
   await page.click('#btn-zoom-reset');
   const cabled = await port(page, 'cn-004', 'ib0');

@@ -764,7 +764,14 @@
     if (!port) return false;
     if (!t) return !!endPort(c, a) && !!resolve(project, { a, b, type: null }, null, c).type;
     const plugs = t.legs > 1 ? [t.connector] : [t.connector, t.connectorB];
-    return plugs.some((plug) => endFit(c, t, plug, port, null).code !== 'plug');
+    return plugs.some((plug) => takesPlug(project, b, t, plug, c));
+  }
+
+  /** Whether the port of end `end` takes plug `plug` of cable type `type`: a fiber plug goes into a cage of any family through a transceiver. */
+  function takesPlug(project, end, type, plug, ctx) {
+    const c = ctx || context(project);
+    const port = endPort(c, end);
+    return !!port && endFit(c, type, plug, port, null).code !== 'plug';
   }
 
   // ----------------------------------------------------------------- checks
@@ -1259,6 +1266,7 @@
     stockLength,
     resolve,
     joins,
+    takesPlug,
     describe,
     describeAll,
     billOfMaterials,

@@ -321,7 +321,10 @@ reaches the length. For a breakout cable (one head, 2 to 8 legs), pick its
 type, click the head's port and then a port for each leg; <kbd>Enter</kbd>
 or <kbd>Esc</kbd> connects it with the legs set so far (on a touch screen,
 the message's **finish with** does). Before that, <kbd>Esc</kbd> or the
-message's **×** cancels. **+ Cable** in the schedule connects two ports
+message's **×** cancels. A port clicked first that doesn't take the head's
+plug is a leg: the head goes into the port clicked next. A cable whose plug
+doesn't fit its port is still connected, with a warning that says so and
+**Undo**. **+ Cable** in the schedule connects two ports
 picked from lists, and so does a free port's inspector, or **Connect…**
 beside a free port in a device's inspector. In Cabling, messages show at the
 foot of the inspector, off the drawing, and each new connection's message
