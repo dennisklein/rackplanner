@@ -878,6 +878,9 @@
       issues.push({ code: 'length', level: 'warn', text: 'The ends are on different floors: enter the length', short: 'No length' });
     } else if (!lengthAuto && needM !== null && cable.lengthM < needM - 1e-9) {
       issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs ${fmtNeed(needM)}`, short: 'Too short' });
+    } else if (!lengthAuto && needM !== null && cable.lengthM > needM * 2 + 5 && !issues.some((i) => i.code === 'reach' || i.code === 'stock')) {
+      // Far longer than the run, as a slip of the keyboard makes it (55 m for 5.5), unless the length warns already.
+      issues.push({ code: 'length', level: 'warn', text: `Set to ${fmtM(cable.lengthM)} but needs only ${fmtNeed(needM)}`, short: 'Much too long' });
     }
     const uses = cable.label ? c.labels.get(cable.label) || 0 : 0;
     if (uses > 1) {

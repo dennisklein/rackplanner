@@ -1015,6 +1015,40 @@ test('the inspector follows a label, a length, a slack and a row pitch as they c
   await expect(page.locator('#cab-pitch')).toHaveValue('50');
 });
 
+test('a length typed with a decimal comma is read as the CSV reads it, and one far too long is checked', async ({ page }) => {
+  await toCabling(page);
+  const id = (await cableBy(page, 'IB-0031')).id;
+  await pick(page, 'IB-0031');
+  await expect(page.locator('#cab-length')).toHaveAttribute('inputmode', 'decimal');
+  await page.locator('#cab-length').fill('5,5');
+  await page.keyboard.press('Tab');
+  expect(await plan(page, (p, id) => p.cables.find((c) => c.id === id).lengthM, id)).toBe(5.5);
+  await expect(page.locator('#cab-length')).toHaveValue('5.5');
+  await page.locator('#cab-length').fill('55 m');
+  await page.keyboard.press('Tab');
+  expect(await plan(page, (p, id) => p.cables.find((c) => c.id === id).lengthM, id)).toBe(55);
+  await expect(page.locator('#cab-checks')).toContainText('Set to 55 m but needs only 4.9 m');
+  await expect(row(page, 'IB-0031').locator('.sc-flag')).toHaveText('Much too long');
+  // No length: said, and the length kept.
+  await page.locator('#cab-length').fill('5..5');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.toast.warn').last()).toContainText('5..5 is no length: type it in metres, like 4.5');
+  await expect(page.locator('#cab-length')).toHaveValue('55');
+  expect(await plan(page, (p, id) => p.cables.find((c) => c.id === id).lengthM, id)).toBe(55);
+
+  // A device's slack and the row pitch too.
+  await page.locator('#inspector .end-dev').first().click();
+  await page.locator('#cab-dev-slack').fill('0,25');
+  await page.keyboard.press('Tab');
+  expect(await plan(page, (p, id) => p.devices.find((d) => d.id === id).slackM, (await cableBy(page, 'IB-0031')).a.device)).toBe(0.25);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await page.locator('#cab-pitch').fill('2,5');
+  await page.keyboard.press('Tab');
+  expect(await plan(page, (p) => p.floors[0].rowPitchM)).toBe(2.5);
+});
+
 test('another row’s schedule opens at its top', async ({ page }) => {
   await toCabling(page);
   await page.locator('#sc-scroll').evaluate((e) => (e.scrollTop = 1500));

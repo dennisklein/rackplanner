@@ -2413,6 +2413,20 @@
       renderInspectorSoon();
       return err;
     }
+    /**
+     * The metres typed in a field, read as the cable CSV reads them ("4,5",
+     * "4.5 m"): null when it is empty, undefined (with a warning) when it is
+     * no length.
+     */
+    function readField(input) {
+      const v = input.value.trim();
+      if (v === '') return null;
+      const m = IO.readMetres(v, true);
+      if (m !== null) return m;
+      toast(`${v} is no length: type it in metres, like 4.5`, { warn: true });
+      return undefined;
+    }
+
     let inspectorTimer = null;
     /** Draws the inspector again after the event under way, with keyboard focus back on the field or button it was on. */
     function renderInspectorSoon() {
@@ -2609,7 +2623,7 @@
         `<section class="insp-sec"><h3>Cable</h3><div class="field-grid">` +
         (withLabel ? `<div class="field span2"><label for="cab-label">Label</label><input id="cab-label" class="mono" type="text" value="${esc(c.label)}" maxlength="40" autocomplete="off" spellcheck="false"></div>` : '') +
         `<div class="field span2"><label for="cab-type">Cable type</label><select id="cab-type">${typeOptions(c, c.type)}</select></div>` +
-        `<div class="field span2"><label for="cab-length">Length (m)</label><input id="cab-length" type="number" min="0.1" max="10000" step="0.1" inputmode="decimal" value="${c.lengthM === null ? '' : c.lengthM}" placeholder="${esc(placeholder)}">` +
+        `<div class="field span2"><label for="cab-length">Length (m)</label><input id="cab-length" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${c.lengthM === null ? '' : c.lengthM}" placeholder="${esc(placeholder)}">` +
         `<small class="field-hint">${esc(hint)}</small></div>` +
         `<div class="field span2"><label for="cab-notes">Notes</label><textarea id="cab-notes" rows="2" placeholder="Route, purchase order …">${esc(c.notes || '')}</textarea></div>` +
         `</div></section>`
@@ -2664,10 +2678,9 @@
       $('#cab-type').addEventListener('change', (e) => changeOrToast((p) => C.updateCable(p, id, { type: e.target.value || null })));
       const len = $('#cab-length');
       len.addEventListener('change', () => {
-        const v = len.value.trim();
-        const m = v === '' ? null : M.clampNum(v, 0.1, 10000, null);
-        if (v !== '' && m === null) return renderInspectorSoon();
-        changeOnLeave((p) => C.updateCable(p, id, { lengthM: m }));
+        const m = readField(len);
+        if (m === undefined) return renderInspectorSoon();
+        changeOnLeave((p) => C.updateCable(p, id, { lengthM: m === null ? null : M.clampNum(m, 0.1, 10000, null) }));
       });
       const notes = $('#cab-notes');
       notes.addEventListener('input', () => changeTyped((p) => C.updateCable(p, id, { notes: notes.value }), `cable-notes:${id}`));
@@ -3042,7 +3055,7 @@
         (type.face === 'reserved'
           ? ''
           : `<section class="insp-sec"><h3 id="cab-mount-label">${M.portsSide(type) ? 'Ports at' : 'Mounted'}</h3>${mountField(d, M.portsSide(type))}<div class="field-grid">` +
-            `<div class="field"><label for="cab-dev-slack">Slack per cable (m)</label><input id="cab-dev-slack" type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${d.slackM == null ? '' : d.slackM}" placeholder="${type.slackM || 0} (type)"></div>` +
+            `<div class="field"><label for="cab-dev-slack">Slack per cable (m)</label><input id="cab-dev-slack" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${d.slackM == null ? '' : d.slackM}" placeholder="${type.slackM || 0} (type)"></div>` +
             `</div></section>`) +
         `<section class="insp-sec"><h3>Ports</h3>` +
         (ports.length
@@ -3056,8 +3069,9 @@
       const slack = $('#cab-dev-slack');
       if (slack) {
         slack.addEventListener('change', () => {
-          const v = slack.value.trim() === '' ? null : M.clampNum(slack.value, 0, 10, null);
-          changeOnLeave((p2) => void (M.deviceById(p2, id).slackM = v));
+          const m = readField(slack);
+          const v = m === null ? null : M.clampNum(m, 0, 10, null);
+          if (m !== undefined) changeOnLeave((p2) => void (M.deviceById(p2, id).slackM = v));
           const kept = deviceById(id);
           slack.value = kept && kept.slackM != null ? kept.slackM : '';
         });
@@ -3363,7 +3377,7 @@
         (bad.length ? `<section class="insp-sec"><h3>To check</h3><ul class="check-list">${issues}</ul>${bad.length > 6 ? `<p class="sec-hint">and ${bad.length - 6} more</p>` : ''}</section>` : '') +
         `<section class="insp-sec"><h3>Ports in use</h3><div class="rack-bars">${bars}</div></section>` +
         `<section class="insp-sec"><h3>Cable lengths</h3><div class="field-grid">` +
-        `<div class="field"><label for="cab-pitch">Row pitch (m)</label><input id="cab-pitch" type="number" min="0.5" max="50" step="0.1" inputmode="decimal" value="${floor.rowPitchM == null ? '' : floor.rowPitchM}" placeholder="${M.DEFAULT_ROW_PITCH_M}"></div>` +
+        `<div class="field"><label for="cab-pitch">Row pitch (m)</label><input id="cab-pitch" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${floor.rowPitchM == null ? '' : floor.rowPitchM}" placeholder="${M.DEFAULT_ROW_PITCH_M}"></div>` +
         `</div><p class="sec-hint">From one row of ${esc(floor.name)} to the next. Racks set their way up to the tray and their slack.</p></section>` +
         `<section class="insp-sec keys-sec"><h3>Shortcuts</h3><dl class="keys">` +
         `<dt><kbd>?</kbd></dt><dd>Every shortcut, and help</dd>` +
@@ -3381,8 +3395,9 @@
       const pitch = $('#cab-pitch');
       const fid = floor.id;
       pitch.addEventListener('change', () => {
-        const v = M.clampNum(pitch.value.trim() === '' ? null : pitch.value, 0.5, 50, M.DEFAULT_ROW_PITCH_M);
-        changeOnLeave((p2) => void (M.floorById(p2, fid).rowPitchM = v));
+        const m = readField(pitch);
+        const v = M.clampNum(m, 0.5, 50, M.DEFAULT_ROW_PITCH_M);
+        if (m !== undefined) changeOnLeave((p2) => void (M.floorById(p2, fid).rowPitchM = v));
         const kept = M.floorById(project(), fid);
         pitch.value = kept && kept.rowPitchM != null ? kept.rowPitchM : '';
       });

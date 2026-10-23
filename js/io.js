@@ -773,12 +773,12 @@
     notes: ['notes', 'note', 'comment', 'comments'],
   };
 
-  /** "4.5", "4,5" (a decimal comma), "4.5 m" → 4.5; null when it is no length above 0. */
-  function readMetres(text) {
+  /** "4.5", "4,5" (a decimal comma), "4.5 m" → 4.5; null when it is no length above 0 (with `zero`, no length of 0 or more). */
+  function readMetres(text, zero) {
     let t = String(text).trim().replace(/\s*m$/i, '');
     if (/^\d+,\d+$/.test(t)) t = t.replace(',', '.');
     const n = /^\d*\.?\d+$|^\d+\.$/.test(t) ? Number(t) : NaN;
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return Number.isFinite(n) && (n > 0 || (zero && n === 0)) ? n : null;
   }
 
   /**
@@ -1072,6 +1072,7 @@
     isCablesCSV,
     importCablesCSV,
     exportOrderCSV,
+    readMetres,
     encodeShare,
     decodeShare,
   };

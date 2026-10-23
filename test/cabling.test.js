@@ -351,7 +351,7 @@ test('named fiber types get their transceivers picked within reach, or use the o
   assert.deepEqual(get().issues.map((i) => [i.code, i.text]), [['reach', 'Set to 150 m: the QSFP56 200G SR4 reaches 100 m']]);
   const long = C.addTransceiver(p, { name: 'QSFP56 200G SR4 long', connector: 'qsfp56', fiber: 'mpo', mode: 'mmf', speedGbps: 200, reachM: 300 });
   assert.deepEqual(get().ends.map((e) => e.transceiver.id), [long.id, long.id], 'the first one that reaches');
-  assert.deepEqual(get().issues, []);
+  assert.deepEqual(get().issues.map((i) => [i.code, i.text]), [['length', 'Set to 150 m but needs only 3.6 m']], 'in reach, but far longer than it needs');
   // A chosen transceiver is kept, and checked.
   C.updateCable(p, cable.id, { lengthM: null, a: end('n1', 'ib0', 'qsfp28-100g-sr4') });
   assert.equal(get().ends[0].transceiver.id, 'qsfp28-100g-sr4');
@@ -407,6 +407,11 @@ test('every check says what is wrong', () => {
   assert.deepEqual(texts(ex, C.cableById(ex, up.id)), ['Set to 4.8 m but needs 4.9 m']);
   C.updateCable(ex, up.id, { lengthM: 4.82 });
   assert.deepEqual(texts(ex, C.cableById(ex, up.id)), []);
+  // Far longer than it needs, as 5,5 typed for 5.5 would be: more than twice the need and 5 m.
+  C.updateCable(ex, up.id, { lengthM: 14.6 });
+  assert.deepEqual(texts(ex, C.cableById(ex, up.id)), []);
+  C.updateCable(ex, up.id, { lengthM: 55 });
+  assert.deepEqual(C.describe(ex, C.cableById(ex, up.id)).issues.map((i) => [i.code, i.level, i.text, i.short]), [['length', 'warn', 'Set to 55 m but needs only 4.9 m', 'Much too long']]);
   const twice = link(p, end('n3', 'eth0'), end('sw1', 'swp4'), { label: 'C-0001' });
   assert.deepEqual(C.describe(p, twice).issues.map((i) => [i.code, i.text, i.short]), [['label', 'The label C-0001 is used twice', 'Label used twice']]);
   assert.deepEqual(codes(p, p.cables[0]), ['plug', 'plug', 'label'], 'both cables with the label are flagged');

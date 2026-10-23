@@ -540,6 +540,17 @@ test('a hand-made cable schedule adds what it can', () => {
   assert.throws(() => IO.importCablesCSV(p, 'A device,A port,B device,B port'), /no cables/);
 });
 
+test('readMetres reads a length as the cable CSV does, and 0 only when asked', () => {
+  assert.equal(IO.readMetres('4.5'), 4.5);
+  assert.equal(IO.readMetres(' 5,5 '), 5.5);
+  assert.equal(IO.readMetres('7 m'), 7);
+  assert.equal(IO.readMetres('.5'), 0.5);
+  for (const bad of ['', 'abc', '5,5,5', '1.234,5', '-2', '4,']) assert.equal(IO.readMetres(bad), null, bad);
+  assert.equal(IO.readMetres('0'), null);
+  assert.equal(IO.readMetres('0', true), 0);
+  assert.equal(IO.readMetres('0,25', true), 0.25);
+});
+
 test('cable lengths under a plain Length header, with a decimal comma or a unit are read, and a bad one is said', () => {
   const run = (text) => {
     const p = M.createExampleProject();

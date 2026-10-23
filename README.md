@@ -399,8 +399,8 @@ with nothing selected) for each step from one end's row to the other's.
 Each end adds its rack's slack and its device's slack. The cable's
 length is that rounded up to the type's next stock length, or to 0.1 m for
 a type made to length. Estimated lengths are in italics; type a length into
-the cable's inspector to decide it. Cables between floors are not estimated:
-enter their length by hand.
+the cable's inspector to decide it (`4.5`, `4,5` or `4.5 m`, as in a cable
+CSV). Cables between floors are not estimated: enter their length by hand.
 
 **To order**, under the schedule, counts the cables of each type by stock
 length, lists every length of the types made to length with their total, and
@@ -412,8 +412,9 @@ cable's inspector and the **To check** list of the row: a plug that doesn't
 fit, missing optics or a transceiver that doesn't fit, a cable that runs
 slower than one of its ports (a note), a cable too long for its type or
 transceivers, a length beyond the longest stock length, a length set shorter
-than the cable needs, no cable type that fits, a cable between floors
-without a length, and a label used twice. The plan never holds a second
+than the cable needs or far longer (more than twice it and 5 m), no cable
+type that fits, a cable between floors without a length, and a label used
+twice. The plan never holds a second
 cable on a port, or a cable to a port that doesn't exist.
 
 <p>
