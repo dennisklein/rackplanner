@@ -450,6 +450,7 @@ p { margin: 0; }
 .fm-elev i { position: absolute; left: 1px; right: 1px; background: var(--c, var(--unassigned)); border-radius: 1px; box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.25); }
 .fm-elev i.res { background: repeating-linear-gradient(135deg, var(--c, var(--ink-3)) 0 1.5px, transparent 1.5px 4px); box-shadow: none; opacity: .8; }
 .fm-elev i.dim { opacity: .18; }
+.fm-elev i.is-hidden { background: repeating-linear-gradient(135deg, var(--ink-3) 0 1px, transparent 1px 3px); box-shadow: inset 0 0 0 1px var(--line); opacity: .7; }
 .fm-meter { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; display: block; }
 .fm-meter span { display: block; height: 100%; background: var(--ink); }
 .fm-name { font: 600 11.5px/1.1 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

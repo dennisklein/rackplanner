@@ -1586,6 +1586,10 @@ test('the cluster list says how many are hidden, with Show all; Alt-click on an 
   await eye.click();
   await page.click('#clusters [data-cl-eye="c-osprey"]');
   await expect(note).toHaveText('2 clusters hidden · Show all');
+  // The floor map draws their devices as taken space, without color.
+  await page.keyboard.press('m');
+  await expect(page.locator('.fm-elev i.is-hidden')).toHaveCount(20);
+  await page.keyboard.press('m');
   // The sheet's legend marks them too.
   await expect(page.locator('.scene')).toContainText('Kestrel HPC12 · hidden');
   await note.locator('[data-show-all]').click();

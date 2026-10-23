@@ -867,6 +867,7 @@
     const stats = M.statsByRack(project);
     const byRack = M.devicesByRack(project);
     const hl = highlightFn();
+    const hidden = drawnHidden();
     const match = ui.query.trim() ? M.deviceMatcher(project, ui.query, ui.clusterView) : null;
     const sel = ui.selection;
     const colors = new Map(viewClusters().map((c) => [c.id, c.color]));
@@ -896,8 +897,10 @@
           if (d.loc.kind !== 'u') continue;
           const h = M.deviceHeight(project, d);
           const res = d.type === M.RESERVED.id;
-          const c = colors.get(clusterIdOf(d));
-          blocks += `<i class="${res ? 'res' : ''}${hl && !hl(d) ? ' dim' : ''}" style="top:${(((d.loc.at - 1) / st.units) * 100).toFixed(2)}%;height:${((h / st.units) * 100).toFixed(2)}%${c ? `;--c:${c}` : ''}"></i>`;
+          // A hidden device keeps its units taken, without its cluster's color, as in the sheet.
+          const off = !!(hidden && hidden(d));
+          const c = off ? null : colors.get(clusterIdOf(d));
+          blocks += `<i class="${res ? 'res' : ''}${off ? ' is-hidden' : hl && !hl(d) ? ' dim' : ''}" style="top:${(((d.loc.at - 1) / st.units) * 100).toFixed(2)}%;height:${((h / st.units) * 100).toFixed(2)}%${c ? `;--c:${c}` : ''}"></i>`;
         }
         const cls = ['fm-rack'];
         if (m.over) cls.push('is-over');

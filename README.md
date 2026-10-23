@@ -163,7 +163,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   placed into a hidden cluster says so, with a button that shows it. Under
   the list, a line counts the hidden clusters, with **Show all**;
   <kbd>Alt</kbd>-click an eye to show only its cluster, and again to show
-  them all. The sheet's legend marks hidden clusters. Each view keeps the
+  them all. The sheet's legend marks hidden clusters, and the floor map draws
+  their devices without color. Each view keeps the
   clusters it hides. A long name is cut in the middle, so its end stays in sight;
   pointing at it shows it in full. The first eight colors stay apart for
   color-blind eyes too, and the cluster dialog warns when a color is close to
