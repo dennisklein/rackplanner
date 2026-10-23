@@ -9,6 +9,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const device = (page, name) => page.locator(`.scene .dev[aria-label^="${name},"]`);
+const devices = (page) => page.locator('.scene .dev');
 const status = (page) => page.locator('#status');
 const app = (page, fn, arg) => page.evaluate(fn, arg);
 
@@ -222,4 +223,75 @@ test('rack labels are buttons in the Tab order that open the rack', async ({ pag
   await page.keyboard.press('Enter');
   await expect(page.locator('#insp-rack-name')).toHaveValue('Rack A01');
   await expect(head).toBeFocused();
+});
+
+test('a device is placed with the keyboard: Enter on a type opens the place dialog at the first free slot', async ({ page }) => {
+  await page.click('#btn-start-empty');
+  await expect(devices(page)).toHaveCount(0);
+  const card = page.locator('.part[data-type="compute-node"]');
+  await expect(card).toHaveAttribute('aria-label', /Press Enter to choose a slot/);
+  await card.focus();
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  await expect(page.locator('#place-name')).toBeFocused();
+  await expect(page.locator('#place-rack')).toHaveValue('r1');
+  await expect(page.locator('#place-pos option:checked')).toHaveText('U1–2');
+  await expect(page.locator('#place-where')).toContainText('Rack A01 · U1–2');
+
+  // Another rack takes its free slot nearest to the one picked; the position is any free one.
+  await page.selectOption('#place-rack', 'r2');
+  await expect(page.locator('#place-pos option:checked')).toHaveText('U1–2');
+  await expect(page.locator('#place-spread-wrap')).toBeVisible();
+  await page.selectOption('#place-pos', 'u:10');
+  await expect(page.locator('#place-where')).toContainText('Rack A02 · U10–11');
+  await page.focus('#place-qty');
+  await page.fill('#place-qty', '2');
+  await expect(page.locator('#place-preview')).toContainText('U10–13');
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('#dlg-place')).toBeHidden();
+  await expect(devices(page)).toHaveCount(2);
+  const locs = await app(page, () => window.RP.app.project().devices.map((d) => `${d.loc.rack} ${d.loc.at}`));
+  expect(locs).toEqual(['r2 10', 'r2 12']);
+  await expect(card).toBeFocused();
+});
+
+test('Enter on a type of side-slot devices opens the place dialog at a free side slot', async ({ page }) => {
+  await page.locator('.part[data-type="pdu"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  await expect(page.locator('#place-rack')).toHaveValue('r1');
+  await expect(page.locator('#place-pos option:checked')).toHaveText('Side slot V2');
+  await expect(page.locator('#place-where')).toContainText('Rack A01 · side slot V2');
+});
+
+test('with a type armed, Enter places it in the rack of the focused label', async ({ page }) => {
+  await page.click('.part[data-type="compute-node"]');
+  await expect(page.locator('#armed-hint')).toContainText('or press Enter to choose one');
+  await page.locator('.rack-head[data-rack="r2"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  await expect(page.locator('#place-rack')).toHaveValue('r2');
+  const first = await app(page, () => {
+    const M = window.RP.model;
+    const p = window.RP.app.project();
+    return M.formatPosition(p, M.firstFreeLoc(p, 'compute-node', ['r2']), 'compute-node');
+  });
+  await expect(page.locator('#place-pos option:checked')).toHaveText(first);
+  await expect(page.locator('#armed-hint')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#dlg-place')).toBeHidden();
+});
+
+test('a full plan says so instead of opening the place dialog', async ({ page }) => {
+  await page.click('#btn-start-empty');
+  await app(page, () => {
+    const p = window.RP.app.project();
+    for (const r of p.floors[0].rows[0].racks) p.devices.push(window.RP.model.newDevice({ type: 'reserved', name: 'full', height: 47, loc: { rack: r.id, kind: 'u', at: 1 } }));
+  });
+  await page.locator('.part[data-type="compute-node"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#dlg-place')).toBeHidden();
+  await expect(page.locator('.toast.warn')).toHaveText('No rack has room for a compute node');
 });

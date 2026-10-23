@@ -238,6 +238,41 @@ test('validLocs, nudgeTarget and nearestLoc find free space', () => {
   assert.deepEqual(M.nearestLoc(p, 'compute-node', 'r1', 21, null), { rack: 'r1', kind: 'u', at: 18 });
 });
 
+test('firstFreeLoc finds the topmost free units, rack by rack, and side slots last', () => {
+  const p = project([
+    ['compute-node', 'r1', 'u', 1],
+    ['compute-node', 'r1', 'u', 4],
+  ]);
+  assert.deepEqual(M.firstFreeLoc(p, 'compute-node', ['r1', 'r2']), { rack: 'r1', kind: 'u', at: 6 }, 'U3 has room for 1U only');
+  assert.deepEqual(M.firstFreeLoc(p, 'switch-rj45', ['r1']), { rack: 'r1', kind: 'u', at: 3 }, 'units before side slots');
+  assert.deepEqual(M.firstFreeLoc(p, 'reserved', ['r1'], 6), { rack: 'r1', kind: 'u', at: 6 }, 'with the height of reserved space');
+  const full = project([['reserved', 'r1', 'u', 1, 'all', { height: 47 }]]);
+  assert.deepEqual(M.firstFreeLoc(full, 'compute-node', ['r1', 'r2']), { rack: 'r2', kind: 'u', at: 1 }, 'the next rack');
+  assert.deepEqual(M.firstFreeLoc(full, 'switch-rj45', ['r1']), { rack: 'r1', kind: 'side', at: 0 }, 'a side slot when the units are full');
+  assert.equal(M.firstFreeLoc(full, 'compute-node', ['r1']), null);
+  assert.deepEqual(M.firstFreeLoc(p, 'switch-rj45', ['r1'], undefined, true), { rack: 'r1', kind: 'side', at: 0 }, 'side slots first when preferred');
+  const sides = project([
+    ['switch-rj45', 'r1', 'side', 0],
+    ['switch-rj45', 'r1', 'side', 1],
+  ]);
+  assert.deepEqual(M.firstFreeLoc(sides, 'switch-rj45', ['r1', 'r2'], undefined, true), { rack: 'r2', kind: 'side', at: 0 }, 'the next rack’s side slot');
+  assert.deepEqual(M.firstFreeLoc(sides, 'switch-rj45', ['r1'], undefined, true), { rack: 'r1', kind: 'u', at: 1 }, 'units when no side slot is free');
+});
+
+test('prefersSideSlot: PDUs and the 1U types the plan puts in side slots', () => {
+  const p = project([
+    ['switch-rj45', 'r1', 'side', 0],
+    ['switch-qsfp', 'r1', 'u', 1],
+  ]);
+  p.deviceTypes.push(Object.assign({}, M.typeOf(p, 'switch-rj45'), { id: 'pdu', label: 'PDU', face: 'pdu' }));
+  assert.equal(M.prefersSideSlot(p, 'pdu'), true, 'a PDU');
+  assert.equal(M.prefersSideSlot(p, 'switch-rj45'), true, 'its devices are in side slots');
+  assert.equal(M.prefersSideSlot(p, 'switch-qsfp'), false, 'its devices are in units');
+  assert.equal(M.prefersSideSlot(p, 'compute-node'), false, '2U');
+  p.devices.push(M.newDevice({ id: 'd3', type: 'pdu', name: 'pdu-h', loc: { rack: 'r2', kind: 'u', at: 1 } }));
+  assert.equal(M.prefersSideSlot(p, 'pdu'), false, 'a PDU the plan puts in units');
+});
+
 test('groups of devices move together', () => {
   const p = project([
     ['compute-node', 'r1', 'u', 10, 'a'],

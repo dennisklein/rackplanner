@@ -1114,7 +1114,7 @@
       count.classList.toggle('is-zero', !n);
       card.classList.toggle('is-armed', ui.armed === t.id);
       card.setAttribute('aria-pressed', String(ui.armed === t.id));
-      card.setAttribute('aria-label', `${t.label}, ${M.formatTypeSpec(t)}, ${n} placed. Click, then click a free slot to place it.`);
+      card.setAttribute('aria-label', `${t.label}, ${M.formatTypeSpec(t)}, ${n} placed. Press Enter to choose a slot, or click it and then click a free slot.`);
     }
   }
 
@@ -1170,8 +1170,10 @@
     el.stage.classList.toggle('is-armed', !!ui.armed);
     if (ui.armed) {
       const t = M.typeOf(project, ui.armed);
+      const what = `${t.variable ? '' : 'a '}<strong>${esc(t.label.toLowerCase())}</strong>`;
       el.armedHint.innerHTML =
-        `<span>Click a free slot to place ${t.variable ? '' : 'a '}<strong>${esc(t.label.toLowerCase())}</strong></span><kbd>Esc</kbd>` +
+        `<span class="hint-pointer">Click a free slot to place ${what}, or press <kbd>Enter</kbd> to choose one</span>` +
+        `<span class="hint-touch">Tap a free slot to place ${what}</span><kbd>Esc</kbd>` +
         `<button type="button" data-disarm aria-label="Stop placing">${icon('x', 'ic-sm')}</button>`;
     }
     el.armedHint.hidden = !ui.armed;
@@ -2388,6 +2390,7 @@
   el.parts.addEventListener('click', (e) => {
     const card = e.target.closest('.part');
     if (!card || performance.now() - lastPaletteDragEnd < 400) return;
+    if (byKeyboard(e)) return placeByKeyboard(card.dataset.type);
     if (ui.view === 'map') setView('sheet');
     toggleArm(card.dataset.type);
   });
@@ -2576,7 +2579,7 @@
     if (e.target.closest('.add-rack')) {
       e.preventDefault();
       addRackTo(ui.rowId);
-    } else if (head) {
+    } else if (head && !ui.armed) {
       e.preventDefault();
       selectThing('rack', head.dataset.rack);
     }
@@ -2876,27 +2879,13 @@
   function openPlaceDialog(typeId, loc) {
     const type = M.typeOf(project, typeId);
     Object.assign(place, { typeId, loc, nameTouched: false, positions: [], valid: true });
-    const row = M.locateRack(project, loc.rack).row;
     $('#place-title').textContent = type.label;
-    $('#place-where').textContent = `${M.formatLoc(project, loc, typeId, type.variable && loc.kind === 'u' ? 2 : 1)} · ${M.formatTypeSpec(type)}`;
     $('#place-height-field').hidden = !type.variable;
     $('#place-height').value = loc.kind === 'side' ? '1' : '2';
-    $('#place-height').max = String(M.rackUnits(project, loc.rack));
-    $('#place-qty-field').hidden = loc.kind !== 'u';
-    $('#place-dir-field').hidden = loc.kind !== 'u';
     $('#place-qty').value = '1';
     $('input[name="place-dir"][value="down"]').checked = true;
-    const canSpread = loc.kind === 'u' && row.racks.length > 1;
-    $('#place-spread-wrap').hidden = !canSpread;
     $('#place-spread').checked = false;
-    $('#place-racks').hidden = true;
-    const start = row.racks.findIndex((r) => r.id === loc.rack);
-    $('#place-racks').innerHTML = row.racks
-      .map(
-        (r, i) =>
-          `<label class="chip chip-check"><input type="checkbox" value="${esc(r.id)}"${i >= start ? ' checked' : ''}><span>${esc(shortRack(r.name))}</span></label>`
-      )
-      .join('');
+    setPlaceLoc(loc);
     const hint = M.suggestPlacement(project, typeId, loc, 1, ui.clusterView);
     const last = prefs.lastCluster && clusterColor(prefs.lastCluster) ? prefs.lastCluster : null;
     const initial = hint.cluster !== undefined ? hint.cluster : type.variable ? null : last || (viewClusters().length ? null : '__new');
@@ -2913,9 +2902,64 @@
     name.select();
   }
 
+  /** Sets where the dialog places the devices: its Rack and Position fields, and the racks of that row to spread over. */
+  function setPlaceLoc(loc) {
+    const type = M.typeOf(project, place.typeId);
+    place.loc = loc;
+    const row = M.locateRack(project, loc.rack).row;
+    $('#place-where').textContent = `${M.formatLoc(project, loc, type.id, placeHeight())} · ${M.formatTypeSpec(type)}`;
+    $('#place-rack').innerHTML = rackOptions(loc.rack);
+    renderPlacePositions();
+    $('#place-height').max = String(M.rackUnits(project, loc.rack));
+    $('#place-qty-field').hidden = loc.kind !== 'u';
+    $('#place-dir-field').hidden = loc.kind !== 'u';
+    const canSpread = loc.kind === 'u' && row.racks.length > 1;
+    $('#place-spread-wrap').hidden = !canSpread;
+    $('#place-racks').hidden = true;
+    const start = row.racks.findIndex((r) => r.id === loc.rack);
+    $('#place-racks').innerHTML = row.racks
+      .map(
+        (r, i) =>
+          `<label class="chip chip-check"><input type="checkbox" value="${esc(r.id)}"${i >= start ? ' checked' : ''}><span>${esc(shortRack(r.name))}</span></label>`
+      )
+      .join('');
+  }
+
+  /** The free positions of the rack in the Position field, and the one picked even when it no longer fits. */
+  function renderPlacePositions() {
+    const loc = place.loc;
+    const height = placeHeight();
+    const locs = M.validLocs(project, place.typeId, loc.rack, null, height);
+    if (!locs.some((l) => l.kind === loc.kind && l.at === loc.at)) locs.unshift(loc);
+    $('#place-pos').innerHTML = locs
+      .map((l) => {
+        const label = l.kind === 'side' ? `Side slot V${l.at + 1}` : M.formatPosition(project, l, place.typeId, height);
+        return `<option value="${locKey(l)}"${l.kind === loc.kind && l.at === loc.at ? ' selected' : ''}>${label}</option>`;
+      })
+      .join('');
+  }
+
   function placeHeight() {
     const type = M.typeOf(project, place.typeId);
     return type.variable ? M.clampInt($('#place-height').value, 1, M.rackUnits(project, place.loc.rack), 1) : undefined;
+  }
+
+  /**
+   * The keyboard's way to place a device of `typeId`: the place dialog at
+   * the first free position, in `rackId` if given, else in the row shown,
+   * else anywhere in the plan; a side slot first for a type that goes in
+   * side slots. Its Rack and Position fields pick another.
+   */
+  function placeByKeyboard(typeId, rackId) {
+    const type = M.typeOf(project, typeId);
+    const rowRacks = currentRow().row.racks.map((r) => r.id);
+    const all = M.allRows(project).flatMap(({ row }) => row.racks.map((r) => r.id));
+    const order = [...new Set([].concat(rackId || [], rowRacks, all))];
+    const loc = M.firstFreeLoc(project, typeId, order, startHeight(type), M.prefersSideSlot(project, typeId));
+    if (!loc) return toast(`No rack has room for ${type.variable ? '' : 'a '}${type.label.toLowerCase()}`, { warn: true });
+    disarm();
+    if (ui.view === 'map') setView('sheet');
+    openPlaceDialog(typeId, loc);
   }
 
   function updatePlacePreview() {
@@ -3004,7 +3048,21 @@
     updatePlacePreview();
   });
   $('#place-qty').addEventListener('input', updatePlacePreview);
-  $('#place-height').addEventListener('input', updatePlacePreview);
+  $('#place-height').addEventListener('input', () => {
+    renderPlacePositions();
+    updatePlacePreview();
+  });
+  $('#place-rack').addEventListener('change', (e) => {
+    const rackId = e.target.value;
+    const near = place.loc.kind === 'u' ? place.loc.at : 1;
+    // The nearest free position there; in a full rack its top unit, which the preview says is taken.
+    setPlaceLoc(M.nearestLoc(project, place.typeId, rackId, near, null, place.loc.kind === 'side', placeHeight()) || { rack: rackId, kind: 'u', at: 1 });
+    updatePlacePreview();
+  });
+  $('#place-pos').addEventListener('change', (e) => {
+    setPlaceLoc(parseLocKey(place.loc.rack, e.target.value));
+    updatePlacePreview();
+  });
   $('#place-spread').addEventListener('change', updatePlacePreview);
   $('#place-racks').addEventListener('change', updatePlacePreview);
   $$('input[name="place-dir"]').forEach((r) => r.addEventListener('change', updatePlacePreview));
@@ -5000,6 +5058,13 @@
         render({ inspector: false });
       }
       return;
+    }
+
+    // With a type armed, Enter chooses where it goes: in the rack of the focused label or device, else the first free slot.
+    if (ui.armed && key === 'Enter' && !mod && !(t.closest && t.closest('button, a[href], summary, .add-rack'))) {
+      e.preventDefault();
+      const rack = t.closest && t.closest('.scene .rack[data-rack]');
+      return placeByKeyboard(ui.armed, rack ? rack.dataset.rack : null);
     }
 
     // The Racks workspace's selection only takes keys there.

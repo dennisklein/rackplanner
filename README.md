@@ -98,7 +98,9 @@ its fans or power supplies, and its front ports are at the rack's rear.
 
 - **Place**: drag a device from the left panel onto a rack, or click it and
   then click a free slot (on a touch screen, tap it and then tap a slot). A
-  green outline means it fits; red explains the conflict.
+  green outline means it fits; red explains the conflict. With the keyboard,
+  press <kbd>Enter</kbd> on a device: the placement dialog opens at the first
+  free slot of the row, and its **Rack** and **Position** fields pick another.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
   so dropping a node next to `cn-012` offers `cn-013` in the same cluster.
@@ -200,6 +202,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 | <kbd>Ctrl</kbd>+click | In Cabling, add or remove a cable |
 | <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device in the row; in Cabling, the cables shown |
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
+| <kbd>Enter</kbd> on a device type | Place one: the placement dialog picks its rack and position (Racks) |
 | <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling, edit the selected cable's label |
 | <kbd>Del</kbd> | Delete; in Cabling, delete the selected cables or unplug the selected port |
 | <kbd>Tab</kbd> | Walk through rack labels and devices, top to bottom (Racks) |

@@ -1491,6 +1491,41 @@
   }
 
   /**
+   * The first free position for a device of `typeId` in `rackIds`, rack by
+   * rack, from the top unit down; a side slot only when no rack has units
+   * free. With `preferSide`, the first free side slot, and units only when
+   * no rack has a side slot free. Null when nothing fits.
+   */
+  function firstFreeLoc(project, typeId, rackIds, height, preferSide) {
+    let other = null;
+    for (const id of rackIds) {
+      const locs = validLocs(project, typeId, id, null, height);
+      const first = locs.find((l) => (l.kind === 'side') === !!preferSide);
+      if (first) return first;
+      if (!other && locs.length) other = locs[0];
+    }
+    return other;
+  }
+
+  /**
+   * Whether devices of `typeId` belong in side slots rather than in rack
+   * units: a 1U type with more of its devices in side slots than in units,
+   * or, as many as in each, a PDU.
+   */
+  function prefersSideSlot(project, typeId) {
+    const type = typeOf(project, typeId);
+    if (!type || type.variable || type.height !== 1) return false;
+    let side = 0;
+    let units = 0;
+    for (const d of project.devices) {
+      if (d.type !== typeId) continue;
+      if (d.loc.kind === 'side') side++;
+      else units++;
+    }
+    return side !== units ? side > units : type.face === 'pdu';
+  }
+
+  /**
    * Checks moving several devices at once, each to its own `loc`. Every
    * device is checked against the devices that stay and against the other
    * moved ones in their new places.
@@ -2574,6 +2609,8 @@
     validLocs,
     nudgeTarget,
     nearestLoc,
+    firstFreeLoc,
+    prefersSideSlot,
     canMoveAll,
     canAddAll,
     shiftMoves,
