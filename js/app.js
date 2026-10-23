@@ -1202,11 +1202,14 @@
         `title="${shown ? 'Hide its devices in the racks' : 'Show its devices in the racks'}">${icon(shown ? 'eye' : 'eye-off')}</button>`
       );
     };
-    const row = (id, name, color, count, editable) =>
+    // The swatch of a cluster has its number, as on the ears of its devices.
+    const row = (id, name, color, count, editable, mark) =>
       `<li class="cl-row${ui.hiddenClusters.has(id) ? ' is-hidden' : ''}" data-cluster="${esc(id)}">` +
       eye(id, name) +
       `<button type="button" class="cl-main" aria-pressed="${ui.focusCluster === id}" title="${esc(name)}">` +
-      `<span class="sw" style="--c:${color || 'var(--unassigned)'}"></span>` +
+      (mark
+        ? `<span class="sw sw-mark" style="--c:${color};color:${R.inkOn(color)}" aria-hidden="true">${mark}</span>`
+        : `<span class="sw" style="--c:var(--unassigned)"></span>`) +
       `${listName(name)}<span class="cl-count" title="${count} devices">${count}</span></button>` +
       `<span class="cl-tools"><button type="button" class="btn icon sm subtle cl-select" aria-label="Select the devices of ${esc(name)}" title="Select its devices">${icon('select')}</button>` +
       (editable
@@ -1214,7 +1217,7 @@
         : `<span class="btn icon sm subtle" aria-hidden="true" style="visibility:hidden"></span>`) +
       `</span></li>`;
     const clusters = viewClusters();
-    let html = clusters.map((c) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true)).join('');
+    let html = clusters.map((c, i) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true, i + 1)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
     keepFocus(el.clusters, () => (el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`));
     el.clustersHint.innerHTML = !clusters.length

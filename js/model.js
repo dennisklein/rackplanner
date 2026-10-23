@@ -193,7 +193,7 @@
     '#2f6fdb', // cobalt
     '#e69f00', // amber
     '#7fc6f0', // sky
-    '#00896b', // teal
+    '#008568', // teal, dark enough for a white number
     '#d55e00', // vermilion
     '#9e2a6e', // plum
     '#ecd94a', // yellow
@@ -1232,7 +1232,7 @@
       { id: 'c-net', name: 'Core network', color: '#e69f00' },
       { id: 'c-kestrel', name: 'Kestrel HPC', color: '#2f6fdb' },
       { id: 'c-osprey', name: 'Osprey GPU', color: '#d55e00' },
-      { id: 'c-ceph', name: 'Ceph object store', color: '#00896b' },
+      { id: 'c-ceph', name: 'Ceph object store', color: '#008568' },
       { id: 'c-lustre', name: 'Lustre scratch', color: '#9e2a6e' },
       { id: 'c-heron', name: 'Heron AI', color: '#ecd94a' },
       { id: 'c-archive', name: 'Archive', color: '#7fc6f0' },

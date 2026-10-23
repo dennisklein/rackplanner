@@ -168,8 +168,9 @@ test('devices mounted back to front are drawn with their rear side', () => {
   const type = M.typeOf(p, sw.type);
   const color = M.clusterOf(p, sw).color;
   const sc = R.schemeFor(color, 'light');
-  const rear = R.sideFace(type, sw.name, sc, 'light', measure6, 1, 'rear');
-  const front = R.deviceFace(type, sw.name, sc, 'light', measure6, 1);
+  // On the sheet, its left ear has the number of its cluster, Core network, the first.
+  const rear = R.sideFace(type, sw.name, sc, 'light', measure6, 1, 'rear', { mark: '1' });
+  const front = R.deviceFace(type, sw.name, sc, 'light', measure6, 1, { mark: '1' });
   const before = R.renderScene(p, { rowId: 'row1', measure: measure6 }).body;
   assert.ok(before.includes(rear), 'the rear side, in its cluster colors');
   assert.ok(!before.includes(front));
@@ -179,7 +180,7 @@ test('devices mounted back to front are drawn with their rear side', () => {
   // Side slots too: a reversed 0U switch is drawn rotated with its rear.
   const bmc = p.devices.find((d) => d.name === 'sw-bmc-a01');
   assert.equal(bmc.loc.kind, 'side');
-  assert.ok(after.includes(R.sideFace(type, bmc.name, sc, 'light', measure6, 1, 'rear')));
+  assert.ok(after.includes(R.sideFace(type, bmc.name, sc, 'light', measure6, 1, 'rear', { mark: '1' })));
   // Ghosts of a moved reversed device keep its side.
   const ghost = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r1', kind: 'u', at: 40 }, name: 'g', color, reversed: true }], true, { measure: measure6 });
   assert.ok(ghost.includes(R.sideFace(type, 'g', sc, 'light', measure6, 1, 'rear')));
@@ -377,4 +378,40 @@ test('hidden devices keep their place as a dashed outline without a face', () =>
   assert.equal(out.body.split(`data-id="${cn.id}"`).length - 1, 1, 'the device is still there to select');
   assert.deepEqual(out.layout, all.layout);
   assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);
+});
+
+test('a device and the legend show the number of its cluster in the view', () => {
+  const p = M.createExampleProject();
+  const body = R.renderScene(p, { rowId: 'row1', measure: measure6 }).body;
+  const devNode = (name) => {
+    const d = p.devices.find((x) => x.name === name);
+    const at = body.indexOf(`data-id="${d.id}"`);
+    return body.slice(at, body.indexOf('</g>', at));
+  };
+  const mark = (node) => (/class="dev-mark">(\d+)</.exec(node) || [])[1];
+  // Kestrel HPC is the second cluster, Lustre scratch the fifth.
+  assert.equal(mark(devNode('cn-001')), '2');
+  assert.equal(mark(devNode('jbod-01')), '5');
+  // The legend's swatches have the numbers too.
+  const legend = body.slice(body.indexOf('>CLUSTERS<'));
+  assert.match(legend, />2<\/text><text[^>]*>Kestrel HPC/);
+  // In another view, the numbers are of its clusters.
+  const v = M.addView(p, 'IB');
+  v.clusters.push({ id: 'c-ib', name: 'HDR', color: '#2f6fdb' });
+  M.setClusterOf(p, p.devices.find((d) => d.name === 'cn-001'), v.id, 'c-ib');
+  const ib = R.renderScene(p, { rowId: 'row1', measure: measure6, view: v.id }).body;
+  const at = ib.indexOf(`data-id="${p.devices.find((d) => d.name === 'cn-001').id}"`);
+  assert.equal(mark(ib.slice(at, ib.indexOf('</g>', at))), '1');
+  // An unassigned device keeps its screw.
+  const gpu = p.devices.find((d) => d.name === 'gpu-001');
+  const g = ib.indexOf(`data-id="${gpu.id}"`);
+  assert.equal(mark(ib.slice(g, ib.indexOf('</g>', g))), undefined);
+});
+
+test('the number of a cluster reads at 4.5:1 on every default cluster color, on the ears in both themes and in the list', () => {
+  for (const color of M.CLUSTER_COLORS) {
+    for (const bg of [R.schemeFor(color, 'light').ear, R.schemeFor(color, 'dark').ear, color]) {
+      assert.ok(R.contrast(R.inkOn(bg), bg) >= 4.5, `${color}: ${R.inkOn(bg)} on ${bg}`);
+    }
+  }
 });

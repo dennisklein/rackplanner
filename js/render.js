@@ -119,6 +119,7 @@
     rail: { css: `500 8.5px ${FONT_MONO}`, family: FONT_MONO, size: 8.5, weight: 500 },
     cap: { css: `600 7px ${FONT_UI}`, family: FONT_UI, size: 7, weight: 600 },
     small: { css: `500 9.5px ${FONT_MONO}`, family: FONT_MONO, size: 9.5, weight: 500 },
+    mark: { css: `600 8px ${FONT_COND}`, family: FONT_COND, size: 8, weight: 600 },
     // Cabling drawings.
     label: { css: `600 10px ${FONT_MONO}`, family: FONT_MONO, size: 10, weight: 600 },
     box: { css: `600 11.5px ${FONT_MONO}`, family: FONT_MONO, size: 11.5, weight: 600 },
@@ -534,15 +535,20 @@
     generic: [genericVents, statusLeds],
   };
 
-  /** Ears with their screws and the face between them, as every device has. */
-  function bodyShell(sc, w, h, units, u) {
+  /**
+   * Ears with their screws and the face between them, as every device has.
+   * `mark` (the number of its cluster) takes the place of the top left screw,
+   * so a device's cluster can be told without its color.
+   */
+  function bodyShell(sc, w, h, units, u, mark) {
     let s = `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="2" fill="${sc.ear}"/>`;
     s += `<rect x="${EAR}" y="0.5" width="${w - 2 * EAR}" height="${h - 1}" fill="${sc.face}"/>`;
     const screws = units === 1 ? [h / 2] : [u / 2, h - u / 2];
-    for (const y of screws) {
-      s += `<circle cx="${EAR / 2 + 0.5}" cy="${y}" r="1.7" fill="${sc.screw}"/>`;
+    screws.forEach((y, i) => {
+      if (mark && i === 0) s += text(EAR / 2 + 0.5, y + 2.8, mark, FONTS.mark, inkOn(sc.ear), ' text-anchor="middle" class="dev-mark"');
+      else s += `<circle cx="${EAR / 2 + 0.5}" cy="${y}" r="1.7" fill="${sc.screw}"/>`;
       s += `<circle cx="${w - EAR / 2 - 0.5}" cy="${y}" r="1.7" fill="${sc.screw}"/>`;
-    }
+    });
     return s;
   }
   const edgeLine = (sc, w, h) => `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="2" fill="none" stroke="${sc.edge}"/>`;
@@ -552,7 +558,8 @@
    * height unless it is reserved space). `extra`: { color, powerW } for
    * reserved space, and `u` and `width` for a face drawn at another scale
    * than the Racks sheet's (20 px units, 240 px wide). `extra.bare` leaves
-   * out the drawing so the name can use the whole face.
+   * out the drawing so the name can use the whole face; `extra.mark` is the
+   * number of its cluster, on the left ear.
    */
   function deviceFace(type, name, sc, theme, measure, hU, extra) {
     const T = THEMES[theme] || THEMES.light;
@@ -562,7 +569,7 @@
     const w = g.w;
     const h = units * g.u;
     const bare = !!(extra && extra.bare);
-    let s = bodyShell(sc, w, h, units, g.u);
+    let s = bodyShell(sc, w, h, units, g.u, extra && extra.mark);
     if (!bare) {
       const [draw, panel] = FACE_ART[type.face] || FACE_ART.generic;
       s += draw(sc, h, units, theme, g);
@@ -741,7 +748,8 @@
    * that have no ports there. Options: `u` and `width` as for deviceFace,
    * `portColor(portName)` → fill of a cabled port or null, `ports: false` to
    * leave the ports out (to draw them over cables), `layout` (a
-   * portLayout to reuse), `color`/`powerW` for reserved space.
+   * portLayout to reuse), `color`/`powerW` for reserved space, `mark` as
+   * for deviceFace.
    */
   function sideFace(type, name, sc, theme, measure, hU, side, opts) {
     const o = opts || {};
@@ -753,7 +761,7 @@
     const h = units * g.u;
     const ports = o.bare ? [] : o.layout || portLayout(type, side, units, w, { u: g.u });
     const psu = !o.bare && side === 'rear' && hasPower(type);
-    let s = bodyShell(sc, w, h, units, g.u);
+    let s = bodyShell(sc, w, h, units, g.u, o.mark);
     // What the label must keep clear of on its line.
     let clear = w - EAR - 6;
     if (o.rearMark) {
@@ -920,6 +928,11 @@
     return s;
   }
 
+  /** A cluster's number in its view, from 1, as its devices and the legend show it; '' for none. */
+  function clusterMark(project, cluster, viewId) {
+    return cluster ? String(M.clustersOf(project, viewId).indexOf(cluster) + 1) : '';
+  }
+
   function deviceNode(project, d, r, T, theme, o, measure) {
     const type = M.typeOf(project, d.type);
     const cluster = M.clusterOf(project, d, o.view);
@@ -951,7 +964,7 @@
     const h = rect.rotated ? rect.w : rect.h;
     // A hidden device keeps its units taken: a dashed outline in place of its face.
     if (hidden) s += `<rect x="0.75" y="0.75" width="${w - 1.5}" height="${h - 1.5}" rx="2" fill="${T.paper}" fill-opacity="0.85" stroke="${T.ink2}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
-    else s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare }, d.reversed);
+    else s += faceOf(type, d.name, sc, theme, measure, hU, { color: cluster ? cluster.color : null, powerW: type.variable ? M.powerOf(project, d) : 0, bare: o.bare, mark: clusterMark(project, cluster, o.view) }, d.reversed);
     if (o.interactive) {
       s += `<rect class="dev-hl" x="-1.5" y="-1.5" width="${w + 3}" height="${h + 3}" rx="3" fill="none" stroke="${T.ink}" stroke-width="1.5"/>`;
     }
@@ -1002,7 +1015,10 @@
       if (c) counts.set(c, (counts.get(c) || 0) + 1);
       else unassigned++;
     }
-    const items = M.clustersOf(project, viewId).filter((c) => counts.has(c.id)).map((c) => ({ name: c.name, color: c.color, count: counts.get(c.id) }));
+    const items = M.clustersOf(project, viewId)
+      .map((c, i) => ({ id: c.id, name: c.name, color: c.color, mark: String(i + 1) }))
+      .filter((c) => counts.has(c.id))
+      .map((c) => Object.assign(c, { count: counts.get(c.id) }));
     if (unassigned) items.push({ name: 'Unassigned', color: null, count: unassigned });
     const width = lay.width;
     const inner = width - MX * 2;
@@ -1043,6 +1059,7 @@
       const y = y0 + 20 + it.row * 22;
       const sc = schemeFor(it.color, theme);
       s += `<rect x="${r1(x)}" y="${y + 2}" width="14" height="12" rx="2" fill="${sc.ear}" stroke="${sc.edge}"/>`;
+      if (it.mark) s += text(x + 7, y + 11, it.mark, FONTS.mark, inkOn(sc.ear), ' text-anchor="middle"');
       s += `<text x="${r1(x + 20)}" y="${y + 12}" font-family="${FONTS.legend.family}" font-size="${FONTS.legend.size}" font-weight="${FONTS.legend.weight}" fill="${T.ink}">${esc(it.label)}<tspan dx="7" font-family="${FONTS.stat.family}" font-size="${FONTS.stat.size}" fill="${T.ink3}">${it.count}</tspan></text>`;
     }
 

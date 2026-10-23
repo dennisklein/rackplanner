@@ -1506,3 +1506,9 @@ test('the cluster dialog warns of a color near another cluster’s', async ({ pa
   await expect(page.locator('#cluster-name')).toHaveValue('Kestrel HPC');
   await expect(near).toBeHidden();
 });
+
+test('a cluster’s number marks its swatch and its devices, besides its color', async ({ page }) => {
+  await expect(page.locator('#clusters .cl-row .sw')).toHaveText(['1', '2', '3', '4', '5', '6', '7', '']);
+  await expect(device(page, 'cn-001').locator('.dev-mark')).toHaveText('2');
+  await expect(device(page, 'jbod-01').locator('.dev-mark')).toHaveText('5');
+});
