@@ -326,9 +326,11 @@ plug is a leg: the head goes into the port clicked next. A cable whose plug
 doesn't fit its port is still connected, with a warning that says so and
 **Undo**. **+ Cable** in the schedule connects two ports
 picked from lists, and so does a free port's inspector, or **Connect…**
-beside a free port in a device's inspector. In Cabling, messages show at the
-foot of the inspector, off the drawing, and each new connection's message
-replaces the one before.
+beside a free port in a device's inspector. While connecting, the first
+port's inspector offers to pick the other end there (**Or select the other
+end here**), with the cable type armed and a port that it fits. In Cabling,
+messages show at the foot of the inspector, off the drawing, and each new
+connection's message replaces the one before.
 
 **Connect series** (in the schedule, on each faceplate of the port map, and
 in the inspector of a device or of several) joins many devices to one

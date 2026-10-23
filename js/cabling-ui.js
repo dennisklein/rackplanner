@@ -254,12 +254,11 @@
       if (f) f.value = '';
     }
 
-    /** Cancels a connection being made; true when there was one. The inspector follows when it offered the leg being plugged in. */
+    /** Cancels a connection being made; true when there was one. The inspector follows: it offered the leg being plugged in, or another way to end the connection. */
     function cancelPending() {
       if (!ui.pending) return false;
-      const fill = !!ui.pending.fill;
       ui.pending = null;
-      ctx.render(fill ? {} : { inspector: false });
+      ctx.render();
       return true;
     }
     /** Leaves the network in focus; true when there was one. */
@@ -1172,14 +1171,14 @@
           toast(err, { warn: true });
           return false;
         }
-        const turned = head !== pd;
-        if (turned) {
+        if (head !== pd) {
           ui.pending = Object.assign({}, pd, { device: head.device, port: head.port });
           ui.cabSel = { kind: 'port', device: head.device, port: head.port };
         }
         if (legs.length < t.legs) {
           ui.pending.legs = legs;
-          ctx.render(turned ? {} : { inspector: false });
+          // The inspector too: its form ends the connection with the legs set.
+          ctx.render();
           return true;
         }
         if (finishConnect(legs)) return true;
@@ -2275,11 +2274,11 @@
       if (!card) return;
       armType(card.dataset.cabType);
     });
-    /** Arms a cable type for new cables; legs set for a breakout cable start again. */
+    /** Arms a cable type for new cables; legs set for a breakout cable start again. The inspector of a connection being made follows: its form takes the type armed. */
     function armType(id) {
       ui.cabType = id;
       if (ui.pending) ui.pending = Object.assign({}, ui.pending, { legs: [] });
-      ctx.render({ inspector: false });
+      ctx.render(ui.pending && !ui.pending.fill ? {} : { inspector: false });
     }
     // Arrow keys move between the cable types like a radio group.
     $('#cab-types').addEventListener('keydown', (e) => {
@@ -3194,9 +3193,30 @@
           `<div class="insp-actions is-pinned">${back}</div>`;
         return;
       }
+      // While a connection being made starts here, the form is another way to end it: with the cable type armed, to a port that it fits.
+      const pd = ui.pending && !ui.pending.fill && ui.pending.device === d.id && ui.pending.port === pt.name ? ui.pending : null;
+      const armed = pd ? armedType() : null;
+      const multi = armed && armed.legs > 1 ? armed : null;
+      const here = { device: d.id, port: pt.name };
+      // Of a breakout cable, the other end takes the legs' plug when this port is its head, else the head's.
+      const otherPlug = multi && (pd.legs.length || C.takesPlug(p, here, multi, multi.connector, fresh().ctx) ? multi.connectorB : multi.connector);
+      const takes = (e) => (multi ? C.takesPlug(p, e, multi, otherPlug, fresh().ctx) : C.joins(p, here, e, armed, fresh().ctx));
+      /** The first free port of `dev` that the cable type armed fits (of the family of this port, for a single cable), or null. */
+      const fittingPort = (dev) => {
+        const idx = cableIndex();
+        const fits = [...portsOf(dev).values()].filter((x) => !idx.has(`${dev.id}|${x.name}`) && takes({ device: dev.id, port: x.name }));
+        return (!multi && fits.find((x) => family(x) === family(pt))) || fits[0] || null;
+      };
+      /** The ends of the cable the form makes to `target`: { a, legs } (a breakout's head and its legs, the others still to plug in). */
+      const endsTo = (target) => {
+        if (!multi) return { a: here, legs: [target] };
+        if (pd.legs.length) return { a: here, legs: pd.legs.concat([target]) };
+        const [a, leg] = headFirst(multi, here, target);
+        return { a: { device: a.device, port: a.port }, legs: [{ device: leg.device, port: leg.port }] };
+      };
       el.inspector.innerHTML =
         head +
-        `<section class="insp-sec"><h3>Connect to</h3><div class="field-grid">` +
+        `<section class="insp-sec"><h3>${pd ? 'Or select the other end here' : 'Connect to'}</h3><div class="field-grid">` +
         `<div class="field span2"><label for="cab-pc-device">Device</label><select id="cab-pc-device">${targets}</select></div>` +
         `<div class="field span2"><label for="cab-pc-port">Port</label><select id="cab-pc-port"></select></div>` +
         `<div class="field span2"><label for="cab-pc-net">Network</label><select id="cab-pc-net"><option value="">None</option>${p.networks.map((n) => `<option value="${esc(n.id)}">${esc(n.name)}</option>`).join('')}</select></div>` +
@@ -3210,21 +3230,24 @@
       const netSel = $('#cab-pc-net');
       // The network follows the other end until one is picked.
       let netTouched = false;
-      // A device to start from: a switch in the same row with a free port that takes this plug.
-      const guess = guessTarget([d.id], pt);
+      // A device to start from: one of the same row with a free port that the cable type armed fits, else a switch in the same row with a free port that takes this plug.
+      const pool = armed ? rowDevices(where(d).pos.row.id).filter((x) => x.id !== d.id) : [];
+      const guess = pool.find((x) => C.isSwitch(p, x) && fittingPort(x)) || pool.find(fittingPort) || guessTarget([d.id], pt);
       if (guess) devSel.value = guess.id;
       const fillPorts = () => {
         const target = deviceById(devSel.value);
         portSel.innerHTML = target ? portOptions(target, null, true) : '';
-        const first = target && firstFreePort(target, pt);
+        const first = target && ((armed && fittingPort(target)) || firstFreePort(target, pt));
         if (first) portSel.value = first.name;
         fillTypes();
       };
       const fillTypes = () => {
-        const draft = { id: null, type: null, network: null, a: { device: d.id, port: pt.name }, b: { device: devSel.value, port: portSel.value }, lengthM: null };
-        const cur = ui.cabType !== 'auto' && M.cableTypeById(p, ui.cabType) && M.cableTypeById(p, ui.cabType).legs === 1 ? ui.cabType : typeSel.value || '';
-        typeSel.innerHTML = devSel.value && portSel.value ? typeOptions(draft, cur) : '<option value="">Auto: by connectors and length</option>';
-        if (!netTouched) netSel.value = networkFor({ device: d.id, port: pt.name }, { device: devSel.value, port: portSel.value }) || '';
+        const ends = endsTo({ device: devSel.value, port: portSel.value });
+        const b = multi ? ends.legs.concat(new Array(Math.max(0, multi.legs - ends.legs.length)).fill(null)) : ends.legs[0];
+        const draft = { id: null, type: null, network: null, a: ends.a, b, lengthM: null };
+        const cur = armed ? armed.id : ui.cabType !== 'auto' && M.cableTypeById(p, ui.cabType) && M.cableTypeById(p, ui.cabType).legs === 1 ? ui.cabType : typeSel.value || '';
+        typeSel.innerHTML = devSel.value && portSel.value ? typeOptions(draft, typeSel.value || cur) : '<option value="">Auto: by connectors and length</option>';
+        if (!netTouched) netSel.value = networkFor(ends.a, ends.legs[0]) || '';
       };
       devSel.addEventListener('change', fillPorts);
       portSel.addEventListener('change', fillTypes);
@@ -3236,7 +3259,10 @@
         if (!target) return ctx.showError('#cab-pc-error', 'Pick a device to connect to.');
         if (!opt || opt.disabled) return ctx.showError('#cab-pc-error', `Every port of ${target.name} is in use: pick another device.`);
         let made = null;
-        const props = { a: { device: d.id, port: pt.name }, b: { device: devSel.value, port: portSel.value }, type: typeSel.value || null, network: netSel.value || null };
+        const ends = endsTo({ device: devSel.value, port: portSel.value });
+        const t = typeSel.value ? M.cableTypeById(p, typeSel.value) : null;
+        const b = t && t.legs > 1 ? ends.legs.concat(new Array(Math.max(0, t.legs - ends.legs.length)).fill(null)) : ends.legs[0];
+        const props = { a: ends.a, b, type: typeSel.value || null, network: netSel.value || null };
         const err = change((p2) => {
           const r = C.connect(p2, props);
           made = r.cable || null;
@@ -3244,6 +3270,7 @@
         });
         if (err) return ctx.showError('#cab-pc-error', err);
         if (netTouched) rememberNetwork(props.network);
+        if (pd) ui.pending = null;
         ui.cabSel = { kind: 'cables', ids: [made.id] };
         const again = showAgain([made]);
         ctx.render();

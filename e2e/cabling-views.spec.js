@@ -261,6 +261,32 @@ test('a breakout cable takes its head where the head plugs in, whichever port is
   expect(await cableAt(page, 'gpu-srv-03', 'ib1')).toBeNull();
 });
 
+test('while connecting, the port’s inspector ends the connection with the cable type armed, to a port it fits', async ({ page }) => {
+  await page.click('#btn-row-next');
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+  await page.click('#btn-zoom-reset');
+  await page.click('.cab-card[data-cab-type="dac-osfp-2x"]');
+  await (await port(page, 'ib-leaf-b02', 'p7')).click();
+  await expect(page.locator('#inspector h3', { hasText: 'Or select the other end here' })).toBeVisible();
+  await expect(page.locator('#cab-pc-type')).toHaveValue('dac-osfp-2x');
+  await expect(page.locator('#cab-pc-net')).toHaveValue('n-ib');
+  // A leg's port: QSFP56, not another leaf's OSFP cage.
+  await expect(page.locator('#cab-pc-port option:checked')).toContainText('QSFP56');
+  const target = { device: await page.locator('#cab-pc-device').inputValue(), port: await page.locator('#cab-pc-port').inputValue() };
+  await page.click('#cab-pc-go');
+  const c = await cableAt(page, 'ib-leaf-b02', 'p7');
+  expect(c).toMatchObject({ type: 'dac-osfp-2x', network: 'n-ib', b: [target, null] });
+  expect((await ui(page)).pending).toBeNull();
+  await expect(page.locator('#armed-hint')).toBeHidden();
+
+  // With Auto too, while connecting; once it stops, the form is the port's Connect to.
+  await page.click('.cab-card[data-cab-type="auto"]');
+  await (await port(page, 'ib-leaf-b02', 'p8')).click();
+  await expect(page.locator('#inspector h3', { hasText: 'Or select the other end here' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#inspector h3', { hasText: 'Connect to' })).toBeVisible();
+});
+
 test('hovering a port shows it and what it connects to', async ({ page }) => {
   await page.click('#btn-zoom-reset');
   const cabled = await port(page, 'cn-004', 'ib0');
