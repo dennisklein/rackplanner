@@ -581,6 +581,36 @@ test('joins says whether a cable can join two ports', () => {
   assert.equal(C.joins(p, end('n1', 'nope'), end('sw1', 'swp1')), false);
 });
 
+test('a new cable takes the network of the cables at the far device, else at the near one', () => {
+  const p = plan();
+  const mgmt = C.addNetwork(p, { name: 'Management' }).id;
+  const bmc = C.addNetwork(p, { name: 'BMC' }).id;
+  const ib = C.addNetwork(p, { name: 'InfiniBand' }).id;
+  link(p, end('n1', 'eth0'), end('sw1', 'swp1'), { network: mgmt });
+  link(p, end('n2', 'eth0'), end('sw1', 'swp2'), { network: mgmt });
+  link(p, end('sn1', 'eth0'), end('sw1', 'swp3'), { network: null });
+  link(p, end('n1', 'bmc'), end('bmc1', 'swp1'), { network: bmc });
+  link(p, end('n1', 'ib0'), end('leaf1', 'p1'), { network: ib });
+  const ctx = C.context(p);
+  // The port group of the far device, its cables without a network left out.
+  assert.equal(C.networkFor(p, end('n3', 'eth0'), end('sw1', 'swp4'), ctx), mgmt);
+  assert.equal(C.networkFor(p, end('n3', 'bmc'), end('bmc1', 'swp2'), ctx), bmc);
+  assert.equal(C.networkFor(p, end('n2', 'ib0'), end('leaf1', 'p2'), ctx), ib);
+  // The far end tells nothing (a node without cables): the near end's group.
+  assert.equal(C.networkFor(p, end('leaf1', 'p2'), end('n3', 'ib0'), ctx), ib);
+  assert.equal(C.networkFor(p, end('leaf1', 'p2'), null, ctx), ib, 'the other end not picked yet');
+  // Another group of the same device tells nothing: SFP+ cages are not the RJ45 ports, nor ib0 eth0.
+  assert.equal(C.networkFor(p, end('sw1', 'swp49'), end('leaf1', 'p3'), ctx), ib);
+  assert.equal(C.networkFor(p, end('sw1', 'swp49'), end('sw3', 'swp49'), ctx), null);
+  assert.equal(C.networkFor(p, end('n2', 'ib0'), end('n3', 'ib0'), ctx), null);
+  // No network when the cables there are split, or there are none.
+  link(p, end('n2', 'bmc'), end('sw1', 'swp5'), { network: bmc });
+  link(p, end('n3', 'bmc'), end('sw1', 'swp6'), { network: bmc });
+  assert.equal(C.networkFor(p, end('sn1', 'bmc'), end('sw1', 'swp7'), C.context(p)), null, '2 of 4 in Management, 2 in BMC');
+  assert.equal(C.networkFor(p, end('n3', 'eth0'), end('sw3', 'swp1')), null, 'n3 has a cable on bmc only');
+  assert.equal(C.networkFor(p, null, end('sw1', 'nope')), null);
+});
+
 test('routes and groups follow the plan', () => {
   const p = M.createExampleProject();
   const route = (label) => C.routeOf(p, p.cables.find((c) => c.label === label));

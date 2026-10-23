@@ -75,7 +75,7 @@ test('the elevation is the default view: Row A from the rear, and from the front
 test('while connecting, the banner goes to the other side, keeping the first port', async ({ page }) => {
   await page.click('#btn-zoom-reset');
   await (await port(page, 'ib-leaf-a01', 'p13')).click();
-  await expect(page.locator('#armed-hint')).toContainText('Click a second port to connect ib-leaf-a01 p13 with Auto, or go to the Front; Esc to cancel');
+  await expect(page.locator('#armed-hint')).toContainText('Click a second port to connect ib-leaf-a01 p13 with Auto in InfiniBand, or go to the Front; Esc to cancel');
   await page.locator('#armed-hint [data-cab-side="front"]').click();
   await expect(page.locator('#cab-sides [data-cab-side="front"]')).toHaveAttribute('aria-pressed', 'true');
   expect((await ui(page)).pending).toMatchObject({ port: 'p13' });
@@ -108,7 +108,76 @@ test('two free ports clicked one after the other are connected with Auto, labele
   expect(await zoomText(page)).toBe('100%');
 });
 
+/** Selects a device in the elevation by its face, near its top edge. */
+async function clickDevice(page, name) {
+  const dev = page.locator(`.scene .dev[data-dev="${await idOf(page, name)}"]`);
+  await dev.scrollIntoViewIfNeeded();
+  const box = await dev.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.45, box.y + 4);
+}
+
+test('a new cable joins the network of the cables where it goes, which the hint and a free port hovered name', async ({ page }) => {
+  await page.click('#btn-zoom-reset');
+  await clickDevice(page, 'cn-012');
+  await page.click('#cab-dev-unplug');
+  await page.click('#confirm-ok');
+  expect(await cableAt(page, 'cn-012', 'ib0')).toBeNull();
+  // InfiniBand in focus: the ports still decide.
+  await page.click('#networks [data-net-focus="n-ib"]');
+  const ib = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-ib'));
+  const mgmt = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-mgmt'));
+  const bmc = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-bmc'));
+
+  // A node's port tells nothing: the hint says what decides.
+  await (await port(page, 'cn-012', 'ib0')).click();
+  await expect(page.locator('#armed-hint')).toContainText('with Auto in the network of the cables at the other device, else in InfiniBand');
+  const free = await port(page, 'ib-leaf-a01', 'p12');
+  await free.scrollIntoViewIfNeeded();
+  await free.hover();
+  await expect(page.locator('#drag-chip')).toHaveText('ib-leaf-a01 p12 · QSFP56 200G · free · joins InfiniBand');
+  await free.click();
+  expect(await cableAt(page, 'cn-012', 'ib0')).toMatchObject({ label: ib, network: 'n-ib' });
+
+  await (await port(page, 'cn-012', 'eth0')).click();
+  await (await port(page, 'sw-mgmt-a01', 'swp12')).click();
+  expect(await cableAt(page, 'cn-012', 'eth0')).toMatchObject({ label: mgmt, network: 'n-mgmt' });
+  // A switch's port tells at once.
+  await (await port(page, 'sw-bmc-a01', 'swp12')).click();
+  await expect(page.locator('#armed-hint')).toContainText('Click a second port to connect sw-bmc-a01 swp12 with Auto in BMC, or go to the Front; Esc to cancel');
+  await (await port(page, 'cn-012', 'bmc')).click();
+  expect(await cableAt(page, 'cn-012', 'bmc')).toMatchObject({ label: bmc, network: 'n-bmc' });
+
+  // A network created is not the one new cables get, till a cable takes it.
+  await page.click('#networks [data-net-focus="n-ib"]');
+  await page.click('#btn-add-network');
+  await page.fill('#network-name', 'Spare');
+  await page.click('#network-submit');
+  await expect(page.locator('#networks .cl-name', { hasText: 'Spare' })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('rackplanner.prefs.v1')).lastNetwork || null)).toBeNull();
+});
+
+test('Connect series and + Cable propose the network of the cables at their ports, till one is picked', async ({ page }) => {
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await page.click('#sc-add');
+  await page.selectOption('#cs-to', await idOf(page, 'sw-bmc-a01'));
+  await expect(page.locator('input[name="cs-net"][value="n-bmc"]')).toBeChecked();
+  await expect(page.locator('#cs-label')).toHaveValue(/^BMC-/);
+  await page.selectOption('#cs-to', await idOf(page, 'sw-mgmt-a01'));
+  await expect(page.locator('input[name="cs-net"][value="n-mgmt"]')).toBeChecked();
+  // Picked by hand, it stays.
+  await page.locator('#cs-nets label', { hasText: 'Storage 25G' }).click();
+  await page.selectOption('#cs-to', await idOf(page, 'sw-bmc-a01'));
+  await expect(page.locator('input[name="cs-net"][value="n-stor"]')).toBeChecked();
+  await page.keyboard.press('Escape');
+
+  // A leaf's Connect series: InfiniBand.
+  await page.click('#cab-toggle [data-cab-view="ports"]');
+  await page.locator('.pm-card', { hasText: 'ib-leaf-a01' }).locator('[data-pm-series]').click();
+  await expect(page.locator('input[name="cs-net"][value="n-ib"]')).toBeChecked();
+});
+
 test('dragging from a free port to another connects them, with a line to the pointer', async ({ page }) => {
+  const next = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-bmc'));
   const from = await (await port(page, 'sw-mgmt-a01', 'swp13')).boundingBox();
   const to = await (await port(page, 'sw-bmc-a01', 'swp21')).boundingBox();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
@@ -118,8 +187,9 @@ test('dragging from a free port to another connects them, with a line to the poi
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
   await page.mouse.up();
   await expect(page.locator('.cab-band')).toBeHidden();
+  // It joins the network of the cables at the port it goes to.
   const c = await cableAt(page, 'sw-mgmt-a01', 'swp13');
-  expect(c).toMatchObject({ label: 'C-0001', network: null, type: null, typeName: 'Cat6a patch cord', b: { port: 'swp21' } });
+  expect(c).toMatchObject({ label: next, network: 'n-bmc', type: null, typeName: 'Cat6a patch cord', b: { port: 'swp21' } });
   expect((await ui(page)).pending).toBeNull();
   // The drawing kept its place: no pan while dragging from a port.
   await expect(page.locator(`.scene .cable.is-selected[data-cable="${c.id}"]`)).toHaveCount(1);
@@ -975,7 +1045,7 @@ test.describe('on a touch screen', () => {
     const head = await port(page, 'ib-leaf-b02', 'p7');
     await head.scrollIntoViewIfNeeded();
     await head.tap();
-    await expect(hint).toHaveText(/^Tap the first of 2 legs to connect ib-leaf-b02 p7 with OSFP to 2 × QSFP56 DAC$/, { useInnerText: true });
+    await expect(hint).toHaveText(/^Tap the first of 2 legs to connect ib-leaf-b02 p7 with OSFP to 2 × QSFP56 DAC in InfiniBand$/, { useInnerText: true });
     const leg = await port(page, 'core-sw-01', 'p11');
     await leg.scrollIntoViewIfNeeded();
     await leg.tap();

@@ -356,11 +356,16 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   inspector.
 - **Networks** color cables the way clusters color devices, and label them:
   new cables continue the network's series (`IB-0001`, `IB-0002`, …), and
-  cables without a network continue `C-0001`. Click a network in the left
-  panel to show only its cables; new cables join it (otherwise they get the
-  network used last). In the elevation, the eye next to a network hides its
-  cables and fades their ports, as for the layers of an image editor; click
-  it again to show them. Selected cables and search matches are drawn all
+  cables without a network continue `C-0001`. A new cable joins the network
+  that most cables on the same group of ports (`swp1–48`, say) are in, at
+  the port it goes to, else at the port it comes from: a cable to a leaf
+  joins the leaf's InfiniBand, one to the BMC switch the BMC network. When
+  those cables don't tell, it joins the network in focus, else the one
+  picked last. The connecting hint names the network, and so does a free
+  port hovered while connecting; Connect series and + Cable propose it too.
+  Click a network in the left panel to show only its cables. In the
+  elevation, the eye next to a network hides its cables and fades their
+  ports, as for the layers of an image editor; click it again to show them. Selected cables and search matches are drawn all
   the same; **Show in elevation** says when a cable's network is hidden.
   Clicking a hidden network to show only its cables, or connecting a cable
   in it, shows it again. As for clusters, a line under the list counts the

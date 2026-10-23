@@ -380,8 +380,12 @@ test('+ Cable connects two ports; the type and label follow from the ports and t
   expect(c).toMatchObject({ network: 'n-mgmt', type: null, a: { device: await idOf(page, 'sw-mgmt-a01'), port: 'swp13' }, b: { device: await idOf(page, 'sw-mgmt-a02'), port: 'swp12' } });
   await expect(page.locator('#cab-label')).toHaveValue(label);
   await expect(row(page, label)).toHaveClass(/is-selected/);
-  // The network used last is the next one's.
+  // The network picked last is the next one's where the ports tell none (SFP+ cages without cables).
   await page.click('#sc-add');
+  await page.selectOption('#cs-from', await idOf(page, 'sw-mgmt-a03'));
+  await page.selectOption('#cs-from-port', 'swp49');
+  await page.selectOption('#cs-to', await idOf(page, 'sw-bmc-a03'));
+  await page.selectOption('#cs-to-port', 'swp49');
   await expect(page.locator('#cs-nets input[value="n-mgmt"]')).toBeChecked();
   // Ports in use can't be picked; they name their cable.
   await page.selectOption('#cs-to', await idOf(page, 'sw-mgmt-a02'));

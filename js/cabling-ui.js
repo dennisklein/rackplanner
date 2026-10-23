@@ -1157,7 +1157,7 @@
       const pd = ui.pending;
       if (pd.fill) return fillLeg(end);
       const t = armedType();
-      const network = defaultNetwork();
+      const network = networkFor(pd, pd.legs[0] || end);
       if (t && t.legs > 1) {
         const legs = pd.legs.concat([{ device: end.device, port: end.port }]);
         const b = legs.concat(new Array(t.legs - legs.length).fill(null));
@@ -1185,7 +1185,7 @@
         a: { device: pd.device, port: pd.port },
         b: breakout ? legs.concat(new Array(t.legs - legs.length).fill(null)) : legs[0],
         type: t ? t.id : null,
-        network: defaultNetwork(),
+        network: networkFor(pd, legs[0]),
       };
       let made = null;
       const err = change(
@@ -1246,6 +1246,12 @@
       if (!pt) return null;
       const hit = cableIndex().get(key);
       const head = `${d.name} ${pt.name} · ${portSpec(pt)}`;
+      // While a cable is being made, a free port says the network it gets there.
+      const pd = ui.pending;
+      if (!hit && pd && !pd.fill && keyOf(pd) !== key && !pd.legs.some((x) => keyOf(x) === key)) {
+        const net = networkFor(pd, pd.legs[0] || end);
+        return { text: `${head} · free · ${net ? `joins ${netName(net)}` : 'no network'}`, color: null };
+      }
       if (!hit) return { text: `${head} · free`, color: null };
       const far = hit.role === 'a' ? M.legsOf(hit.cable).filter(Boolean) : [hit.cable.a];
       return { text: `${head} → ${far.map(endText).join(', ') || '–'}`, color: netColor(hit.cable.network) };
@@ -1339,6 +1345,7 @@
         const with_ = `<strong>${esc(t ? t.name : 'Auto')}</strong>`;
         // A touch screen has no keys: the X cancels, and a button finishes a breakout cable.
         const keys = (text) => `<span class="hint-pointer">${text}</span>`;
+        const inNet = pd.fill ? '' : pendingNetwork(pd);
         let msg;
         if (pd.fill) {
           const c = cableById(pd.fill.cable);
@@ -1346,14 +1353,14 @@
         } else if (t && t.legs > 1) {
           const n = pd.legs.length;
           msg = n
-            ? `${CLICK} leg ${n + 1} of ${t.legs} of ${with_} from ${from}${keys(`; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`)}` +
+            ? `${CLICK} leg ${n + 1} of ${t.legs} of ${with_}${inNet} from ${from}${keys(`; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`)}` +
               `<span class="hint-touch">, or <button type="button" class="hint-link" data-cab-finish>finish with ${n}</button></span>`
-            : `${CLICK} the first of ${t.legs} legs to connect ${from} with ${with_}${keys(', <kbd>Esc</kbd> to cancel')}`;
+            : `${CLICK} the first of ${t.legs} legs to connect ${from} with ${with_}${inNet}${keys(', <kbd>Esc</kbd> to cancel')}`;
         } else {
           // New switches face the rear, but a plan may have their ports on the other side.
           const other = prefs.cabSide === 'front' ? 'rear' : 'front';
           const go = ui.cabView === 'elevation' ? `, or go to the <button type="button" class="hint-link" data-cab-side="${other}">${other === 'front' ? 'Front' : 'Rear'}</button>` : '';
-          msg = `${CLICK} a second port to connect ${from} with ${with_}${go}${keys(`${go ? ';' : ','} <kbd>Esc</kbd> to cancel`)}`;
+          msg = `${CLICK} a second port to connect ${from} with ${with_}${inNet}${go}${keys(`${go ? ';' : ','} <kbd>Esc</kbd> to cancel`)}`;
         }
         el.armedHint.innerHTML = `<span>${msg}</span><button type="button" data-cab-cancel aria-label="Stop connecting" title="Stop connecting">${icon('x', 'ic-sm')}</button>`;
       }
@@ -1365,6 +1372,17 @@
       const side = e.target.closest('[data-cab-side]');
       if (side) setSide(side.dataset.cabSide);
     });
+    /**
+     * The network of the cable being made, as the connecting hint names it:
+     * " in InfiniBand" when its ports tell it (the first port, and the legs
+     * set), else what the port clicked next decides and what it is without.
+     */
+    function pendingNetwork(pd) {
+      const near = C.networkFor(project(), pd, pd.legs[0] || null, fresh().ctx);
+      if (near) return ` in <strong>${esc(netName(near))}</strong>`;
+      const f = defaultNetwork();
+      return ` in the network of the cables at the other device, ${f ? `else in <strong>${esc(netName(f))}</strong>` : 'if they have one'}`;
+    }
 
     // ------------------------------------------------------------ schedule
 
@@ -2288,7 +2306,16 @@
       if (first) first.focus();
     });
 
-    /** The network new cables get: the one in focus, else the one used last. */
+    /**
+     * The network a new cable from end `a` to `b` gets: the one of the
+     * cables at their devices (C.networkFor: b's first), else the one in
+     * focus, else the one used last. Without `b`, the one that `a` alone
+     * tells, else that.
+     */
+    function networkFor(a, b) {
+      return C.networkFor(project(), a, b || null, fresh().ctx) || defaultNetwork();
+    }
+    /** The network new cables get when their ports tell none: the one in focus, else the one used last. */
     function defaultNetwork() {
       if (ui.focusNetwork && ui.focusNetwork !== NONE && netOf(ui.focusNetwork)) return ui.focusNetwork;
       if (ui.focusNetwork === NONE) return null;
@@ -3134,13 +3161,12 @@
           `<div class="insp-actions is-pinned">${back}</div>`;
         return;
       }
-      const net = defaultNetwork();
       el.inspector.innerHTML =
         head +
         `<section class="insp-sec"><h3>Connect to</h3><div class="field-grid">` +
         `<div class="field span2"><label for="cab-pc-device">Device</label><select id="cab-pc-device">${targets}</select></div>` +
         `<div class="field span2"><label for="cab-pc-port">Port</label><select id="cab-pc-port"></select></div>` +
-        `<div class="field span2"><label for="cab-pc-net">Network</label><select id="cab-pc-net"><option value="">None</option>${p.networks.map((n) => `<option value="${esc(n.id)}"${n.id === net ? ' selected' : ''}>${esc(n.name)}</option>`).join('')}</select></div>` +
+        `<div class="field span2"><label for="cab-pc-net">Network</label><select id="cab-pc-net"><option value="">None</option>${p.networks.map((n) => `<option value="${esc(n.id)}">${esc(n.name)}</option>`).join('')}</select></div>` +
         `<div class="field span2"><label for="cab-pc-type">Cable type</label><select id="cab-pc-type"></select></div>` +
         `</div><p class="form-error" id="cab-pc-error" role="alert" hidden></p>` +
         `<button type="button" class="btn primary" id="cab-pc-go">${icon('cable')}Connect</button></section>` +
@@ -3148,6 +3174,9 @@
       const devSel = $('#cab-pc-device');
       const portSel = $('#cab-pc-port');
       const typeSel = $('#cab-pc-type');
+      const netSel = $('#cab-pc-net');
+      // The network follows the other end until one is picked.
+      let netTouched = false;
       // A device to start from: a switch in the same row with a free port that takes this plug.
       const guess = guessTarget([d.id], pt);
       if (guess) devSel.value = guess.id;
@@ -3162,9 +3191,11 @@
         const draft = { id: null, type: null, network: null, a: { device: d.id, port: pt.name }, b: { device: devSel.value, port: portSel.value }, lengthM: null };
         const cur = ui.cabType !== 'auto' && M.cableTypeById(p, ui.cabType) && M.cableTypeById(p, ui.cabType).legs === 1 ? ui.cabType : typeSel.value || '';
         typeSel.innerHTML = devSel.value && portSel.value ? typeOptions(draft, cur) : '<option value="">Auto: by connectors and length</option>';
+        if (!netTouched) netSel.value = networkFor({ device: d.id, port: pt.name }, { device: devSel.value, port: portSel.value }) || '';
       };
       devSel.addEventListener('change', fillPorts);
       portSel.addEventListener('change', fillTypes);
+      netSel.addEventListener('change', () => (netTouched = true));
       fillPorts();
       $('#cab-pc-go').addEventListener('click', () => {
         const target = deviceById(devSel.value);
@@ -3172,14 +3203,14 @@
         if (!target) return ctx.showError('#cab-pc-error', 'Pick a device to connect to.');
         if (!opt || opt.disabled) return ctx.showError('#cab-pc-error', `Every port of ${target.name} is in use: pick another device.`);
         let made = null;
-        const props = { a: { device: d.id, port: pt.name }, b: { device: devSel.value, port: portSel.value }, type: typeSel.value || null, network: $('#cab-pc-net').value || null };
+        const props = { a: { device: d.id, port: pt.name }, b: { device: devSel.value, port: portSel.value }, type: typeSel.value || null, network: netSel.value || null };
         const err = change((p2) => {
           const r = C.connect(p2, props);
           made = r.cable || null;
           return r.error;
         });
         if (err) return ctx.showError('#cab-pc-error', err);
-        rememberNetwork(props.network);
+        if (netTouched) rememberNetwork(props.network);
         ui.cabSel = { kind: 'cables', ids: [made.id] };
         const again = showAgain([made]);
         ctx.render();
@@ -3283,7 +3314,7 @@
 
     // ------------------------------------------------------------ connect dialog
 
-    const cs = { series: true, list: [], labelTouched: false, items: [], fromPortTouched: false };
+    const cs = { series: true, list: [], labelTouched: false, netTouched: false, items: [], fromPortTouched: false };
     const dlg = $('#dlg-connect');
 
     const usable = (d) => d.type !== M.RESERVED.id && portsOf(d).size > 0;
@@ -3361,6 +3392,7 @@
       const p = project();
       cs.series = !!o.series;
       cs.labelTouched = false;
+      cs.netTouched = false;
       const preset = (o.from || []).filter((id) => deviceById(id) && usable(deviceById(id)));
       const firstDev = preset.length ? deviceById(preset[0]) : null;
       const rowId = firstDev ? fresh().ctx.racks.get(firstDev.loc.rack).row.id : ui.rowId;
@@ -3414,7 +3446,7 @@
       fillToPorts(o.toPort);
       $('#cs-step').value = '1';
       $('#cs-skip').checked = true;
-      const net = defaultNetwork();
+      const net = connectNetwork();
       $('#cs-nets').innerHTML =
         `<label class="chip"><input type="radio" name="cs-net" value=""${net ? '' : ' checked'}><span><i class="sw" style="--c:var(--unassigned)"></i>None</span></label>` +
         p.networks.map((n) => `<label class="chip"><input type="radio" name="cs-net" value="${esc(n.id)}"${n.id === net ? ' checked' : ''}><span><i class="sw" style="--c:${n.color}"></i>${esc(n.name)}</span></label>`).join('');
@@ -3422,6 +3454,12 @@
       ctx.openDialog(dlg);
       updateConnect();
       (cs.series ? from : $('#cs-to')).focus();
+    }
+
+    /** The network the Connect dialog proposes: the one of the cables at the To device or at the (first) From device, as for a cable clicked (networkFor). */
+    function connectNetwork() {
+      const from = cs.series ? rangeIds()[0] : $('#cs-from').value;
+      return networkFor(from ? { device: from, port: $('#cs-from-port').value } : null, { device: $('#cs-to').value, port: $('#cs-to-port').value });
     }
 
     /** The ports of the From device; `preset` picks one, else the first free one (of the family of `like`, when given). */
@@ -3583,6 +3621,12 @@
       }
       if (t.id === 'cs-from' || t.id === 'cs-from-port' || t.id === 'cs-type') fillToPorts($('#cs-to-port').value, true);
       if (t.id === 'cs-to') fillToPorts();
+      // The network follows the ends until one is picked.
+      if (t.name === 'cs-net') cs.netTouched = true;
+      else if (!cs.netTouched) {
+        const r = $(`input[name="cs-net"][value="${CSS.escape(connectNetwork() || '')}"]`, dlg);
+        if (r) r.checked = true;
+      }
       updateConnect();
     });
     dlg.addEventListener('input', (e) => {
@@ -3603,7 +3647,7 @@
       dlg.dataset.returnFocus = added.length === 1 ? '#cab-label' : '#multi-label';
       dlg.close('ok');
       if (!added.length) return toast('Nothing was connected', { warn: true });
-      rememberNetwork(items[0].network);
+      if (cs.netTouched) rememberNetwork(items[0].network);
       const again = showAgain(added);
       selectCables(added.map((c) => c.id), { reveal: true });
       const names = added.length === 1 ? added[0].label : `${plural(added.length, 'cable')}, ${added[0].label} … ${added[added.length - 1].label}`;
@@ -3685,7 +3729,8 @@
         });
         if (err) return ctx.showError('#network-error', err);
         if (!made) return ctx.showError('#network-error', `A plan holds up to ${M.LIMITS.networks} networks.`);
-        rememberNetwork(made.id);
+        // A network is used once a cable takes it: created alone, it is not the one new cables get.
+        if (onCreate) rememberNetwork(made.id);
         if (netDlg.focusFor) {
           $('#dlg-network').dataset.opener = '';
           $('#dlg-network').dataset.returnFocus = netDlg.focusFor(made.id);

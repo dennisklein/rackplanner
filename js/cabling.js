@@ -349,6 +349,41 @@
   }
 
   /**
+   * The network of a new cable from port end `a` to `b`, from the cables
+   * there already: the one that most of the cables (more than half) on the
+   * other ports of b's port group are in, else of a's group. A switch's
+   * group of ports tells, a node's eth0 and bmc (groups of their own) do
+   * not. Cables without a network don't count. `b` may be null (a cable
+   * whose other end is not picked yet). Null when none is found.
+   */
+  function networkFor(project, a, b, ctx) {
+    const c = ctx || context(project);
+    const ends = [b, a].filter((e) => endPort(c, e));
+    if (!ends.length) return null;
+    const devices = new Set(ends.map((e) => e.device));
+    const at = new Map(); // device id → [{ port, network }] of its cables with a network
+    for (const cable of project.cables) {
+      if (!c.networks.has(cable.network)) continue;
+      for (const x of M.cableEnds(cable)) {
+        if (!devices.has(x.end.device)) continue;
+        if (!at.has(x.end.device)) at.set(x.end.device, []);
+        at.get(x.end.device).push({ port: x.end.port, network: cable.network });
+      }
+    }
+    const most = (list) => {
+      const n = new Map();
+      for (const x of list) n.set(x.network, (n.get(x.network) || 0) + 1);
+      return [...n].find(([, k]) => k * 2 > list.length);
+    };
+    for (const e of ends) {
+      const group = endPort(c, e).group;
+      const found = most((at.get(e.device) || []).filter((x) => x.port !== e.port && (endPort(c, { device: e.device, port: x.port }) || {}).group === group));
+      if (found) return found[0];
+    }
+    return null;
+  }
+
+  /**
    * connect for many cables in a row, reading the plan's ports and labels
    * once: { check(props), add(props) }. `check` says why connect would
    * refuse a cable (or null) and `add` adds it like connect. Labels it
@@ -1213,6 +1248,7 @@
     deleteNetwork,
     checkConnect,
     connect,
+    networkFor,
     connector,
     updateCable,
     updateCables,
