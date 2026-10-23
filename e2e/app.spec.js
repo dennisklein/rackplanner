@@ -190,6 +190,36 @@ test('navigates floors and rows and finds devices, racks and floors by search', 
   await expect(page.locator('#insp-floor-name')).toHaveValue('First floor');
 });
 
+test('the address names the row, the floor map and the workspace; Back and Forward go through them', async ({ page }) => {
+  const hash = () => new URL(page.url()).hash;
+  await expect.poll(hash).toBe('#row=row1');
+  await page.keyboard.press(']');
+  await expect.poll(hash).toBe('#row=row2');
+  await page.keyboard.press('m');
+  await expect.poll(hash).toBe('#row=row2&view=map');
+  await page.keyboard.press('c');
+  await expect.poll(hash).toBe('#row=row2&view=map&ws=cabling');
+
+  await page.goBack();
+  await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#floormap')).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('#floormap')).toBeHidden();
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+  await page.goBack();
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  await page.goForward();
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+
+  // An address opens there; a row the plan does not have opens the row it remembers.
+  await page.goto('/index.html#row=row3&ws=cabling');
+  await page.reload();
+  await expect(page.locator('.ftab[aria-pressed="true"]')).toHaveText('First floor');
+  await expect(page.locator('.ws-switch [data-workspace="cabling"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/index.html#row=nowhere');
+  await expect.poll(hash).toBe('#row=row3&ws=cabling');
+});
+
 test('the floor map shows every row and opens a clicked rack', async ({ page }) => {
   await page.keyboard.press('m');
   await expect(page.locator('#floormap')).toBeVisible();
@@ -723,7 +753,8 @@ test('a share link opens the plan in another browser', async ({ page, browser })
   await page2.goto(url);
   await expect(page2.locator('.toast').first()).toContainText('Opened the shared plan Hall 2 expansion');
   await expect(page2.locator('.scene .dev[aria-label^="shared-node,"]')).toBeVisible();
-  expect(new URL(page2.url()).hash).toBe('');
+  // The address names the row shown now, not the shared plan.
+  await expect.poll(() => new URL(page2.url()).hash).toBe('#row=row1');
   // The shared plan comes instead of the example.
   await page2.click('#btn-plans');
   await expect(page2.locator('.plan-item')).toHaveCount(1);

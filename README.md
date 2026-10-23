@@ -176,6 +176,9 @@ its fans or power supplies, and its front ports are at the rack's rear.
   made that change; the tooltips of the two buttons name the step. The
   **Undo** in a message at the bottom undoes the step that the message
   names. It goes away once you make a newer step.
+- **Back and Forward** in the browser go through the rows, the floor map and
+  the workspaces you showed. The address names them, as in
+  `index.html#row=row3&ws=cabling`, so a bookmark opens the plan there.
 
 <p>
   <img src="docs/screenshots/floor-map.png" width="49%" alt="The floor map of the ground floor: two rows of three racks, each drawn small with its devices and a power meter, with totals per row.">

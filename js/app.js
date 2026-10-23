@@ -136,6 +136,8 @@
   let savedRev = 0; // the plan's revision in the library as last loaded or saved (see followOtherTab)
   let standIn = false; // the open plan only stands in for a shared one that is being read (see bootPlan)
   const history = { past: [], future: [], key: null, at: 0, chars: 0 };
+  // The next change of the address replaces the entry instead of adding one; none is written while one is followed (see writeAddress).
+  const address = { replace: true, following: false };
   const ui = {
     workspace: prefs.workspace, // 'racks' | 'cabling'; the Cabling workspace keeps its own state (js/cabling-ui.js)
     selection: null, // { kind: 'devices', ids } | { kind: 'rack' | 'row' | 'floor', id }
@@ -188,6 +190,8 @@
     cab.reset();
     // Undo buttons in toasts refer to the previous plan.
     el.toasts.textContent = '';
+    // Back does not go to a row of the plan before.
+    address.replace = true;
     const remembered = prefs.rows[id];
     ui.rowId = remembered && M.rowById(project, remembered) ? remembered : M.allRows(project)[0].row.id;
     ui.clusterView = M.viewOf(project, prefs.views[id]).id;
@@ -576,6 +580,7 @@
     if (o.inspector !== false) renderInspector();
     renderChrome();
     if (ui.searchOpen) renderSearchResults();
+    writeAddress();
   }
 
   function pruneUiState() {
@@ -4625,6 +4630,67 @@
   }
   window.addEventListener('hashchange', openSharedFromHash);
 
+  // The address --------------------------------------------------------
+
+  /**
+   * The address names the row shown, the floor map and the workspace, as
+   * in #row=row3&view=map&ws=cabling: each change adds a step that Back
+   * and Forward go through, and an address with them opens there. A share
+   * link (#plan=…) in the address is read first.
+   */
+  function addressOf() {
+    const q = new URLSearchParams({ row: ui.rowId });
+    if (ui.view === 'map') q.set('view', 'map');
+    if (ui.workspace === 'cabling') q.set('ws', 'cabling');
+    return `#${q}`;
+  }
+  function writeAddress() {
+    if (address.following || location.hash.startsWith(SHARE_PREFIX)) return;
+    const hash = addressOf();
+    if (hash === location.hash) return;
+    const url = location.pathname + location.search + hash;
+    try {
+      if (address.replace || !location.hash) window.history.replaceState(null, '', url);
+      else window.history.pushState(null, '', url);
+    } catch (e) {
+      /* some browsers refuse many changes in a short time; the next one catches up */
+    }
+    address.replace = false;
+  }
+  /** What the address asks for: { rowId, view, workspace }, or null. */
+  function readAddress() {
+    const hash = location.hash;
+    if (hash.startsWith(SHARE_PREFIX)) return null;
+    const q = new URLSearchParams(hash.slice(1));
+    if (!q.get('row')) return null;
+    return { rowId: q.get('row'), view: q.get('view') === 'map' ? 'map' : 'sheet', workspace: q.get('ws') === 'cabling' ? 'cabling' : 'racks' };
+  }
+  /** Before the first drawing: opens where the address says, in a row the plan has. */
+  function takeAddress() {
+    const a = readAddress();
+    if (!a || !M.rowById(project, a.rowId)) return;
+    ui.rowId = a.rowId;
+    ui.view = a.view;
+    ui.workspace = a.workspace;
+  }
+  /** After Back or Forward: goes where the address says. One with a row the plan does not have (of another plan) is put right. */
+  function followAddress() {
+    const a = readAddress();
+    if (a && M.rowById(project, a.rowId)) {
+      address.following = true;
+      try {
+        setWorkspace(a.workspace);
+        setView(a.view);
+        setRow(a.rowId);
+      } finally {
+        address.following = false;
+      }
+    }
+    address.replace = true;
+    writeAddress();
+  }
+  window.addEventListener('popstate', followAddress);
+
   // Printing -----------------------------------------------------------
 
   function openPrint() {
@@ -5002,6 +5068,7 @@
   applyTheme();
   ui.theme = detectTheme();
   bootPlan();
+  takeAddress();
   render();
   // Opened in Cabling, its drawing fits the stage; the Racks sheet keeps its zoom for later.
   if (ui.workspace === 'cabling') {
