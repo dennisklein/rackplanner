@@ -121,6 +121,10 @@ its fans or power supplies, and its front ports are at the rack's rear.
   rack in the plan, mount it front to front or back to front, and fill in
   its serial number, asset tag, IP address, owner and notes. Power and
   weight come from its type unless you enter its own values.
+- **Unique names**: a name that another device has already is flagged where
+  you type it (placement dialog, device name, rename in series), with a
+  button for the next free series (`Use cn-021 … cn-023`). Placing or
+  renaming devices with names that are taken asks first.
 - **Select several**: <kbd>Shift</kbd>-click devices, <kbd>Shift</kbd>-drag
   across the empty sheet, press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole row,
   or use the select buttons on a rack, row or cluster. Then move them

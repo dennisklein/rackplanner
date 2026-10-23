@@ -86,6 +86,51 @@ test('the place preview shows the blocks devices split into, and ghosts them aro
   await expect(page.locator('#ghost-layer g[transform]')).toHaveCount(0);
 });
 
+test('names other devices have are flagged, with a free series to use instead', async ({ page }) => {
+  await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 32 }));
+  await page.mouse.up();
+  await page.fill('#place-name', 'cn-001');
+  await page.fill('#place-qty', '3');
+  const note = page.locator('#place-dup');
+  await expect(note).toHaveText('Other devices are named cn-001 … cn-003. Use cn-013 … cn-015');
+  // Placing them asks first.
+  await page.click('#place-submit');
+  await expect(page.locator('#dlg-confirm')).toBeVisible();
+  await expect(page.locator('#confirm-title')).toHaveText('Use cn-001 … cn-003 twice?');
+  await page.click('#dlg-confirm button[value="cancel"]');
+  await expect(page.locator('#dlg-place')).toBeVisible();
+  expect(await planDevices(page)).toBe(65);
+  await note.locator('button').click();
+  await expect(page.locator('#place-name')).toHaveValue('cn-013');
+  await expect(note).toBeHidden();
+  await page.click('#place-submit');
+  await expect(page.locator('#dlg-place')).toBeHidden();
+  expect(await planDevices(page)).toBe(68);
+
+  // Rename in series counts the devices renamed as free, and its toast can undo.
+  await device(page, 'cn-009').click();
+  await device(page, 'cn-010').click({ modifiers: ['Shift'] });
+  await page.fill('#multi-rename', 'cn-001');
+  await expect(page.locator('#multi-rename-dup')).toHaveText('Other devices are named cn-001, cn-002. Use cn-016, cn-017');
+  await page.fill('#multi-rename', 'cn-009');
+  await expect(page.locator('#multi-rename-dup')).toBeHidden();
+  await page.fill('#multi-rename', 'cn-001');
+  await page.click('#multi-rename-go');
+  await page.click('#confirm-ok');
+  const toast = page.locator('.toast').last();
+  await expect(toast).toContainText('Renamed cn-001 … cn-002');
+  await toast.locator('button', { hasText: 'Undo' }).click();
+  await expect(device(page, 'cn-009')).toHaveCount(1);
+
+  // The inspector flags a taken name as it is typed.
+  await device(page, 'cn-009').click();
+  await page.fill('#insp-name', 'cn-002');
+  await expect(page.locator('#insp-name-dup')).toHaveText('Another device is named cn-002. Use cn-016');
+  await page.locator('#insp-name-dup button').click();
+  await expect(page.locator('#insp-name')).toHaveValue('cn-016');
+  await expect(page.locator('#insp-name-dup')).toBeHidden();
+});
+
 test('spreads new devices evenly across the racks of a row', async ({ page }) => {
   await dragPart(page, 'compute-node', await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 30 }));
   await page.mouse.up();

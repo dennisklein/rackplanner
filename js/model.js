@@ -1839,9 +1839,11 @@
    * Next name in the series `seed` belongs to: one past the highest number
    * already used with the same prefix and suffix, leaving room for `count`
    * consecutive names. With `inclusive`, `seed` itself may be returned.
+   * The names of devices in `ignore` (ids) count as free.
    */
-  function nextInSeries(project, seed, count, inclusive) {
-    const used = namesOf(project.devices);
+  function nextInSeries(project, seed, count, inclusive, ignore) {
+    const skip = new Set([].concat(ignore || []));
+    const used = namesOf(project.devices.filter((d) => !skip.has(d.id)));
     const s = seriesOf(seed);
     let max = inclusive ? s.num - 1 : s.num;
     for (const name of used) {
@@ -1947,6 +1949,13 @@
       groups: ref ? Object.assign({}, ref.groups) : {},
       from: ref ? ref.name : null,
     };
+  }
+
+  /** The names in `names` that devices other than `ignore` (ids) have already, each once. */
+  function takenNames(project, names, ignore) {
+    const skip = new Set([].concat(ignore || []));
+    const used = namesOf(project.devices.filter((d) => !skip.has(d.id)));
+    return [...new Set(names.filter((n) => used.has(n)))];
   }
 
   function suggestName(project, typeId, count) {
@@ -2693,6 +2702,7 @@
     parseSerial,
     nameSequence,
     nextInSeries,
+    takenNames,
     suggestPlacement,
     suggestName,
     nameInRack,

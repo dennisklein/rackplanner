@@ -1419,6 +1419,7 @@
       `<div class="kicker"><span class="sw" style="--c:${cluster ? cluster.color : 'var(--unassigned)'}"></span>${esc(type.label)} · ${hU}U</div>` +
       `<label for="insp-name" class="sr-only">Device name</label>` +
       `<input id="insp-name" class="name-input" type="text" value="${esc(d.name)}" spellcheck="false" autocomplete="off" maxlength="80">` +
+      `<p class="warn-note name-clash" id="insp-name-dup" role="status" hidden></p>` +
       `<div class="insp-where">${esc(M.formatDeviceLoc(project, d))}</div>` +
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
       `</div>` +
@@ -1449,6 +1450,18 @@
 
     const id = d.id;
     bindText($('#insp-name'), 'name:' + id, (p, v) => (M.deviceById(p, id).name = v), () => M.suggestName(project, d.type));
+    const nameDup = $('#insp-name-dup');
+    const noteName = () => {
+      const v = $('#insp-name').value.trim();
+      nameDup.innerHTML = v ? clashNote([v], [id], 'insp-name-use') : '';
+      nameDup.hidden = !nameDup.innerHTML;
+    };
+    noteName();
+    $('#insp-name').addEventListener('input', noteName);
+    nameDup.addEventListener('click', (e) => {
+      const b = e.target.closest('#insp-name-use');
+      if (b) commit((p) => void (M.deviceById(p, id).name = b.dataset.name), { label: `Rename ${d.name}` });
+    });
     const view = ui.clusterView;
     $$('input[name="insp-cluster"]', el.inspector).forEach((r) =>
       r.addEventListener('change', () => {
@@ -1542,7 +1555,8 @@
       (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label') : '') +
       `<div class="field-grid">` +
       `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="120"></div>` +
-      `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div></div>` +
+      `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div>` +
+      `<p class="warn-note name-clash" id="multi-rename-dup" role="status" hidden></p></div>` +
       `</div></section>` +
       `<section class="insp-sec"><h3>Devices</h3><ol class="contents">${rows}</ol></section>` +
       `<div class="insp-actions is-pinned">` +
@@ -1569,12 +1583,28 @@
       const v = e.target.value.trim();
       commit((p) => void ids.forEach((id) => (M.deviceById(p, id).owner = v)), { label: `Set the owner of ${plural(ids.length, 'device')}` });
     });
-    $('#multi-rename-go').addEventListener('click', () => {
+    const renameDup = $('#multi-rename-dup');
+    const noteRename = () => {
+      const first = $('#multi-rename').value.trim();
+      renameDup.innerHTML = first ? clashNote(M.nameSequence(first, sorted.length), ids, 'multi-rename-use') : '';
+      renameDup.hidden = !renameDup.innerHTML;
+    };
+    $('#multi-rename').addEventListener('input', noteRename);
+    renameDup.addEventListener('click', (e) => {
+      const b = e.target.closest('#multi-rename-use');
+      if (!b) return;
+      $('#multi-rename').value = b.dataset.name;
+      noteRename();
+      $('#multi-rename').focus();
+    });
+    $('#multi-rename-go').addEventListener('click', async () => {
       const first = $('#multi-rename').value.trim();
       if (!first) return;
       const names = M.nameSequence(first, sorted.length);
+      const taken = M.takenNames(project, names, ids);
+      if (taken.length && !(await confirmTaken(taken, 'Rename anyway'))) return;
       commit((p) => void sorted.forEach((d, i) => (M.deviceById(p, d.id).name = names[i])));
-      toast(`Renamed ${names[0]} … ${names[names.length - 1]}`);
+      toast(`Renamed ${names[0]} … ${names[names.length - 1]}`, { action: 'Undo', onAction: undo });
     });
     $$('[data-group]', el.inspector).forEach((b) =>
       b.addEventListener('click', () => {
@@ -3045,6 +3075,7 @@
       line.hidden = check.ok;
       submit.textContent = 'Place';
       submit.disabled = !place.valid;
+      notePlaceClash();
       drawPlaceGhosts();
       return;
     }
@@ -3100,11 +3131,44 @@
     line.hidden = !line.textContent;
     submit.textContent = qty > 1 ? `Place ${qty}` : 'Place';
     submit.disabled = !place.valid;
+    notePlaceClash();
     drawPlaceGhosts();
   }
 
   /** "a", "a, b" or "a … z": names in a short line. */
   const nameRange = (names) => (names.length > 2 ? `${names[0]} … ${names[names.length - 1]}` : names.join(', '));
+
+  /**
+   * A note for when other devices than `ignore` (ids) already have the
+   * names `names`: it names them and has a button (id `buttonId`, its
+   * data-name the first name) to use the next free series instead. ''
+   * when the names are free.
+   */
+  function clashNote(names, ignore, buttonId) {
+    const taken = M.takenNames(project, names.filter(Boolean), ignore);
+    if (!taken.length) return '';
+    const free = M.nameSequence(M.nextInSeries(project, names[0], names.length, false, ignore), names.length);
+    return (
+      `<span>${taken.length > 1 ? 'Other devices are' : 'Another device is'} named ${esc(nameRange(taken))}.</span> ` +
+      `<button type="button" class="btn sm" id="${buttonId}" data-name="${esc(free[0])}">Use ${esc(nameRange(free))}</button>`
+    );
+  }
+  /** Asks before giving devices the names `taken` that others have; `ok` names the button that goes ahead. */
+  function confirmTaken(taken, ok) {
+    return confirmDialog({
+      title: `Use ${nameRange(taken)} twice?`,
+      body: `Other devices already have ${taken.length > 1 ? 'these names' : 'this name'}. Names are host names, cable ends and CSV keys, so two devices with one name are hard to tell apart.`,
+      ok,
+    });
+  }
+
+  /** Shows in the place dialog which of its names are taken. */
+  function notePlaceClash() {
+    const name = $('#place-name').value.trim();
+    const html = name ? clashNote(M.nameSequence(name, Math.max(1, place.positions.length)), [], 'place-dup-use') : '';
+    $('#place-dup').innerHTML = html;
+    $('#place-dup').hidden = !html;
+  }
 
   /**
    * The blocks devices `h` units tall at units `ats` of a rack take, and
@@ -3178,8 +3242,16 @@
     drawPlaceGhosts();
   });
   $('#dlg-place').addEventListener('close', () => setGhosts(''));
+  $('#place-dup').addEventListener('click', (e) => {
+    const b = e.target.closest('#place-dup-use');
+    if (!b) return;
+    $('#place-name').value = b.dataset.name;
+    place.nameTouched = true;
+    updatePlacePreview();
+    $('#place-name').focus();
+  });
 
-  $('#place-form').addEventListener('submit', (e) => {
+  $('#place-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     updatePlacePreview();
     if (!place.valid) return;
@@ -3208,6 +3280,8 @@
     if (!clusterId) delete groups[view];
     const count = place.positions.length;
     const names = M.nameSequence(name, count);
+    const taken = M.takenNames(project, names);
+    if (taken.length && !(await confirmTaken(taken, count > 1 ? `Place ${count} anyway` : 'Place anyway'))) return;
     const height = placeHeight();
     const devices = place.positions.map((pos, i) =>
       M.newDevice(

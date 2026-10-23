@@ -388,6 +388,18 @@ test('slugs are plain ASCII words joined by dashes', () => {
   assert.equal(M.cleanDeviceType({ label: '机房' }).defaultName, 'dev-01');
 });
 
+test('takenNames finds names other devices have; nextInSeries passes over them', () => {
+  const p = project([
+    ['compute-node', 'r1', 'u', 1, 'cn-001'],
+    ['compute-node', 'r1', 'u', 3, 'cn-002'],
+    ['compute-node', 'r1', 'u', 5, 'cn-009'],
+  ]);
+  assert.deepEqual(M.takenNames(p, ['cn-001', 'cn-002', 'cn-003', 'cn-001']), ['cn-001', 'cn-002']);
+  assert.deepEqual(M.takenNames(p, ['cn-001', 'cn-002'], ['d1', 'd2']), [], 'the devices renamed keep no name');
+  assert.equal(M.nextInSeries(p, 'cn-001', 3, false), 'cn-010');
+  assert.equal(M.nextInSeries(p, 'cn-001', 3, false, ['d3']), 'cn-003');
+});
+
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
   const v = p.views[0].id;
