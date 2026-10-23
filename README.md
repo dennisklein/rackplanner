@@ -90,7 +90,11 @@ makes a 1U PDU look like a vertical power strip.
 
 A device can be mounted **back to front**, as switches often are so that
 their ports face the servers' rear. The rack then shows its rear side, with
-its fans or power supplies, and its front ports are at the rack's rear.
+its fans or power supplies, and its front ports are at the rack's rear. A
+new device of a type with all its ports at the front, such as a switch, is
+mounted that way by default. Where a type has all its ports on one side, the
+placement dialog and the inspector ask where they face (**Ports at Front |
+Rear**); otherwise they ask how it is **Mounted**.
 
 ## Using it
 
@@ -118,7 +122,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 - **Move**: drag devices between units, racks and side slots. Hold <kbd>Alt</kbd>
   while dropping to copy instead.
 - **Edit a device**: select it to rename it, change its cluster, move it to any
-  rack in the plan, mount it front to front or back to front, and fill in
+  rack in the plan, turn its ports to the front or the rear, and fill in
   its serial number, asset tag, IP address, owner and notes. Power and
   weight come from its type unless you enter its own values.
 - **Unique names**: a name that another device has already is flagged where
@@ -280,7 +284,8 @@ drawing switches between four views:
 
 **Connecting**: click a free port and then another, or drag from one to the
 other, in the elevation or the port map (on a touch screen, tap one and then
-the other). The cable type picked in the left panel is used; **Auto**, the
+the other). When the second port is on the other side of the racks, the
+message's **Front** or **Rear** goes there and keeps the first. The cable type picked in the left panel is used; **Auto**, the
 default, picks the first type in the catalog that fits both ports and
 reaches the length. For a breakout cable (one head, 2 to 8 legs), pick its
 type, click the head's port and then a port for each leg; <kbd>Enter</kbd>

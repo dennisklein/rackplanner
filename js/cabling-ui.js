@@ -1312,13 +1312,20 @@
           msg = n
             ? `Click leg ${n + 1} of ${t.legs} of ${with_} from ${from}; <kbd>Enter</kbd> or <kbd>Esc</kbd> to finish with ${n}`
             : `Click the first of ${t.legs} legs to connect ${from} with ${with_}, <kbd>Esc</kbd> to cancel`;
-        } else msg = `Click a second port to connect ${from} with ${with_}, <kbd>Esc</kbd> to cancel`;
+        } else {
+          // New switches face the rear, but a plan may have their ports on the other side.
+          const other = prefs.cabSide === 'front' ? 'rear' : 'front';
+          const go = ui.cabView === 'elevation' ? `, or go to the <button type="button" class="hint-link" data-cab-side="${other}">${other === 'front' ? 'Front' : 'Rear'}</button>` : '';
+          msg = `Click a second port to connect ${from} with ${with_}${go ? `${go};` : ','} <kbd>Esc</kbd> to cancel`;
+        }
         el.armedHint.innerHTML = `<span>${msg}</span><button type="button" data-cab-cancel aria-label="Stop connecting" title="Stop connecting">${icon('x', 'ic-sm')}</button>`;
       }
       el.armedHint.hidden = !pd;
     }
     el.armedHint.addEventListener('click', (e) => {
       if (e.target.closest('[data-cab-cancel]')) cancelPending();
+      const side = e.target.closest('[data-cab-side]');
+      if (side) setSide(side.dataset.cabSide);
     });
 
     // ------------------------------------------------------------ schedule
@@ -2864,10 +2871,12 @@
       );
     }
 
-    function mountField(d) {
+    /** As the Racks inspector's: "Ports at Front | Rear" when its ports are on one side, else "Mounted Front to front | Back to front". */
+    function mountField(d, side) {
       const radio = (v, text) =>
         `<label><input type="radio" name="cab-mount" id="cab-mount-${v ? 'back' : 'front'}" value="${v ? 'back' : 'front'}"${!!d.reversed === v ? ' checked' : ''}><span>${text}</span></label>`;
-      return `<div class="seg seg-fill" role="radiogroup" aria-labelledby="cab-mount-label">${radio(false, 'Front to front')}${radio(true, 'Back to front')}</div>`;
+      const radios = side ? radio(side === 'rear', 'Front') + radio(side === 'front', 'Rear') : radio(false, 'Front to front') + radio(true, 'Back to front');
+      return `<div class="seg seg-fill" role="radiogroup" aria-labelledby="cab-mount-label">${radios}</div>`;
     }
 
     function deviceInspector(d) {
@@ -2887,7 +2896,7 @@
         `<div class="insp-sub">${esc(`${w.pos.floor.name} · ${w.pos.row.name} · ${used} of ${plural(ports.length, 'port')} cabled`)}</div></div>` +
         (type.face === 'reserved'
           ? ''
-          : `<section class="insp-sec"><h3 id="cab-mount-label">Mounted</h3>${mountField(d)}<div class="field-grid">` +
+          : `<section class="insp-sec"><h3 id="cab-mount-label">${M.portsSide(type) ? 'Ports at' : 'Mounted'}</h3>${mountField(d, M.portsSide(type))}<div class="field-grid">` +
             `<div class="field"><label for="cab-dev-slack">Slack per cable (m)</label><input id="cab-dev-slack" type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${d.slackM == null ? '' : d.slackM}" placeholder="${type.slackM || 0} (type)"></div>` +
             `</div></section>`) +
         `<section class="insp-sec"><h3>Ports</h3>` +

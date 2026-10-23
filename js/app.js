@@ -1384,14 +1384,25 @@
   }
   const parseOptNum = (max) => (v) => (String(v).trim() === '' ? null : M.clampNum(v, 0, max, null));
 
-  /** A "Front to front | Back to front" radio group for `reversed`; `value` undefined checks neither (mixed). */
-  function mountRadios(name, value, labelId) {
+  /**
+   * A radio group for `reversed` (values front and back, for front to front
+   * and back to front); `value` undefined checks neither (mixed). With
+   * `portsSide`, the side of the device its ports are on, it asks where
+   * the ports face: "Ports at Front | Rear".
+   */
+  function mountRadios(name, value, labelId, portsSide) {
     const radio = (v, text) =>
       `<label><input type="radio" name="${name}" id="${name}-${v ? 'back' : 'front'}" value="${v ? 'back' : 'front'}"${value === v ? ' checked' : ''}><span>${text}</span></label>`;
+    const radios = portsSide ? radio(portsSide === 'rear', 'Front') + radio(portsSide === 'front', 'Rear') : radio(false, 'Front to front') + radio(true, 'Back to front');
     return (
-      `<div class="field"><span class="label" id="${labelId}">Mounted</span>` +
-      `<div class="seg seg-fill" role="radiogroup" aria-labelledby="${labelId}">${radio(false, 'Front to front')}${radio(true, 'Back to front')}</div></div>`
+      `<div class="field"><span class="label" id="${labelId}">${portsSide ? 'Ports at' : 'Mounted'}</span>` +
+      `<div class="seg seg-fill" role="radiogroup" aria-labelledby="${labelId}">${radios}</div></div>`
     );
+  }
+  /** The side the ports of all `types` are on, or null when it differs or is unknown. */
+  function commonPortsSide(types) {
+    const sides = new Set(types.map((t) => M.portsSide(t)));
+    return sides.size === 1 ? [...sides][0] : null;
   }
 
   function renderDeviceInspector(d) {
@@ -1431,7 +1442,7 @@
       `<div class="field"><label for="insp-slot">Slot</label><select id="insp-slot">${slotOpts}</select></div>` +
       (type.variable ? `<div class="field"><label for="insp-height">Height (U)</label><input id="insp-height" type="number" min="1" max="${M.rackUnits(project, d.loc.rack)}" step="1" value="${hU}" inputmode="numeric"></div>` : '') +
       `</div>` +
-      (type.face === 'reserved' ? '' : mountRadios('insp-mount', !!d.reversed, 'insp-mount-label')) +
+      (type.face === 'reserved' ? '' : mountRadios('insp-mount', !!d.reversed, 'insp-mount-label', M.portsSide(type))) +
       (d.loc.kind === 'u'
         ? `<div class="nudge"><button type="button" class="btn sm" id="insp-up"${canUp ? '' : ' disabled'} title="Next free position above (↑)">${icon('up')}Move up</button>` +
           `<button type="button" class="btn sm" id="insp-down"${canDown ? '' : ' disabled'} title="Next free position below (↓)">${icon('down')}Move down</button></div>`
@@ -1552,7 +1563,7 @@
       `<button type="button" class="btn sm" data-group="left" title="Rack to the left (←)">${icon('left')}Left rack</button><button type="button" class="btn sm" data-group="right" title="Rack to the right (→)">Right rack${icon('right')}</button></div>` +
       `<p class="sec-hint">Or drag any of them; hold <kbd>Alt</kbd> to copy the group.</p></section>` +
       `<section class="insp-sec"><h3>Set for all</h3>` +
-      (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label') : '') +
+      (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label', commonPortsSide(mountable.map((d) => M.typeOf(project, d.type)))) : '') +
       `<div class="field-grid">` +
       `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="120"></div>` +
       `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div>` +
@@ -2250,7 +2261,7 @@
         height: device ? device.height : height,
         color: clusterColor(clusterId),
         name: device ? device.name : hint.name,
-        reversed: !!(device && device.reversed),
+        reversed: device ? !!device.reversed : M.mountsReversed(M.typeOf(project, typeId)),
         bare: prefs.detail === 'bare',
       })
     );
@@ -2942,6 +2953,7 @@
     Object.assign(place, { typeId, loc, nameTouched: false, positions: [], valid: true });
     $('#place-title').textContent = type.label;
     $('#place-height-field').hidden = !type.variable;
+    $('#place-mount').innerHTML = type.face === 'reserved' ? '' : mountRadios('place-mount', M.mountsReversed(type), 'place-mount-label', M.portsSide(type));
     $('#place-height').value = loc.kind === 'side' ? '1' : '2';
     $('#place-qty').value = '1';
     $('input[name="place-dir"][value="down"]').checked = true;
@@ -3193,6 +3205,9 @@
     return skipped.length ? `${text} · skips ${nameRange(skipped.map((d) => d.name))}` : text;
   }
 
+  /** Whether the place dialog mounts the devices back to front. */
+  const placeReversed = () => !!$('input[name="place-mount"][value="back"]:checked');
+
   /** Ghosts of the devices the place dialog would add, in the row shown around the dialog. */
   function drawPlaceGhosts() {
     if (!$('#dlg-place').open) return;
@@ -3206,6 +3221,7 @@
       height,
       name: names[i],
       color,
+      reversed: placeReversed(),
     }));
     setGhosts(R.renderGhosts(project, items, place.valid, { theme: ui.theme, measure, layout: ui.layout, rowId: ui.rowId, bare: prefs.detail === 'bare' }));
   }
@@ -3242,6 +3258,7 @@
     drawPlaceGhosts();
   });
   $('#dlg-place').addEventListener('close', () => setGhosts(''));
+  $('#place-mount').addEventListener('change', drawPlaceGhosts);
   $('#place-dup').addEventListener('click', (e) => {
     const b = e.target.closest('#place-dup-use');
     if (!b) return;
@@ -3286,7 +3303,7 @@
     const devices = place.positions.map((pos, i) =>
       M.newDevice(
         Object.assign(
-          { type: type.id, name: names[i], groups: Object.assign({}, groups), loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
+          { type: type.id, name: names[i], groups: Object.assign({}, groups), reversed: placeReversed(), loc: { rack: pos.rack, kind: place.loc.kind, at: place.loc.kind === 'u' ? pos.at : place.loc.at } },
           type.variable ? { height } : {}
         )
       )

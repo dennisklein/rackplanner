@@ -400,6 +400,17 @@ test('takenNames finds names other devices have; nextInSeries passes over them',
   assert.equal(M.nextInSeries(p, 'cn-001', 3, false, ['d3']), 'cn-003');
 });
 
+test('a new switch is mounted back to front so that its ports face the rear', () => {
+  const p = M.createEmptyProject();
+  const type = (id) => M.typeOf(p, id);
+  assert.equal(M.portsSide(type('switch-rj45')), 'front');
+  assert.equal(M.portsSide(type('compute-node')), 'rear');
+  assert.equal(M.portsSide(M.cleanDeviceType({ label: 'Box', ports: [] })), null);
+  assert.equal(M.mountsReversed(type('switch-rj45')), true);
+  assert.equal(M.mountsReversed(type('compute-node')), false);
+  assert.equal(M.mountsReversed(type('reserved')), false);
+});
+
 test('suggestPlacement continues the nearest series and reuses its cluster', () => {
   const p = M.createExampleProject();
   const v = p.views[0].id;

@@ -175,6 +175,38 @@ test('a new device is in no cluster unless one of its type shows which', async (
   await expect(page.locator('label.chip:has(input[name="place-cluster"]:checked)')).toHaveText('Core');
 });
 
+test('the place dialog mounts a switch with its ports at the rear, as the servers have theirs', async ({ page }) => {
+  const open = async (typeId) => {
+    await page.locator(`.part[data-type="${typeId}"]`).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#dlg-place')).toBeVisible();
+  };
+  const reversed = () => page.evaluate(() => window.RP.app.project().devices.map((d) => d.reversed));
+  const checked = page.locator('#place-mount label:has(input:checked)');
+  // A type without ports keeps Front to front | Back to front; reserved space has neither.
+  await open('patch-panel');
+  await expect(page.locator('#place-mount-label')).toHaveText('Mounted');
+  await expect(checked).toHaveText('Front to front');
+  await page.click('#dlg-place [data-close]');
+  await open('reserved');
+  await expect(page.locator('#place-mount')).toBeEmpty();
+  await page.click('#dlg-place [data-close]');
+
+  await page.click('#btn-start-empty');
+  await open('switch-rj45');
+  await expect(page.locator('#place-mount-label')).toHaveText('Ports at');
+  await expect(checked).toHaveText('Rear');
+  await page.click('#place-submit');
+  await open('compute-node');
+  await expect(checked).toHaveText('Rear');
+  await page.click('#place-mount label:has-text("Front")');
+  await page.click('#place-submit');
+  expect(await reversed()).toEqual([true, true]);
+  // The inspector asks the same way.
+  await expect(page.locator('#insp-mount-label')).toHaveText('Ports at');
+  await expect(page.locator('#inspector .seg label:has(input:checked)')).toHaveText('Front');
+});
+
 test('Enter activates a focused button while a device is selected', async ({ page }) => {
   await device(page, 'cn-001').click();
   await page.locator('#insp-dup').focus();

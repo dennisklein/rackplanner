@@ -72,6 +72,16 @@ test('the elevation is the default view: Row A from the rear, and from the front
   await expect(page.locator('#scene')).toHaveAttribute('aria-label', /seen from the front/);
 });
 
+test('while connecting, the banner goes to the other side, keeping the first port', async ({ page }) => {
+  await page.click('#btn-zoom-reset');
+  await (await port(page, 'ib-leaf-a01', 'p13')).click();
+  await expect(page.locator('#armed-hint')).toContainText('Click a second port to connect ib-leaf-a01 p13 with Auto, or go to the Front; Esc to cancel');
+  await page.locator('#armed-hint [data-cab-side="front"]').click();
+  await expect(page.locator('#cab-sides [data-cab-side="front"]')).toHaveAttribute('aria-pressed', 'true');
+  expect((await ui(page)).pending).toMatchObject({ port: 'p13' });
+  await expect(page.locator('#armed-hint [data-cab-side="rear"]')).toHaveText('Rear');
+});
+
 test('two free ports clicked one after the other are connected with Auto, labeled in the network in focus', async ({ page }) => {
   await page.click('#networks [data-net-focus="n-ib"]');
   await page.click('#btn-zoom-reset');

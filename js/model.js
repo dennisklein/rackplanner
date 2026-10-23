@@ -617,6 +617,21 @@
     return null;
   }
 
+  /** The side of a device type that all its ports are on, 'front' or 'rear'; null when it has none or ports on both. */
+  function portsSide(type) {
+    const sides = new Set((type.ports || []).map((g) => g.side));
+    return sides.size === 1 ? [...sides][0] : null;
+  }
+
+  /**
+   * Whether a new device of `type` is mounted back to front: when its
+   * ports are all on its front (a switch), so that they face the rear of
+   * the rack like the ports of servers.
+   */
+  function mountsReversed(type) {
+    return type.face !== 'reserved' && portsSide(type) === 'front';
+  }
+
   /** Every port of a device type in catalog order: [{ name, group, index, connector, speedGbps, side }]. */
   function expandPorts(type) {
     const out = [];
@@ -2627,6 +2642,8 @@
     portsProblem,
     groupNames,
     expandPorts,
+    portsSide,
+    mountsReversed,
     portPattern,
     parsePortPattern,
     portPatternProblem,
