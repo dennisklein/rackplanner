@@ -312,3 +312,27 @@ test('the Views button is labeled, and the name of the view shown fits beside it
   expect(name.y).toBeGreaterThan(button.y);
   expect(await shown(page).evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
 });
+
+test('each view keeps the clusters it hides', async ({ page }) => {
+  const hiddenDevs = page.locator('.scene .dev.is-hidden');
+  await page.click('#clusters [data-cl-eye="c-kestrel"]');
+  await page.click('#clusters [data-cl-eye="__none"]');
+  await expect(hiddenDevs).toHaveCount(12);
+  // A new view, where every device is unassigned, starts with nothing hidden.
+  await page.click('#btn-views');
+  await page.click('#view-add');
+  await page.click('#dlg-views [data-close]');
+  await expect(hiddenDevs).toHaveCount(0);
+  await expect(page.locator('#clusters .cl-row.is-hidden')).toHaveCount(0);
+  await page.click('#clusters [data-cl-eye="__none"]');
+  await expect(hiddenDevs).toHaveCount(37);
+  // Back and forth: each view shows what it hid.
+  await pickView(page, 'Default');
+  await expect(hiddenDevs).toHaveCount(12);
+  await expect(page.locator('#clusters .cl-row.is-hidden')).toHaveCount(2);
+  await page.locator('#scene').focus();
+  await page.keyboard.press('v');
+  await expect(hiddenDevs).toHaveCount(37);
+  await page.keyboard.press('v');
+  await expect(hiddenDevs).toHaveCount(12);
+});

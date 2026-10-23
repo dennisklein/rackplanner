@@ -150,7 +150,7 @@ Rear**); otherwise they ask how it is **Mounted**.
   at it for the buttons that select its devices and, with the pencil icon,
   rename or recolor it; on a touch screen they are always shown. Use the eye
   to hide its devices in the racks: they keep their units, drawn as dashed
-  outlines. A long name is cut in the middle, so its end stays in sight;
+  outlines. Each view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
   pointing at it shows it in full. The first eight colors stay apart for
   color-blind eyes too, and the cluster dialog warns when a color is close to
   another cluster's. Each cluster also has a number, in its swatch, in the
