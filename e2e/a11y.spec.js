@@ -299,6 +299,7 @@ test('a full plan says so instead of opening the place dialog', async ({ page })
 
 test('? and the help button open the how-tos and every shortcut of the workspace shown', async ({ page }) => {
   await expect(page.locator('#example-notice a')).toHaveAttribute('href', 'media/');
+  expect((await page.request.get('media/')).ok()).toBe(true);
   await page.keyboard.press('?');
   const help = page.locator('#dlg-help');
   await expect(help).toBeVisible();

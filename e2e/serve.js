@@ -20,7 +20,8 @@ const types = {
 http
   .createServer((req, res) => {
     const { pathname } = new URL(req.url, 'http://localhost');
-    const file = path.join(root, decodeURIComponent(pathname === '/' ? '/index.html' : pathname));
+    // A directory serves its index.html, as a static host does (the tour at media/).
+    const file = path.join(root, decodeURIComponent(pathname.endsWith('/') ? `${pathname}index.html` : pathname));
     if (!file.startsWith(root + path.sep)) return res.writeHead(403).end();
     fs.readFile(file, (err, data) => {
       if (err) return res.writeHead(404).end('Not found');
