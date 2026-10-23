@@ -701,6 +701,13 @@ kbd {
 .form-error { font-size: 13px; }
 .new-cluster { display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
 .cluster-preview svg { display: block; width: 100%; height: auto; }
+/* The help dialog: how-tos and the shortcuts of the workspace shown, side by side where there is room. */
+.dlg-body.help { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px 28px; align-items: start; }
+.help section { display: flex; flex-direction: column; gap: 10px; }
+.help h3 { font: 600 13px/1 var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+.howto { margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+.howto dt { font-weight: 600; }
+.howto dd { margin: 0; color: var(--ink-2); }
 
 /* --------------------------------------------------------------- dialogs */
 
@@ -800,6 +807,7 @@ kbd {
 .dlg-head { padding: 18px 20px 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .dlg-head h2 { font: 600 22px/1.15 var(--font-display); letter-spacing: .01em; }
 .dlg-sub { color: var(--ink-2); font-size: 13.5px; }
+.dlg-sub a, .notice a { color: inherit; text-underline-offset: 2px; }
 .dlg-sub.mono { font-family: var(--font-mono); font-size: 12.5px; }
 .dlg-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
 .dlg-body p { color: var(--ink-2); }

@@ -3179,6 +3179,7 @@
         `<div class="field"><label for="cab-pitch">Row pitch (m)</label><input id="cab-pitch" type="number" min="0.5" max="50" step="0.1" inputmode="decimal" value="${floor.rowPitchM == null ? '' : floor.rowPitchM}" placeholder="${M.DEFAULT_ROW_PITCH_M}"></div>` +
         `</div><p class="sec-hint">From one row of ${esc(floor.name)} to the next. Racks set their way up to the tray and their slack.</p></section>` +
         `<section class="insp-sec keys-sec"><h3>Shortcuts</h3><dl class="keys">` +
+        `<dt><kbd>?</kbd></dt><dd>Every shortcut, and help</dd>` +
         `<dt><kbd>C</kbd></dt><dd>Racks or Cabling</dd>` +
         // The schedule selects ranges of its rows; the drawings add or remove what is clicked.
         (ui.cabView === 'schedule'

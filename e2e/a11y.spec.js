@@ -295,3 +295,33 @@ test('a full plan says so instead of opening the place dialog', async ({ page })
   await expect(page.locator('#dlg-place')).toBeHidden();
   await expect(page.locator('.toast.warn')).toHaveText('No rack has room for a compute node');
 });
+
+test('? and the help button open the how-tos and every shortcut of the workspace shown', async ({ page }) => {
+  await expect(page.locator('#example-notice a')).toHaveAttribute('href', 'media/');
+  await page.keyboard.press('?');
+  const help = page.locator('#dlg-help');
+  await expect(help).toBeVisible();
+  await expect(page.locator('#help-title')).toHaveText('Racks: how-tos and shortcuts');
+  await expect(help.locator('.howto dt').first()).toHaveText('Place a device');
+  await expect(help.locator('.keys')).toContainText('Rename the selected device');
+  await expect(help.locator('.keys')).toContainText('Bare devices');
+  await expect(help.locator('a[href="media/"]')).toHaveText('Watch the 50-second intro video');
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+
+  // A question mark typed in a field is just text.
+  await page.focus('#search');
+  await page.keyboard.press('?');
+  await expect(help).toBeHidden();
+  await expect(page.locator('#search')).toHaveValue('?');
+  await page.keyboard.press('Escape');
+
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  await page.click('#btn-help');
+  await expect(page.locator('#help-title')).toHaveText('Cabling: how-tos and shortcuts');
+  await expect(help.locator('.keys')).toContainText('Connect a breakout cable with the legs set so far');
+  await expect(help.locator('.keys')).not.toContainText('Bare devices');
+  await page.click('#dlg-help button[value="ok"]');
+  await expect(help).toBeHidden();
+  await expect(page.locator('#btn-help')).toBeFocused();
+});

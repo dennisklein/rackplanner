@@ -179,6 +179,9 @@ its fans or power supplies, and its front ports are at the rack's rear.
   made that change; the tooltips of the two buttons name the step. The
   **Undo** in a message at the bottom undoes the step that the message
   names. It goes away once you make a newer step.
+- **Help**: the **?** button above the drawing (or <kbd>?</kbd>) lists every
+  shortcut of the workspace shown, with short how-tos and a link to the intro
+  video.
 - **Back and Forward** in the browser go through the rows, the floor map and
   the workspaces you showed. The address names them, as in
   `index.html#row=row3&ws=cabling`, so a bookmark opens the plan there.
@@ -190,6 +193,7 @@ its fans or power supplies, and its front ports are at the rack's rear.
 
 | Shortcut | Action |
 | --- | --- |
+| <kbd>?</kbd> | Help: every shortcut of the workspace shown |
 | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | Search |
 | <kbd>[</kbd> <kbd>]</kbd> | Previous, next row |
 | <kbd>C</kbd> | Racks or Cabling workspace |

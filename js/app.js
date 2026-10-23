@@ -1162,7 +1162,7 @@
     for (const b of $$('.ws-switch [data-workspace]')) b.setAttribute('aria-pressed', String(b.dataset.workspace === ui.workspace));
     $('#app').classList.toggle('is-cabling', cabling);
     el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
-    el.bare.disabled = cabling; // the Cabling drawings keep the ports
+    el.bare.hidden = cabling; // the Cabling drawings keep the ports, and the nav bar its room
     renderViewSwitch();
     renderUndoButtons();
     if (document.activeElement !== el.planName) el.planName.value = project.name;
@@ -1837,6 +1837,7 @@
         : `<p class="empty-note">No devices yet.</p>`) +
       `</section>` +
       `<section class="insp-sec keys-sec"><h3>Shortcuts</h3><dl class="keys">` +
+      `<dt><kbd>?</kbd></dt><dd>Every shortcut, and help</dd>` +
       `<dt><kbd>/</kbd></dt><dd>Search</dd>` +
       `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
       `<dt><kbd>M</kbd></dt><dd>Floor map</dd>` +
@@ -4186,6 +4187,74 @@
   });
   $('#btn-catalog').addEventListener('click', () => openCatalog('devices'));
 
+  // Help dialog --------------------------------------------------------
+
+  // The keys and how-tos of each workspace that the help lists; `both` go first in either.
+  const HELP_KEYS = {
+    both: [
+      ['<kbd>?</kbd>', 'This help'],
+      ['<kbd>/</kbd> or <kbd>Ctrl</kbd> <kbd>K</kbd>', 'Search'],
+      ['<kbd>[</kbd> <kbd>]</kbd>', 'Previous, next row'],
+      ['<kbd>C</kbd>', 'Racks or Cabling'],
+      ['<kbd>V</kbd>, <kbd>Shift</kbd> <kbd>V</kbd>', 'Next, previous view, in a plan with more than one'],
+      ['<kbd>Ctrl</kbd> <kbd>Z</kbd>, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd>', 'Undo, redo'],
+    ],
+    racks: [
+      ['<kbd>M</kbd>', 'Floor map on or off'],
+      ['<kbd>B</kbd>', 'Bare devices: names only'],
+      ['<kbd>Tab</kbd>', 'Walk through the rack labels and devices'],
+      ['<kbd>Enter</kbd> on a device type', 'Place one: pick its rack and position in the dialog'],
+      ['<kbd>Enter</kbd> or <kbd>F2</kbd>', 'Rename the selected device'],
+      ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Move the selected devices to the next free position'],
+      ['<kbd>←</kbd> <kbd>→</kbd>', 'Move them to the neighbouring rack'],
+      ['<kbd>Shift</kbd> + click, <kbd>Shift</kbd> + drag', 'Add to the selection, select an area'],
+      ['<kbd>Ctrl</kbd> <kbd>A</kbd>', 'Select every device in the row'],
+      ['<kbd>Ctrl</kbd> <kbd>D</kbd>', 'Duplicate the selected devices, rack, row or floor'],
+      ['<kbd>Alt</kbd> + drop', 'Copy instead of move'],
+      ['<kbd>Del</kbd>', 'Delete the selected devices'],
+      ['<kbd>0</kbd> <kbd>1</kbd> <kbd>+</kbd> <kbd>−</kbd>', 'Fit the sheet, 100%, zoom in, out'],
+      ['<kbd>Ctrl</kbd> + scroll', 'Zoom at the pointer'],
+      ['<kbd>Esc</kbd>', 'Cancel placing or dragging, deselect, clear the search'],
+    ],
+    cabling: [
+      ['<kbd>Shift</kbd> or <kbd>Ctrl</kbd> + click', 'Add or remove a cable; in the schedule, Shift selects a range'],
+      ['<kbd>Ctrl</kbd> <kbd>A</kbd>', 'Select the cables shown'],
+      ['<kbd>Enter</kbd> or <kbd>F2</kbd>', 'Edit the label of the selected cable'],
+      ['<kbd>Enter</kbd> or <kbd>Esc</kbd>', 'Connect a breakout cable with the legs set so far'],
+      ['<kbd>Del</kbd>', 'Delete the selected cables, or unplug the selected port'],
+      ['<kbd>0</kbd> <kbd>1</kbd> <kbd>+</kbd> <kbd>−</kbd>', 'Fit, 100%, zoom in, out, in the elevation and the fabric'],
+      ['<kbd>Esc</kbd>', 'Cancel connecting, deselect, show all networks'],
+    ],
+  };
+  const HELP_HOWTO = {
+    racks: [
+      ['Place a device', 'Drag a device type onto a rack, or click it and then a free slot. With the keyboard, press Enter on it and pick the rack and position in the dialog.'],
+      ['Place several', 'Set a quantity in the place dialog to stack them, or spread them evenly over the racks of the row.'],
+      ['Edit', 'Select a device, a rack’s yellow label, a row or a floor tab: the panel on the right edits it.'],
+      ['Move', 'Drag devices, or select them and use the arrow keys. Hold Alt while dropping to copy them.'],
+      ['Color and group', 'Clusters color the devices. Views group the same devices in other ways, each with clusters of its own.'],
+    ],
+    cabling: [
+      ['Connect', 'Pick a cable type on the left, then click two ports, or drag from one port to the other.'],
+      ['Connect a breakout cable', 'Pick its type, click the port of its head and then a port for each leg.'],
+      ['Connect many at once', 'Connect series, in the schedule, the port map or the inspector of a device, joins many devices to one.'],
+      ['Order', 'The schedule lists every cable with its length, and what to order underneath.'],
+    ],
+  };
+
+  /** Opens the help: how-tos and every shortcut of the workspace shown. */
+  function openHelp() {
+    const ws = ui.workspace === 'cabling' ? 'cabling' : 'racks';
+    const name = ws === 'cabling' ? 'Cabling' : 'Racks';
+    const list = (rows, cls) => `<dl class="${cls}">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
+    $('#help-title').textContent = `${name}: how-tos and shortcuts`;
+    $('#help-body').innerHTML =
+      `<section><h3>How to</h3>${list(HELP_HOWTO[ws], 'howto')}</section>` +
+      `<section><h3>Shortcuts</h3>${list(HELP_KEYS.both.concat(HELP_KEYS[ws]), 'keys')}<p class="sec-hint">On a Mac, use ⌘ for Ctrl.</p></section>`;
+    openDialog($('#dlg-help'));
+  }
+  $('#btn-help').addEventListener('click', openHelp);
+
   // Plans dialog -------------------------------------------------------
 
   function renderPlans() {
@@ -5109,6 +5178,7 @@
     // Many layouts type these with AltGr (Ctrl+Alt on Windows) or Option: the character typed counts.
     const typed = !e.metaKey && (e.altKey || !e.ctrlKey) ? key : '';
     if (typed === '[' || typed === ']') return stepRow(typed === '[' ? -1 : 1);
+    if (typed === '?') return openHelp();
     if (mod || e.altKey) return;
     if (key === '/') {
       e.preventDefault();
