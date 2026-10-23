@@ -535,7 +535,15 @@ test('reserved space gets its own height and counts in the rack stats', async ({
   await page.fill('#place-height', '20');
   await expect(page.locator('#place-preview')).toHaveText('A 20U device must sit within U1–47');
   await expect(page.locator('#place-submit')).toBeDisabled();
+  // A height that runs out of the rack has no span.
+  await expect(page.locator('#place-where')).toHaveText('Rack A01 · does not fit at U30 · 20U · placeholder');
+  await expect(page.locator('#place-pos option:checked')).toHaveText('U30 (does not fit)');
+  await page.fill('#place-height', '99');
+  await expect(page.locator('#place-where')).toHaveText('Rack A01 · does not fit · 99U · placeholder');
+  await expect(page.locator('#place-preview')).toHaveText('Rack A01 has 47 units: 99U do not fit.');
+  await expect(page.locator('#place-submit')).toBeDisabled();
   await page.fill('#place-height', '6');
+  await expect(page.locator('#place-where')).toHaveText('Rack A01 · U30–35 · 6U · placeholder');
   await page.fill('#place-name', 'Future storage');
   await page.click('#place-submit');
   await expect(where(page)).toHaveText('Rack A01 · U30–35');

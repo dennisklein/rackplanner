@@ -2905,10 +2905,8 @@
 
   /** Sets where the dialog places the devices: its Rack and Position fields, and the racks of that row to spread over. */
   function setPlaceLoc(loc) {
-    const type = M.typeOf(project, place.typeId);
     place.loc = loc;
     const row = M.locateRack(project, loc.rack).row;
-    $('#place-where').textContent = `${M.formatLoc(project, loc, type.id, placeHeight())} · ${M.formatTypeSpec(type)}`;
     $('#place-rack').innerHTML = rackOptions(loc.rack);
     renderPlacePositions();
     $('#place-height').max = String(M.rackUnits(project, loc.rack));
@@ -2926,6 +2924,11 @@
       .join('');
   }
 
+  /** Whether a device of the place dialog's type, `height` for reserved space, ends inside its rack at `loc`. */
+  function placeFits(loc, height) {
+    return loc.kind === 'side' || loc.at + M.heightOf(project, place.typeId, height) - 1 <= M.rackUnits(project, loc.rack);
+  }
+
   /** The free positions of the rack in the Position field, and the one picked even when it no longer fits. */
   function renderPlacePositions() {
     const loc = place.loc;
@@ -2934,7 +2937,7 @@
     if (!locs.some((l) => l.kind === loc.kind && l.at === loc.at)) locs.unshift(loc);
     $('#place-pos').innerHTML = locs
       .map((l) => {
-        const label = l.kind === 'side' ? `Side slot V${l.at + 1}` : M.formatPosition(project, l, place.typeId, height);
+        const label = l.kind === 'side' ? `Side slot V${l.at + 1}` : placeFits(l, height) ? M.formatPosition(project, l, place.typeId, height) : `U${l.at} (does not fit)`;
         return `<option value="${locKey(l)}"${l.kind === loc.kind && l.at === loc.at ? ' selected' : ''}>${label}</option>`;
       })
       .join('');
@@ -2980,6 +2983,16 @@
     line.textContent = '';
     place.valid = true;
     const loc = place.loc;
+    // A reservation's span follows its height, as typed; one that runs out of the rack has none.
+    const units = M.rackUnits(project, loc.rack);
+    const typed = type.variable ? parseInt($('#place-height').value, 10) : 0;
+    const tooTall = typed > units;
+    const rackName = M.rackById(project, loc.rack).name;
+    $('#place-where').textContent = tooTall
+      ? `${rackName} · does not fit · ${M.formatTypeSpec(type, typed)}`
+      : placeFits(loc, height)
+        ? `${M.formatLoc(project, loc, type.id, height)} · ${M.formatTypeSpec(type, height)}`
+        : `${rackName} · does not fit at U${loc.at} · ${M.formatTypeSpec(type, height)}`;
     if (loc.kind !== 'u') {
       const check = M.canPlace(project, type.id, loc, null, height);
       place.positions = [{ rack: loc.rack, at: loc.at }];
@@ -3013,6 +3026,11 @@
         line.classList.add('bad');
         line.textContent = here.reason;
       }
+    }
+    if (tooTall) {
+      place.valid = false;
+      line.classList.add('bad');
+      line.textContent = `${rackName} has ${units} units: ${typed}U do not fit.`;
     }
     qtyInput.max = String(Math.max(1, max));
     if (!place.valid) {
