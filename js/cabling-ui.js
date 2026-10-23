@@ -2173,9 +2173,11 @@
       const eyes = ui.cabView === 'elevation';
       const eye = (id, name) => {
         const shown = !ui.hiddenNetworks.has(id);
+        // A toggle: pressed while shown; its title says what its name says.
+        const label = `Show ${name} in the elevation`;
         return (
-          `<button type="button" class="btn icon sm subtle cl-eye" data-net-eye="${esc(id)}" aria-pressed="${shown}" aria-label="Show ${esc(name)} in the elevation" ` +
-          `title="${shown ? 'Hide its cables in the elevation' : 'Show its cables in the elevation'}">${icon(shown ? 'eye' : 'eye-off')}</button>`
+          `<button type="button" class="btn icon sm subtle cl-eye" data-net-eye="${esc(id)}" aria-pressed="${shown}" aria-label="${esc(label)}" ` +
+          `title="${esc(label)} (Alt-click: only it)">${icon(shown ? 'eye' : 'eye-off')}</button>`
         );
       };
       const row = (id, name, color, n, editable) =>

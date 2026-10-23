@@ -1258,9 +1258,11 @@
     // An eye per cluster shows or hides its devices in the racks.
     const eye = (id, name) => {
       const shown = !hiddenClusters().has(id);
+      // A toggle: pressed while shown; its title says what its name says.
+      const label = `Show ${name} in the racks`;
       return (
-        `<button type="button" class="btn icon sm subtle cl-eye" data-cl-eye="${esc(id)}" aria-pressed="${shown}" aria-label="Show ${esc(name)} in the racks" ` +
-        `title="${shown ? 'Hide its devices in the racks' : 'Show its devices in the racks'}">${icon(shown ? 'eye' : 'eye-off')}</button>`
+        `<button type="button" class="btn icon sm subtle cl-eye" data-cl-eye="${esc(id)}" aria-pressed="${shown}" aria-label="${esc(label)}" ` +
+        `title="${esc(label)} (Alt-click: only it)">${icon(shown ? 'eye' : 'eye-off')}</button>`
       );
     };
     // The swatch of a cluster has its number, as on the ears of its devices.

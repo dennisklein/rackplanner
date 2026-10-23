@@ -950,8 +950,9 @@
     if (o.interactive) {
       const where = M.formatDeviceLoc(project, d);
       const reversed = d.reversed && type.face !== 'reserved';
-      const label = `${d.name}, ${type.label}, ${where}${cluster ? `, cluster ${cluster.name}` : ''}${reversed ? ', mounted back to front' : ''}`;
-      s += ` tabindex="0" role="button" aria-label="${esc(label)}">`;
+      const label = `${d.name}, ${type.label}, ${where}${cluster ? `, cluster ${cluster.name}` : ''}${reversed ? ', mounted back to front' : ''}${hidden ? ', hidden' : ''}`;
+      // Pressed: in the selection that the keys and the inspector act on.
+      s += ` tabindex="0" role="button" aria-pressed="${!!(o.selected && o.selected.has(d.id))}" aria-label="${esc(label)}">`;
       const lines = [d.name, `${type.label} (${hU}U)`, where];
       if (reversed) lines.push('Mounted back to front');
       if (cluster) lines.push(`Cluster: ${cluster.name}`);

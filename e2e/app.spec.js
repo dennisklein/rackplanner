@@ -1449,8 +1449,14 @@ test.describe('on a phone', () => {
 test('the eye of a cluster hides its devices in the racks and shows them again', async ({ page }) => {
   const eye = page.locator('#clusters [data-cl-eye="c-kestrel"]');
   await expect(eye).toHaveAttribute('aria-pressed', 'true');
+  // Its name and its title agree, shown or hidden.
+  await expect(eye).toHaveAccessibleName('Show Kestrel HPC in the racks');
+  await expect(eye).toHaveAttribute('title', 'Show Kestrel HPC in the racks (Alt-click: only it)');
   await eye.click();
   await expect(eye).toHaveAttribute('aria-pressed', 'false');
+  await expect(eye).toHaveAttribute('title', 'Show Kestrel HPC in the racks (Alt-click: only it)');
+  await expect(device(page, 'cn-001')).toHaveAttribute('aria-label', /, cluster Kestrel HPC, hidden$/);
+  await expect(device(page, 'gpu-001')).not.toHaveAttribute('aria-label', /hidden/);
   await expect(eye).toBeFocused();
   await expect(page.locator('#clusters .cl-row[data-cluster="c-kestrel"]')).toHaveClass(/is-hidden/);
   // Its devices keep their units, drawn as outlines; the others are as they were.
@@ -1558,6 +1564,9 @@ test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button
   await page.keyboard.press('Control+a');
   await expect(page.locator('.multi-title')).toHaveText('25 devices');
   await expect(device(page, 'cn-001')).not.toHaveClass(/is-selected/);
+  // The selection is told to screen readers too.
+  await expect(page.locator('.scene .dev[aria-pressed="true"]')).toHaveCount(25);
+  await expect(device(page, 'cn-001')).toHaveAttribute('aria-pressed', 'false');
   await page.keyboard.press('Escape');
 
   const a = await device(page, 'sw-mgmt-a01').boundingBox();

@@ -383,8 +383,20 @@ test('hidden devices keep their place as taken space with a faint name, without 
   assert.match(node(out.body), new RegExp(`fill="${T.ink3}"[^>]*>cn-001<`), 'its name is, in faint ink');
   assert.ok(node(out.body).includes(`stroke="${T.ink3}" stroke-width="1.2"`) && !node(out.body).includes('stroke-dasharray'), 'a solid outline, unlike reserved space');
   assert.equal(out.body.split(`data-id="${cn.id}"`).length - 1, 1, 'the device is still there to select');
+  assert.match(node(out.body), /aria-label="cn-001, [^"]*, cluster Kestrel HPC, hidden"/, 'its name says so');
+  assert.doesNotMatch(node(all.body), /, hidden"/);
   assert.deepEqual(out.layout, all.layout);
   assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);
+});
+
+test('devices say whether they are selected', () => {
+  const p = M.createExampleProject();
+  const cn = p.devices.find((d) => d.name === 'cn-001');
+  const body = R.renderScene(p, { rowId: 'row1', interactive: true, selected: new Set([cn.id]) }).body;
+  const count = (str) => body.split(str).length - 1;
+  assert.equal(count('aria-pressed="true"'), 1);
+  assert.match(body, new RegExp(`data-id="${cn.id}"[^>]*aria-pressed="true"`));
+  assert.equal(count('aria-pressed="false"'), count('<g class="dev') - 1);
 });
 
 test('the legend marks hidden clusters', () => {

@@ -992,6 +992,8 @@ test('the eye of a network hides its cables in the elevation and shows them agai
   const all = await cables.count();
   const eye = page.locator('#networks [data-net-eye="n-sas"]');
   await expect(eye).toHaveAttribute('aria-pressed', 'true');
+  await expect(eye).toHaveAccessibleName('Show SAS in the elevation');
+  await expect(eye).toHaveAttribute('title', 'Show SAS in the elevation (Alt-click: only it)');
   await eye.click();
   await expect(eye).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#networks .cl-row[data-network="n-sas"]')).toHaveClass(/is-hidden/);
