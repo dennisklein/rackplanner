@@ -664,8 +664,9 @@ kbd {
 .view-switch { flex: none; }
 .view-switch .vw-label { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #racks-clusters-sec .sec-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sec-view { margin-left: 6px; font-weight: 400; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
-.sec-view::before { content: "· "; }
+/* The view shown, below the heading, so the Views button keeps its label beside it. */
+.sec-view { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.sec-view[hidden] { display: none; }
 /* The views dialog: a row per view with its name, cluster count and actions. */
 .view-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .view-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); }

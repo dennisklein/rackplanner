@@ -1276,6 +1276,7 @@
     $('#view-switch').hidden = !many;
     $('#clusters-view').hidden = !many;
     $('#clusters-view').textContent = name;
+    $('#clusters-view').title = `View ${name}`;
     $('#view-label').textContent = name;
     const btn = $('#btn-cluster-view');
     btn.title = `View ${name}: its clusters color the devices (V)`;

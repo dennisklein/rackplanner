@@ -299,3 +299,16 @@ test('search finds a cluster of another view and shows that view', async ({ page
   await page.locator('#search').fill('no such thing');
   await expect(results.locator('.sr-empty')).toHaveText('Nothing in view Default matches “no such thing”.');
 });
+
+test('the Views button is labeled, and the name of the view shown fits beside it', async ({ page }) => {
+  const btn = page.locator('#btn-views');
+  await expect(btn).toHaveText('Views');
+  await expect(btn).toHaveAccessibleName('Views');
+  await copyView(page, 'InfiniBand');
+  await expect(btn).toHaveText('Views');
+  // The view's name goes below the heading, not between it and the button.
+  const name = await shown(page).boundingBox();
+  const button = await btn.boundingBox();
+  expect(name.y).toBeGreaterThan(button.y);
+  expect(await shown(page).evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+});
