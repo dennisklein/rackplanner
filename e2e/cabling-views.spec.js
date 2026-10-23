@@ -978,3 +978,37 @@ test('the eye of a network hides its cables in the elevation and shows them agai
   await expect(cables).toHaveCount(all);
   await expect(page.locator('.scene [data-port][opacity]')).toHaveCount(0);
 });
+
+test('toasts keep off the drawing, and a new connection’s toast replaces the one before', async ({ page }) => {
+  await page.click('#btn-zoom-reset');
+  const node = page.locator(`.scene .dev[data-dev="${await idOf(page, 'cn-012')}"]`);
+  await node.scrollIntoViewIfNeeded();
+  const box = await node.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.45, box.y + 4);
+  await page.click('#cab-dev-unplug');
+  await page.click('#confirm-ok');
+  const unplugged = page.locator('.toast', { hasText: 'Unplugged' });
+  await expect(unplugged.locator('button')).toHaveText('Undo');
+
+  await (await port(page, 'ib-leaf-a01', 'p13')).click();
+  await (await port(page, 'ib-leaf-a02', 'p12')).click();
+  const first = await cableAt(page, 'ib-leaf-a01', 'p13');
+  await (await port(page, 'ib-leaf-a01', 'p14')).click();
+  await (await port(page, 'ib-leaf-a02', 'p13')).click();
+  const second = await cableAt(page, 'ib-leaf-a01', 'p14');
+  const connected = page.locator('.toast[data-kind="connected"]');
+  await expect(connected).toHaveCount(1);
+  await expect(connected).toContainText(`Connected ${second.label}`);
+  // The unplug's Undo went with the first connection: it would undo that instead.
+  await expect(unplugged.locator('button')).toHaveCount(0);
+
+  // The toasts sit over the inspector, not over the drawing.
+  const inspector = await page.locator('#inspector').boundingBox();
+  for (const box of [await connected.boundingBox(), await unplugged.boundingBox()]) {
+    expect(box.x).toBeGreaterThanOrEqual(inspector.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(inspector.x + inspector.width);
+  }
+  await connected.getByRole('button', { name: 'Undo' }).click();
+  expect(await cableAt(page, 'ib-leaf-a01', 'p14')).toBeNull();
+  expect((await cableAt(page, 'ib-leaf-a01', 'p13')).label).toBe(first.label);
+});

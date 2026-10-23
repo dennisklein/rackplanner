@@ -754,7 +754,7 @@
     const i = rows.findIndex((r) => r.row.id === ui.rowId) + dir;
     if (i < 0 || i >= rows.length) return;
     setRow(rows[i].row.id);
-    toast(`${rows[i].floor.name} · ${rows[i].row.name}`);
+    toast(`${rows[i].floor.name} · ${rows[i].row.name}`, { kind: 'where' });
   }
 
   el.floorTabs.addEventListener('click', (e) => {
@@ -790,6 +790,7 @@
       if (z) ui.zoom = clamp(z, 0.1, 3);
     }
     render();
+    placeToastsSoon();
     if (ws === 'cabling') {
       if (cab.zoomable()) fitWidth();
     } else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
@@ -4552,16 +4553,35 @@
    * In a dialog, the toasts keep clear of its footer: where they would
    * cover its buttons (a dialog as tall as a phone's screen), they sit just
    * above it. Placed once the dialog has its content, and again when it
-   * changes size.
+   * changes size. In Cabling they keep off the drawing, whose ports take
+   * the clicks: at the foot of the inspector beside it, above its buttons.
    */
   function placeToasts() {
-    const dlg = el.toasts.parentNode;
-    const foot = dlg && dlg.tagName === 'DIALOG' && dlg.open ? $('.dlg-foot', dlg) : null;
-    el.toasts.style.bottom = '';
-    if (!foot || !el.toasts.children.length) return;
+    const host = el.toasts.parentNode;
+    const foot = host && host.tagName === 'DIALOG' && host.open ? $('.dlg-foot', host) : null;
+    const style = el.toasts.style;
+    style.bottom = style.left = style.width = '';
+    el.toasts.classList.remove('is-docked');
+    if (!el.toasts.children.length) return;
+    if (!foot) {
+      if (host === document.body && ui.workspace === 'cabling') dockToasts();
+      return;
+    }
     const f = foot.getBoundingClientRect();
     const t = el.toasts.getBoundingClientRect();
-    if (t.bottom > f.top && t.top < f.bottom) el.toasts.style.bottom = `${Math.round(window.innerHeight - f.top + 8)}px`;
+    if (t.bottom > f.top && t.top < f.bottom) style.bottom = `${Math.round(window.innerHeight - f.top + 8)}px`;
+  }
+  function dockToasts() {
+    const box = el.inspector.getBoundingClientRect();
+    // On a narrow screen the inspector is below the stage: the toasts stay in the middle.
+    if (!box.width || box.left < el.stage.getBoundingClientRect().right) return;
+    const actions = $('.insp-actions', el.inspector);
+    const a = actions && actions.getClientRects().length ? actions.getBoundingClientRect() : null;
+    const top = Math.min(a ? a.top : box.bottom, box.bottom, window.innerHeight);
+    el.toasts.classList.add('is-docked');
+    el.toasts.style.left = `${Math.round(box.left + 8)}px`;
+    el.toasts.style.width = `${Math.round(box.width - 16)}px`;
+    el.toasts.style.bottom = `${Math.round(window.innerHeight - top + 8)}px`;
   }
   let toastFrame = 0;
   function placeToastsSoon() {

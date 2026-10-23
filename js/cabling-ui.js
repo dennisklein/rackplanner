@@ -1056,7 +1056,7 @@
         const pos = M.locateRow(project(), t.row);
         if (!pos) return;
         ctx.setRow(t.row);
-        toast(`${pos.floor.name} · ${pos.row.name}`);
+        toast(`${pos.floor.name} · ${pos.row.name}`, { kind: 'where' });
       } else if (t.kind === 'cable') {
         const ids = selCableIds();
         if (add) selectCables(ids.includes(t.id) ? ids.filter((x) => x !== t.id) : ids.concat([t.id]));
@@ -1171,7 +1171,7 @@
       ui.pending = null;
       ui.cabSel = { kind: 'cables', ids: [made.id] };
       ctx.render();
-      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}`, { action: 'Undo', onAction: ctx.undo });
+      toast(`Connected ${made.label}${breakout && legs.length < t.legs ? `, ${legs.length} of ${t.legs} legs` : ''}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
       return true;
     }
 
@@ -2630,7 +2630,7 @@
       ui.pending = null;
       ui.cabSel = { kind: 'cables', ids: [id] };
       ctx.render();
-      toast(`Plugged leg ${i + 1} of ${c.label || 'the cable'} into ${endText(end)}`, { action: 'Undo', onAction: ctx.undo });
+      toast(`Plugged leg ${i + 1} of ${c.label || 'the cable'} into ${endText(end)}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
       return true;
     }
 
@@ -3121,7 +3121,7 @@
         rememberNetwork(props.network);
         ui.cabSel = { kind: 'cables', ids: [made.id] };
         ctx.render();
-        toast(`Connected ${made.label}`, { action: 'Undo', onAction: ctx.undo });
+        toast(`Connected ${made.label}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
       });
     }
 
@@ -3543,7 +3543,7 @@
       rememberNetwork(items[0].network);
       selectCables(added.map((c) => c.id), { reveal: true });
       const names = added.length === 1 ? added[0].label : `${plural(added.length, 'cable')}, ${added[0].label} … ${added[added.length - 1].label}`;
-      toast(`Connected ${names}`, { action: 'Undo', onAction: ctx.undo });
+      toast(`Connected ${names}`, { action: 'Undo', onAction: ctx.undo, kind: 'connected' });
     });
 
     // ------------------------------------------------------------ network dialog

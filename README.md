@@ -258,7 +258,9 @@ type, click the head's port and then a port for each leg; <kbd>Enter</kbd>
 or <kbd>Esc</kbd> connects it with the legs set so far. Before that,
 <kbd>Esc</kbd> cancels. **+ Cable** in the schedule connects two ports
 picked from lists, and so does a free port's inspector, or **Connect…**
-beside a free port in a device's inspector.
+beside a free port in a device's inspector. In Cabling, messages show at the
+foot of the inspector, off the drawing, and each new connection's message
+replaces the one before.
 
 **Connect series** (in the schedule, on each faceplate of the port map, and
 in the inspector of a device or of several) joins many devices to one
