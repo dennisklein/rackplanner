@@ -327,3 +327,12 @@ test('? and the help button open the how-tos and every shortcut of the workspace
   await expect(help).toBeHidden();
   await expect(page.locator('#btn-help')).toBeFocused();
 });
+
+test('the Help button leaves the nav bar of the racks one line high on a laptop screen', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const nav = await page.locator('#stage .nav').boundingBox();
+  const help = await page.locator('#btn-help').boundingBox();
+  const row = await page.locator('#btn-row').boundingBox();
+  expect(nav.height).toBeLessThan(56);
+  expect(help.y).toBeLessThan(row.y + row.height);
+});

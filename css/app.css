@@ -930,6 +930,11 @@ kbd {
   .ws-switch .ws-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .ws-switch > button { padding: 0 9px; }
 }
+/* Beside the side panels, room in one line for the nav bar's Help button by the view toggle. */
+@media (min-width: 961px) and (max-width: 1365px) {
+  .nav { column-gap: 8px; padding-inline: 8px; }
+  .view-toggle { --seg-pad: 8px; }
+}
 @media (max-width: 1180px) {
   :root { --bin-w: 228px; --insp-w: 264px; }
   .brand-name { display: none; }
