@@ -143,7 +143,10 @@
     <section class="panel-sec bin-parts" id="racks-parts-sec">
       <div class="sec-head">
         <h2>Devices</h2>
-        <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit the types of devices, racks, cables and transceivers"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
+        <span class="sec-tools">
+          <button class="btn icon sm subtle" id="btn-parts-compact" type="button" aria-pressed="false" title="Compact list: one line per device type, without drawings" aria-label="Compact list"><svg class="ic"><use href="#i-table"/></svg></button>
+          <button class="btn sm subtle" id="btn-catalog" type="button" title="Edit the types of devices, racks, cables and transceivers"><svg class="ic"><use href="#i-book"/></svg><span>Catalog</span></button>
+        </span>
       </div>
       <p class="sec-hint"><span class="hint-pointer">Drag onto a rack, or click one and then click a slot. With the keyboard, press Enter on one.</span><span class="hint-touch">Tap a device, then tap a free slot in a rack.</span></p>
       <div class="parts" id="parts"></div>

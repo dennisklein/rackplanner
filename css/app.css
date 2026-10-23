@@ -311,6 +311,14 @@ p { margin: 0; }
   font-variant-numeric: tabular-nums;
 }
 .part-count.is-zero { background: transparent; color: var(--ink-3); }
+/* Compact: one line per type, without its drawing. */
+.parts.is-compact { gap: 3px; }
+.parts.is-compact .part { grid-template-rows: auto; align-items: center; padding: 4px 8px 4px 10px; }
+.parts.is-compact .part-art { display: none; }
+.parts.is-compact .part-meta { flex-direction: row; align-items: baseline; gap: 8px; }
+.parts.is-compact .part-name, .parts.is-compact .part-spec { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.parts.is-compact .part-name { flex: none; max-width: 100%; }
+.parts.is-compact .part-count { align-self: center; }
 
 /* Cluster list */
 .clusters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }

@@ -133,6 +133,7 @@
   if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   if (prefs.detail !== 'bare') prefs.detail = 'full';
+  prefs.compactParts = prefs.compactParts === true;
   const lib = window.RP.library.create(storage);
   let planId = null;
   let project = null;
@@ -939,6 +940,17 @@
   }
   el.bare.addEventListener('click', () => setDetail(prefs.detail === 'bare' ? 'full' : 'bare'));
   el.bare.setAttribute('aria-pressed', String(prefs.detail === 'bare'));
+
+  /** Lists the device types one line each, without their drawings, so that more of them fit. */
+  function setCompactParts(on) {
+    prefs.compactParts = on;
+    savePrefs();
+    el.parts.classList.toggle('is-compact', on);
+    $('#btn-parts-compact').setAttribute('aria-pressed', String(on));
+  }
+  $('#btn-parts-compact').addEventListener('click', () => setCompactParts(!prefs.compactParts));
+  el.parts.classList.toggle('is-compact', prefs.compactParts);
+  $('#btn-parts-compact').setAttribute('aria-pressed', String(prefs.compactParts));
 
   function setView(view) {
     if (view === ui.view) return;

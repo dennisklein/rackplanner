@@ -535,6 +535,30 @@ test('device and rack types can be reordered in the catalog', async ({ page }) =
   expect(await page.evaluate(() => window.RP.app.project().rackTypes.map((t) => t.id))).toEqual(['rack-47', 'rack-42', 'rack-48']);
 });
 
+test('the compact device list shows most types on a laptop screen, and is kept', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const inView = () =>
+    page.evaluate(() => {
+      const list = document.querySelector('#parts').getBoundingClientRect();
+      return [...document.querySelectorAll('#parts .part')].filter((c) => {
+        const r = c.getBoundingClientRect();
+        return r.top >= list.top - 0.5 && r.bottom <= list.bottom + 0.5;
+      }).length;
+    });
+  expect(await inView()).toBeLessThan(4);
+  await page.click('#btn-parts-compact');
+  await expect(page.locator('#btn-parts-compact')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#parts .part-art').first()).toBeHidden();
+  expect(await inView()).toBeGreaterThanOrEqual(6);
+  await page.reload();
+  await expect(page.locator('#btn-parts-compact')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#parts')).toHaveClass(/is-compact/);
+  // A compact card still places its type.
+  await page.locator('.part[data-type="compute-node"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#dlg-place')).toBeVisible();
+});
+
 test('tall device types fit their card in the parts panel', async ({ page }) => {
   await page.click('#btn-catalog');
   await page.click('#cat-new');

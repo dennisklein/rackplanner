@@ -106,6 +106,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   green outline means it fits; red explains the conflict. With the keyboard,
   press <kbd>Enter</kbd> on a device: the placement dialog opens at the first
   free slot of the row, and its **Rack** and **Position** fields pick another.
+  The list button beside **Catalog** makes the list compact, one line per
+  device type without drawings, so that more types fit on a small screen.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
   in the same rack, else in the same row, so dropping a node next to `cn-012`
