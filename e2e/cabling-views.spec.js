@@ -369,6 +369,40 @@ test('a cable, a cabled port and a device are selected by a click; Shift adds; D
   expect((await ui(page)).cabSel).toBeNull();
 });
 
+test('a click on the middle of a device selects it, not a cable across its face', async ({ page }) => {
+  // No device's middle is a cable's, at Fit as at 100%.
+  for (const zoom of ['0', '1']) {
+    await page.keyboard.press(zoom);
+    const hits = await page.evaluate(() =>
+      [...document.querySelectorAll('.scene .dev')].filter((d) => {
+        d.scrollIntoView({ block: 'center', inline: 'center' });
+        const b = d.getBoundingClientRect();
+        const t = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+        return t && t.closest('[data-cable]');
+      }).length
+    );
+    expect(hits).toBe(0);
+  }
+  const dev = page.locator(`.scene .dev[data-dev="${await idOf(page, 'cn-005')}"]`);
+  await dev.scrollIntoViewIfNeeded();
+  const box = await dev.boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  expect((await ui(page)).cabSel).toEqual({ kind: 'devices', ids: [await idOf(page, 'cn-005')] });
+  // Beside the line of its cable across the face, clear of the ports: still the device.
+  const c = await cableAt(page, 'cn-005', 'ib0');
+  const at = await page.evaluate((id) => {
+    const path = document.querySelector(`.scene .cable[data-cable="${id}"] path:last-of-type`);
+    const pt = path.getPointAtLength(80);
+    const m = path.getScreenCTM();
+    return { x: pt.x * m.a + pt.y * m.c + m.e, y: pt.x * m.b + pt.y * m.d + m.f };
+  }, c.id);
+  await page.mouse.click(at.x, at.y + 4);
+  expect((await ui(page)).cabSel).toEqual({ kind: 'devices', ids: [await idOf(page, 'cn-005')] });
+  // On it: the cable.
+  await page.mouse.click(at.x, at.y);
+  expect((await ui(page)).cabSel).toEqual({ kind: 'cables', ids: [c.id] });
+});
+
 test('an exit at the end of the tray goes to its row', async ({ page }) => {
   await page.click('.scene .exit[data-row="row2"]');
   await expect(page.locator('#row-label')).toHaveText('Row B');

@@ -289,8 +289,9 @@ drawing switches between four views:
   into the rack's cable manager (copper on the left, fiber and direct cables
   on the right), up to the tray above the racks and along it, and to an exit
   at the end of the tray for cables to other rows and floors; click an exit
-  to go there. A selected device, port or cable is drawn bold, with the far
-  ends named. Each row's elevation comes back at the zoom and scroll it was
+  to go there. A click selects a device, port or cable (on a device's face,
+  the device, unless it is right on a cable's line); the selection is drawn
+  bold, with the far ends named. Each row's elevation comes back at the zoom and scroll it was
   left at; **Show in elevation** zooms in to at least 100%.
 - **Port map**: the faceplates of a rack's **Switches**, or of **All
   devices**, drawn large: every port numbered and colored by network, with

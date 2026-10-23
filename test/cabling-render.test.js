@@ -367,6 +367,33 @@ test('a click on a drawn port always lands on that port', () => {
   for (const card of CR.portMap(p, ['big', byName(p, 'sw-mgmt-a01').id, byName(p, 'ceph-01').id], {})) assert.deepEqual(misclicks(card.body), [], card.deviceId);
 });
 
+test('a click on a device’s face is the device’s, not that of a cable across it', () => {
+  const p = M.createExampleProject();
+  const out = CR.elevation(p, { rowId: 'row1', side: 'rear', interactive: true });
+  const clip = /<clipPath id="([^"]+)"><path clip-rule="evenodd" d="([^"]+)"\/><\/clipPath>/.exec(out.body);
+  assert.ok(clip, 'a clip for the hit paths');
+  // A hole in it for every device drawn.
+  const holes = clip[2].split('Z').filter(Boolean).slice(1);
+  assert.equal(holes.length, out.layout.devices.size);
+  const cn = out.layout.devices.get(byName(p, 'cn-005').id);
+  assert.ok(holes.includes(`M${R.r1(cn.x)} ${R.r1(cn.y)}h${R.r1(cn.w)}v${R.r1(cn.h)}h${R.r1(-cn.w)}`), 'cn-005 is a hole');
+  // Every wide hit path is clipped by it; on the faces a cable is hit only on its line, which takes no clicks itself.
+  const hits = [...out.body.matchAll(/<path [^>]*stroke-opacity="0"[^>]*>/g)].map((m) => m[0]);
+  assert.ok(hits.length > 50);
+  for (const h of hits) {
+    const w = Number(/stroke-width="([\d.]+)"/.exec(h)[1]);
+    if (w > 3) assert.ok(h.includes(`clip-path="url(#${clip[1]})"`), h);
+    else assert.ok(!h.includes('clip-path'), h);
+  }
+  assert.equal(hits.filter((h) => h.includes('clip-path')).length * 2, hits.length);
+  for (const [, inner] of out.body.matchAll(/<g class="cable" data-cable="[^"]+"[^>]*>(.*?)<\/g>/g)) {
+    const line = /<path d="[^"]+" fill="none" stroke="#[0-9a-f]{6}" stroke-width="[\d.]+"[^>]*>/.exec(inner)[0];
+    assert.ok(line.includes('pointer-events="none"'), line);
+  }
+  // Drawn for print or export, nothing is clipped.
+  assert.ok(!CR.elevation(p, { rowId: 'row1', side: 'rear' }).body.includes('clipPath'));
+});
+
 test('selected cables let clicks through to the ports under them', () => {
   const p = M.createExampleProject();
   const leaf = byName(p, 'ib-leaf-a01');

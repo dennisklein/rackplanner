@@ -49,6 +49,7 @@
   const EXIT_MAX = 300;
   const LEGEND_H = 74;
   const LEGEND_LINE = 22;
+  const HIT_CLIP = 'cr-hit-clip'; // the clip that keeps the cables' hit paths off the devices' faces
   const HIT = 10; // the hit area a port aims for; hitRects cuts it to half the gap to a neighbour
   // An end on the other side of the rack: a dashed stub from the rail over
   // the device's ear, and a tag that ends before the name (LABEL_X) begins.
@@ -516,8 +517,19 @@
     const focus = o.focusNetwork === undefined || o.focusNetwork === null ? null : o.focusNetwork;
     const anyHot = paths.some((q) => hot.has(q.c.id));
     const anyLit = paths.some((q) => lit.has(q.c.id));
-    /** The transparent wide path a cable is hit by. */
-    const hitPath = (q) => `<path d="${q.d}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="9" stroke-linejoin="round"/>`;
+    /**
+     * The transparent paths a cable is hit by: wide, but only as wide as its
+     * line on the devices' faces, where a click beside it is the device's
+     * (its ports are drawn over the cables, and take theirs).
+     */
+    const hitPath = (q) =>
+      `<path d="${q.d}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="9" stroke-linejoin="round" clip-path="url(#${HIT_CLIP})"/>` +
+      `<path d="${q.d}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="3" stroke-linejoin="round"/>`;
+    if (o.interactive) {
+      let holes = '';
+      for (const r of devRects.values()) holes += `M${r1(r.x)} ${r1(r.y)}h${r1(r.w)}v${r1(r.h)}h${r1(-r.w)}Z`;
+      s += `<defs><clipPath id="${HIT_CLIP}"><path clip-rule="evenodd" d="M-99999 -99999H99999V99999H-99999Z${holes}"/></clipPath></defs>`;
+    }
     /**
      * A cable's drawing; selected (`strong`) ones are drawn bold over the
      * other cables, take no clicks themselves (their hit paths come first)
@@ -532,8 +544,10 @@
       else if ((anyHot && !isHot) || (!anyHot && anyLit && !isLit)) op = 0.35;
       const w = strong ? 2.8 : isLit ? 2.2 : 1.5;
       let g = `<g class="cable${isHot ? ' is-selected' : ''}" data-cable="${esc(q.c.id)}"${op < 1 ? ` opacity="${op}"` : ''}${strong ? ' pointer-events="none"' : ''}>`;
-      if (strong || isLit) g += `<path d="${q.d}" fill="none" stroke="${T.paper}" stroke-width="${strong ? 6 : 4.5}" stroke-linejoin="round" opacity="0.9"/>`;
-      g += `<path d="${q.d}" fill="none" stroke="${n.color}" stroke-width="${w}" stroke-linejoin="round"/>`;
+      // The lines take no clicks: the hit path under them does.
+      const none = o.interactive ? ' pointer-events="none"' : '';
+      if (strong || isLit) g += `<path d="${q.d}" fill="none" stroke="${T.paper}" stroke-width="${strong ? 6 : 4.5}" stroke-linejoin="round" opacity="0.9"${none}/>`;
+      g += `<path d="${q.d}" fill="none" stroke="${n.color}" stroke-width="${w}" stroke-linejoin="round"${none}/>`;
       for (const st of q.stubs) {
         g += `<path d="M${r1(st.x1)} ${r1(st.y)}H${r1(st.x2)}" stroke="${n.color}" stroke-width="${w}" stroke-dasharray="2.5 2"/>`;
         const tag = st.face;
