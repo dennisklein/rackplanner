@@ -155,8 +155,11 @@ Rear**); otherwise they ask how it is **Mounted**.
   with their names in faint ink. Selected devices and search matches are
   drawn in full all the same, and the inspector says that their cluster is
   hidden. Clicking a hidden cluster to highlight it shows it again. A device
-  placed into a hidden cluster says so, with a button that shows it. Each
-  view keeps the clusters it hides. A long name is cut in the middle, so its end stays in sight;
+  placed into a hidden cluster says so, with a button that shows it. Under
+  the list, a line counts the hidden clusters, with **Show all**;
+  <kbd>Alt</kbd>-click an eye to show only its cluster, and again to show
+  them all. The sheet's legend marks hidden clusters. Each view keeps the
+  clusters it hides. A long name is cut in the middle, so its end stays in sight;
   pointing at it shows it in full. The first eight colors stay apart for
   color-blind eyes too, and the cluster dialog warns when a color is close to
   another cluster's. Each cluster also has a number, in its swatch, in the
@@ -259,7 +262,7 @@ Rear**); otherwise they ask how it is **Mounted**.
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |
 | <kbd>Ctrl</kbd>+scroll | Zoom at the pointer |
 | <kbd>Enter</kbd> or <kbd>Esc</kbd> | In Cabling, connect a breakout cable with the legs set so far |
-| <kbd>Esc</kbd> | Cancel placing, dragging or connecting, deselect, clear the search; in Cabling, show all networks again |
+| <kbd>Esc</kbd> | Cancel placing, dragging or connecting, deselect, clear the search; in Cabling, end a network's highlight |
 
 On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
 <kbd>[</kbd> and <kbd>]</kbd> also work where the keyboard types them with
@@ -360,7 +363,9 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   it again to show them. Selected cables and search matches are drawn all
   the same; **Show in elevation** says when a cable's network is hidden.
   Clicking a hidden network to show only its cables, or connecting a cable
-  in it, shows it again. Every label can be changed by hand, and **Renumber**
+  in it, shows it again. As for clusters, a line under the list counts the
+  hidden networks in every view, with **Show all**, and <kbd>Alt</kbd>-click
+  on an eye shows only that network. Every label can be changed by hand, and **Renumber**
   relabels selected cables in the schedule's order.
 - **Inspector**: select a cable to change its label, network, type,
   transceivers, length and notes, or to plug in or unplug the legs of a

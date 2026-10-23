@@ -1102,3 +1102,32 @@ test('the elevation exports without the networks it hides, and the Export menu s
   for (const id of ids) expect(text).not.toContain(`data-cable="${id}"`);
   expect(text).toContain('data-cable=');
 });
+
+test('the network list says how many the elevation hides, in every view, with Show all; Alt-click shows one alone', async ({ page }) => {
+  const note = page.locator('#networks-hidden');
+  const hiddenRows = page.locator('#networks .cl-row.is-hidden');
+  const eye = page.locator('#networks [data-net-eye="n-sas"]');
+  const at = await eye.boundingBox();
+  await eye.click();
+  await expect(note).toHaveText('1 network hidden · Show all');
+  expect((await eye.boundingBox()).y).toBe(at.y);
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await expect(note).toHaveText('1 network hidden in the elevation · Show all');
+  await note.locator('[data-show-all]').click();
+  await expect(note).toBeHidden();
+  await page.click('#cab-toggle [data-cab-view="elevation"]');
+  await expect(hiddenRows).toHaveCount(0);
+
+  const rows = await page.locator('#networks .cl-row').count();
+  await page.click('#networks [data-net-eye="n-ib"]', { modifiers: ['Alt'] });
+  await expect(hiddenRows).toHaveCount(rows - 1);
+  await expect(note).toHaveText(`${rows - 1} networks hidden · Show all`);
+  const ib = await plan(page, (p) => p.cables.filter((c) => c.network === 'n-ib').map((c) => c.id));
+  const drawn = await page.locator('.scene .cable').evaluateAll((gs) => gs.map((g) => g.dataset.cable));
+  expect(drawn.length).toBeGreaterThan(0);
+  for (const id of drawn) expect(ib).toContain(id);
+  await page.click('#networks [data-net-eye="n-ib"]', { modifiers: ['Alt'] });
+  await expect(hiddenRows).toHaveCount(0);
+  // Esc ends a network's highlight; the shortcuts say that, not "show all networks".
+  await expect(page.locator('#inspector .keys')).toContainText("Cancel, deselect, end a network's highlight");
+});

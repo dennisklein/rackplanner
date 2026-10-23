@@ -45,7 +45,8 @@
    * title, sub, list), renderSwatches(container, name, value, onChange),
    * openCatalog(tab); download(name, blob), fileBase(rowScoped);
    * setWorkspace(ws); keepFocus(container, fn); listName(name) → the name
-   * in a row of the network list; measure(text, font) for
+   * in a row of the network list; toggleEye(hidden, keys, id, only) and
+   * hiddenNote(node, text) for its eyes; measure(text, font) for
    * the drawings, applyZoom() and fitWidth() of the stage's svg; esc,
    * icon, plural.
    */
@@ -2193,6 +2194,9 @@
         ctx.keepFocus($('#networks'), () => ($('#networks').innerHTML = nets));
         binHTML.nets = nets;
       }
+      // What the elevation hides is told in every view, with a way to show it all.
+      const nHidden = ui.hiddenNetworks.size;
+      ctx.hiddenNote($('#networks-hidden'), nHidden ? `${plural(nHidden, 'network')} hidden${eyes ? '' : ' in the elevation'}` : '');
       const ports = p.devices.reduce((a, d) => a + portsOf(d).size, 0);
       const free = ports - cableIndex().size;
       $('#networks-hint').innerHTML = !p.networks.length
@@ -2244,7 +2248,7 @@
       const id = rowEl.dataset.network;
       if (e.target.closest('.cl-edit')) return openNetworkDialog(id);
       if (e.target.closest('.cl-eye')) {
-        if (!ui.hiddenNetworks.delete(id)) ui.hiddenNetworks.add(id);
+        ctx.toggleEye(ui.hiddenNetworks, $$('.cl-row', $('#networks')).map((x) => x.dataset.network), id, e.altKey);
         return ctx.render({ inspector: false });
       }
       if (e.target.closest('.cl-main')) {
@@ -2274,6 +2278,13 @@
     /** Whether the view shown brings the network hovered forward: the elevation and the port map (the fabric shows one network, the schedule follows clicks). */
     const showsHover = () => ui.cabView === 'elevation' || ui.cabView === 'ports';
     $('#btn-add-network').addEventListener('click', () => openNetworkDialog(null));
+    $('#networks-hidden').addEventListener('click', (e) => {
+      if (!e.target.closest('[data-show-all]')) return;
+      ui.hiddenNetworks.clear();
+      ctx.render({ inspector: false });
+      const first = $('#networks .cl-eye') || $('#networks .cl-main');
+      if (first) first.focus();
+    });
 
     /** The network new cables get: the one in focus, else the one used last. */
     function defaultNetwork() {
@@ -3238,7 +3249,7 @@
         `<dt><kbd>Del</kbd></dt><dd>Delete the selected cables</dd>` +
         `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
         (zoomable() ? `<dt><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> <kbd>1</kbd></dt><dd>Zoom in, out, to fit, to 100%</dd>` : '') +
-        `<dt><kbd>Esc</kbd></dt><dd>Cancel, deselect, show all networks</dd>` +
+        `<dt><kbd>Esc</kbd></dt><dd>Cancel, deselect, end a network's highlight</dd>` +
         `</dl></section>`;
       const pitch = $('#cab-pitch');
       const fid = floor.id;

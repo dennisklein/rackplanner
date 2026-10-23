@@ -387,6 +387,19 @@ test('hidden devices keep their place as taken space with a faint name, without 
   assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);
 });
 
+test('the legend marks hidden clusters', () => {
+  const p = M.createExampleProject();
+  const legend = (o) => {
+    const body = R.renderScene(p, Object.assign({ rowId: 'row1', measure: measure6 }, o)).body;
+    return body.slice(body.indexOf('>CLUSTERS<'));
+  };
+  const T = R.THEMES.light;
+  assert.match(legend({}), new RegExp(`fill="${T.ink}">Kestrel HPC<tspan[^>]*>12</tspan>`));
+  const marked = legend({ hiddenClusters: ['c-kestrel'] });
+  assert.match(marked, new RegExp(`fill="${T.ink3}">Kestrel HPC<tspan[^>]*>12 · hidden</tspan>`));
+  assert.match(marked, new RegExp(`fill="${T.ink}">Osprey GPU<tspan[^>]*>\\d+</tspan>`), 'the others are as they were');
+});
+
 test('a device and the legend show the number of its cluster in the view', () => {
   const p = M.createExampleProject();
   const body = R.renderScene(p, { rowId: 'row1', measure: measure6 }).body;

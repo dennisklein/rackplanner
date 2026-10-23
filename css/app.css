@@ -264,6 +264,11 @@ p { margin: 0; }
   letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
 }
 .sec-hint { color: var(--ink-3); font-size: 12.5px; line-height: 1.4; }
+/* What a list hides is told in place of its hint, in a space kept for both, so the list never moves under the pointer. */
+.sec-foot { display: grid; }
+.sec-foot > * { grid-area: 1 / 1; }
+.sec-foot > .hidden-note[hidden] { display: block; visibility: hidden; }
+.sec-foot:has(> .hidden-note:not([hidden])) > :not(.hidden-note) { visibility: hidden; }
 .btn-link { padding: 0; border: 0; background: none; color: var(--ink-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .btn-link:hover { color: var(--ink); }
 

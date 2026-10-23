@@ -1518,6 +1518,40 @@ test('PNG, SVG and print draw hidden clusters as on screen, and the Export menu 
   expect(text.split('class="dev is-hidden"').length - 1).toBe(12);
 });
 
+test('the cluster list says how many are hidden, with Show all; Alt-click on an eye shows only that cluster', async ({ page }) => {
+  const note = page.locator('#clusters-hidden');
+  const hiddenRows = page.locator('#clusters .cl-row.is-hidden');
+  const eye = page.locator('#clusters [data-cl-eye="c-kestrel"]');
+  await expect(note).toBeHidden();
+  const at = await eye.boundingBox();
+  await eye.click();
+  // The note takes the hint's place: the list does not move, so a second click in place shows the cluster again.
+  await expect(note).toHaveText('1 cluster hidden · Show all');
+  await expect(page.locator('#clusters-hint')).toBeHidden();
+  expect((await eye.boundingBox()).y).toBe(at.y);
+  await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+  await expect(hiddenRows).toHaveCount(0);
+  await expect(page.locator('#clusters-hint')).toBeVisible();
+  await eye.click();
+  await page.click('#clusters [data-cl-eye="c-osprey"]');
+  await expect(note).toHaveText('2 clusters hidden · Show all');
+  // The sheet's legend marks them too.
+  await expect(page.locator('.scene')).toContainText('Kestrel HPC12 · hidden');
+  await note.locator('[data-show-all]').click();
+  await expect(note).toBeHidden();
+  await expect(hiddenRows).toHaveCount(0);
+  await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
+
+  const rows = await page.locator('#clusters .cl-row').count();
+  await page.click('#clusters [data-cl-eye="c-kestrel"]', { modifiers: ['Alt'] });
+  await expect(hiddenRows).toHaveCount(rows - 1);
+  await expect(page.locator('#clusters .cl-row[data-cluster="c-kestrel"]')).not.toHaveClass(/is-hidden/);
+  await expect(page.locator('.scene .dev:not(.is-hidden)')).toHaveCount(12);
+  // Again: all of them are shown.
+  await page.click('#clusters [data-cl-eye="c-kestrel"]', { modifiers: ['Alt'] });
+  await expect(hiddenRows).toHaveCount(0);
+});
+
 test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button takes them', async ({ page }) => {
   await page.click('#clusters [data-cl-eye="c-kestrel"]');
   await page.locator('#scene').focus();

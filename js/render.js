@@ -1022,7 +1022,7 @@
    * this row) beside the title block, or above it when the sheet is too
    * narrow for both.
    */
-  function legendLayout(project, lay, rowDevices, measure, viewId) {
+  function legendLayout(project, lay, rowDevices, measure, viewId, hiddenIds) {
     const counts = new Map();
     let unassigned = 0;
     for (const d of rowDevices) {
@@ -1035,7 +1035,10 @@
       .map((c, i) => ({ id: c.id, name: c.name, color: c.color, mark: String(i + 1) }))
       .filter((c) => counts.has(c.id))
       .map((c) => Object.assign(c, { count: counts.get(c.id) }));
-    if (unassigned) items.push({ name: 'Unassigned', color: null, count: unassigned });
+    if (unassigned) items.push({ id: null, name: 'Unassigned', color: null, count: unassigned });
+    // A hidden cluster is marked as such, as the list of clusters marks it.
+    const hidden = new Set(hiddenIds || []);
+    for (const it of items) it.tail = hidden.has(it.id) ? `${it.count} · hidden` : String(it.count);
     const width = lay.width;
     const inner = width - MX * 2;
     const stacked = inner - TITLE_W - 40 < 240;
@@ -1044,7 +1047,7 @@
     let row = 0;
     for (const it of items) {
       it.label = fitText(it.name, FONTS.legend, 200, measure);
-      it.w = 20 + measure(it.label, FONTS.legend.css) + 8 + measure(String(it.count), FONTS.stat.css) + 26;
+      it.w = 20 + measure(it.label, FONTS.legend.css) + 8 + measure(it.tail, FONTS.stat.css) + 26;
       if (x > 0 && x + it.w > maxW) {
         x = 0;
         row++;
@@ -1074,9 +1077,11 @@
       const x = MX + it.x;
       const y = y0 + 20 + it.row * 22;
       const sc = schemeFor(it.color, theme);
-      s += `<rect x="${r1(x)}" y="${y + 2}" width="14" height="12" rx="2" fill="${sc.ear}" stroke="${sc.edge}"/>`;
-      if (it.mark) s += text(x + 7, y + 11, it.mark, FONTS.mark, inkOn(sc.ear), ' text-anchor="middle"');
-      s += `<text x="${r1(x + 20)}" y="${y + 12}" font-family="${FONTS.legend.family}" font-size="${FONTS.legend.size}" font-weight="${FONTS.legend.weight}" fill="${T.ink}">${esc(it.label)}<tspan dx="7" font-family="${FONTS.stat.family}" font-size="${FONTS.stat.size}" fill="${T.ink3}">${it.count}</tspan></text>`;
+      const faded = it.tail !== String(it.count);
+      const fade = faded ? ' opacity="0.5"' : '';
+      s += `<rect x="${r1(x)}" y="${y + 2}" width="14" height="12" rx="2" fill="${sc.ear}" stroke="${sc.edge}"${fade}/>`;
+      if (it.mark) s += text(x + 7, y + 11, it.mark, FONTS.mark, inkOn(sc.ear), ` text-anchor="middle"${fade}`);
+      s += `<text x="${r1(x + 20)}" y="${y + 12}" font-family="${FONTS.legend.family}" font-size="${FONTS.legend.size}" font-weight="${FONTS.legend.weight}" fill="${faded ? T.ink3 : T.ink}">${esc(it.label)}<tspan dx="7" font-family="${FONTS.stat.family}" font-size="${FONTS.stat.size}" fill="${T.ink3}">${esc(it.tail)}</tspan></text>`;
     }
 
     // Title block in the lower right corner, like a drawing sheet.
@@ -1116,7 +1121,9 @@
    *   (others are dimmed), hidden(device) → bool (drawn as taken
    *   space with its name only), dragging: Set of device ids, date,
    *   sheet: { index, count }, measure(text, cssFont) → px,
-   *   view: id of the view whose clusters color the devices (default: the first)
+   *   view: id of the view whose clusters color the devices (default: the first),
+   *   hiddenClusters: ids of the clusters hidden (null for the unassigned
+   *   devices), marked in the legend
    */
   function renderScene(project, opts) {
     const o = opts || {};
@@ -1128,7 +1135,7 @@
     const byRack = M.devicesByRack(project);
     const rowDevices = [];
     for (const r of lay.racks) rowDevices.push(...(byRack.get(r.rack.id) || []));
-    const leg = legendLayout(project, lay, rowDevices, measure, o.view);
+    const leg = legendLayout(project, lay, rowDevices, measure, o.view, o.hiddenClusters);
     const width = lay.width;
     const height = Math.round(lay.footTop + leg.height + 30);
     let s = defs(theme, T, lay);

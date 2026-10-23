@@ -494,6 +494,8 @@
     fileBase,
     keepFocus,
     listName,
+    toggleEye,
+    hiddenNote,
     measure,
     applyZoom: () => applyZoom(),
     fitWidth: () => fitWidth(),
@@ -706,10 +708,38 @@
     const match = searchMatcher();
     return (d) => hide(d) && !sel.has(d.id) && !(match && match(d));
   }
+  /**
+   * An eye clicked in the cluster or network list, of the group `id` of
+   * those `keys`, in the set hidden: it hides or shows the group; with
+   * `only` (Alt-click) it shows that group alone, and all of them again
+   * when it already was.
+   */
+  function toggleEye(hidden, keys, id, only) {
+    if (!only) {
+      if (!hidden.delete(id)) hidden.add(id);
+      return;
+    }
+    const alone = keys.every((k) => (k === id) !== hidden.has(k));
+    hidden.clear();
+    if (!alone) for (const k of keys) if (k !== id) hidden.add(k);
+  }
+  /**
+   * "2 clusters hidden · Show all" in `node`, under a list, while it hides
+   * something (`text`); its button has data-show-all. Hidden, it keeps its
+   * last text, which keeps its space (see .sec-foot).
+   */
+  function hiddenNote(node, text) {
+    node.hidden = !text;
+    if (!text || node.dataset.text === text) return;
+    node.dataset.text = text;
+    node.innerHTML = `${esc(text)} · <button type="button" class="btn-link" data-show-all>Show all</button>`;
+  }
   /** Shows a cluster of the view shown that the racks hide. */
   function showCluster(id) {
     if (hiddenClusters().delete(id)) render();
   }
+  /** The clusters hidden, as the sheet's legend marks them: ids, null for the unassigned devices. */
+  const legendHidden = () => [...hiddenClusters()].map((k) => (k === '__none' ? null : k));
   /** Whether the view shown hides device `d`, or null when it hides nothing. */
   function hiddenFn() {
     const set = hiddenClusters();
@@ -779,6 +809,7 @@
       selectedRack: sel && sel.kind === 'rack' ? sel.id : null,
       highlight: highlightFn(),
       hidden: drawnHidden(),
+      hiddenClusters: legendHidden(),
       view: ui.clusterView,
       dragging: d && d.active && d.source === 'device' && !d.copy ? new Set(d.ids) : null,
     });
@@ -1250,6 +1281,8 @@
     let html = clusters.map((c, i) => row(c.id, c.name, c.color, counts.get(c.id) || 0, true, i + 1)).join('');
     if (unassigned) html += row('__none', 'Unassigned', null, unassigned, false);
     keepFocus(el.clusters, () => (el.clusters.innerHTML = html || `<li class="cl-empty">No clusters yet.</li>`));
+    const nHidden = hiddenClusters().size;
+    hiddenNote($('#clusters-hidden'), nHidden ? `${plural(nHidden, 'cluster')} hidden` : '');
     el.clustersHint.innerHTML = !clusters.length
       ? 'Clusters give devices that belong together one color.'
       : ui.focusCluster
@@ -2890,7 +2923,8 @@
     const id = rowEl.dataset.cluster;
     if (e.target.closest('.cl-edit')) return openClusterDialog(id);
     if (e.target.closest('.cl-eye')) {
-      if (!hiddenClusters().delete(id)) hiddenClusters().add(id);
+      const keys = $$('.cl-row', el.clusters).map((x) => x.dataset.cluster);
+      toggleEye(hiddenClusters(), keys, id, e.altKey);
       // The inspector too: it says what of the selection is hidden.
       return render();
     }
@@ -2923,6 +2957,14 @@
     renderStage();
   });
   $('#btn-add-cluster').addEventListener('click', () => openClusterDialog(null));
+  $('#clusters-hidden').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-show-all]')) return;
+    hiddenClusters().clear();
+    render();
+    // The button is gone: keyboard focus goes to the list.
+    const first = el.clusters.querySelector('.cl-eye');
+    if (first) first.focus();
+  });
 
   // ---------------------------------------------------------------- search
 
@@ -5144,7 +5186,7 @@
   }
 
   function exportOpts() {
-    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn() };
+    return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn(), hiddenClusters: legendHidden() };
   }
 
   /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
@@ -5394,7 +5436,7 @@
         const sc =
           drawing === 'front' || drawing === 'rear'
             ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure, hiddenNetworks: cab.hiddenNetworkIds() })
-            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn() });
+            : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn(), hiddenClusters: legendHidden() });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
       })
       .join('');
