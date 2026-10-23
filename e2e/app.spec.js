@@ -1216,6 +1216,37 @@ test.describe('offline', () => {
   });
 });
 
+test('the menus of the toolbar open inside the window', async ({ page }) => {
+  for (const size of [{ width: 1024, height: 768 }, { width: 390, height: 664 }]) {
+    await page.setViewportSize(size);
+    for (const [btn, menu] of [['#btn-export', '#menu-export'], ['#btn-new', '#menu-new'], ['#btn-theme', '#menu-theme']]) {
+      await page.click(btn);
+      const box = await page.locator(menu).boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+      await page.keyboard.press('Escape');
+    }
+  }
+});
+
+test.describe('on a phone’s screen', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('the menus of the toolbar open inside it, though one past the edge widens the page', async ({ page }) => {
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const [btn, menu] of [['#btn-export', '#menu-export'], ['#btn-new', '#menu-new'], ['#btn-theme', '#menu-theme']]) {
+        await page.locator(btn).tap();
+        const box = await page.locator(menu).boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        await page.keyboard.press('Escape');
+      }
+    }
+  });
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 

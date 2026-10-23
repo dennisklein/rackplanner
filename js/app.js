@@ -4772,6 +4772,7 @@
     if (!willOpen) return;
     menu.hidden = false;
     if (fit) fitMenu(menu);
+    else keepInViewport(menu);
     btn.setAttribute('aria-expanded', 'true');
     const first = menu.querySelector('[aria-checked="true"]') || menu.querySelector('button');
     if (first) first.focus();
@@ -4798,6 +4799,17 @@
     const room = up ? above : below;
     if (h > room) menu.style.maxHeight = `${Math.max(120, Math.floor(room))}px`;
     if (menu.getBoundingClientRect().right > b.right) menu.classList.add('menu-right');
+  }
+
+  /** Moves an open menu sideways as far as it would run past an edge of the window. */
+  function keepInViewport(menu) {
+    menu.style.translate = '';
+    const r = menu.getBoundingClientRect();
+    const m = 8;
+    // Not innerWidth: on a phone, a menu past the edge widens the layout viewport that it measures.
+    const w = document.documentElement.clientWidth;
+    const dx = r.right > w - m ? w - m - r.right : r.left < m ? m - r.left : 0;
+    if (dx) menu.style.translate = `${Math.max(m - r.left, dx)}px 0`;
   }
 
   /** Arrow keys walk a menu, Escape closes it back to its button `btn`, Tab leaves it. */
