@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 
 // Every test starts from a fresh browser profile, so the example plan (one view) loads.
@@ -249,4 +250,29 @@ test('copies of a view get names of their own', async ({ page }) => {
   await page.click('#view-copy');
   await expect(names).toHaveCount(3);
   expect(await names.evaluateAll((list) => list.map((e) => e.value))).toEqual(['Default', 'Default (copy)', 'Default (copy 2)']);
+});
+
+test('a CSV export with a column per view opens as a plan of just those views', async ({ page }) => {
+  await copyView(page, 'InfiniBand');
+  await page.click('#btn-views');
+  const names = page.locator('#view-list input[data-view-name]');
+  await names.first().fill('Lustre');
+  await names.first().press('Tab');
+  await page.click('#dlg-views [data-close]');
+  const download = page.waitForEvent('download');
+  await page.click('#btn-export');
+  await page.click('[data-export="csv"]');
+  const csv = await download;
+
+  await page.click('#btn-open');
+  const chooser = page.waitForEvent('filechooser');
+  await page.click('#open-file');
+  await (await chooser).setFiles({ name: 'inventory.csv', mimeType: 'text/csv', buffer: fs.readFileSync(await csv.path()) });
+  await page.click('#dlg-report button[value="ok"]');
+  await expect(page.locator('#plan-name')).toHaveValue('inventory');
+  // The first view of the file is shown, with its clusters.
+  await expect(shown(page)).toHaveText('Lustre');
+  await expect(page.locator('#clusters .cl-row[data-cluster]').first()).toContainText('Core network');
+  await page.click('#btn-cluster-view');
+  await expect(viewItems(page).locator('span')).toHaveText(['Lustre', 'InfiniBand']);
 });

@@ -570,7 +570,8 @@
    * Name or Type are required). Devices are added to `base` when given,
    * otherwise to a new plan. Floors, rows, racks, views, clusters and device
    * types that don't exist yet are created by name. A "Cluster" column
-   * fills view `viewId`, a "Cluster: <view>" column the view of that name.
+   * fills view `viewId`, a "Cluster: <view>" column the view of that name;
+   * a new plan with only such columns has only their views.
    * Returns { project, warnings, added }.
    */
   function importCSV(text, base, viewId) {
@@ -640,6 +641,8 @@
       if (t) warnings.push(`Added the device type ${t.label} (${height}U) to the catalog.`);
       return t;
     }
+    // A new plan from "Cluster: <view>" columns only has their views, not an empty Default one.
+    if (!base && col.cluster === undefined && viewCols.length) work.views = [];
     // The view each cluster column fills.
     const clusterCols = [];
     if (col.cluster !== undefined) clusterCols.push({ view: M.viewOf(work, viewId), index: col.cluster });

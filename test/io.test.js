@@ -271,6 +271,19 @@ test('CSVs have a cluster column per view, and read them back into the views of 
   assert.equal(M.clusterOf(merged, x, power.id).name, 'Feed A');
 });
 
+test('a new plan from view columns only has those views, without an empty Default', () => {
+  const csv = ['Rack,Position,Name,Type,Cluster: InfiniBand,Cluster: Lustre', 'Rack A01,U1,cn-1,Compute node,HDR-21,Hebe', 'Rack A01,U3,cn-2,Compute node,HDR-2D,'].join('\n');
+  const p = IO.importCSV(csv).project;
+  assert.deepEqual(p.views.map((v) => [v.id, v.name, v.clusters.map((c) => c.name)]), [['v1', 'InfiniBand', ['HDR-21', 'HDR-2D']], ['v2', 'Lustre', ['Hebe']]]);
+  assert.equal(M.clusterOf(p, p.devices[0], 'v1').name, 'HDR-21');
+  // A plain Cluster column fills the first view, so Default stays.
+  const plain = IO.importCSV(csv.replace('Cluster: InfiniBand', 'Cluster')).project;
+  assert.deepEqual(plain.views.map((v) => v.name), ['Default', 'Lustre']);
+  // Added to a plan, the plan keeps its views.
+  const merged = IO.importCSV(csv, M.createEmptyProject()).project;
+  assert.deepEqual(merged.views.map((v) => v.name), ['Default', 'InfiniBand', 'Lustre']);
+});
+
 test('parseCSV handles quotes, other separators and the formula guard', () => {
   assert.deepEqual(IO.parseCSV('a,b\r\n"x, ""y""",\'=1\n\n'), [['a', 'b'], ['x, "y"', '=1']]);
   assert.deepEqual(IO.parseCSV('﻿a;b\n1;2'), [['a', 'b'], ['1', '2']]);
