@@ -882,10 +882,18 @@ kbd {
 
 /* ------------------------------------------------------------ responsive */
 
-/* Icons alone only where the labels would crowd out the plan name, or wrap the toolbar. */
-@media (min-width: 961px) and (max-width: 1080px), (max-width: 700px) {
-  .tb-actions .btn:not(.icon) span { display: none; }
+/*
+ * Icons alone where the labels would crowd out the plan name, or wrap the
+ * toolbar: the actions, which have tooltips, before the workspace switch.
+ * A label hidden still names its button for screen readers.
+ */
+@media (min-width: 961px) and (max-width: 1366px), (max-width: 700px) {
+  .tb-actions .btn:not(.icon) span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .tb-actions .btn:not(.icon) { padding: 0 9px; }
+}
+@media (min-width: 961px) and (max-width: 1080px) {
+  .ws-switch .ws-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ws-switch > button { padding: 0 9px; }
 }
 @media (max-width: 1180px) {
   :root { --bin-w: 228px; --insp-w: 264px; }
@@ -922,8 +930,6 @@ kbd {
 
 @media (max-width: 560px) {
   .tb-actions { flex-basis: 100%; justify-content: flex-start; }
-  .tb-actions .btn span { display: none; }
-  .tb-actions .btn:not(.icon) { padding: 0 9px; }
   .tb-group { margin-right: 0; }
   .brand-name { font-size: 18px; }
   .zoom .btn.sm span { display: none; }

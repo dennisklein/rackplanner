@@ -352,12 +352,10 @@ button.pl-port:hover, button.pl-peer:hover { background: var(--surface-2); }
 
 /* ------------------------------------------------------------ responsive */
 
-/* Icons alone in the workspace and view switches, and the search gives way first, where the switches would crowd out the plan name. */
+/* Where the switches would crowd out the plan name, the view's name gets shorter and the search gives way first. */
 @media (min-width: 961px) and (max-width: 1366px) {
-  .ws-switch .ws-label { display: none; }
-  .ws-switch > button { padding: 0 9px; }
-  .view-switch .vw-label { display: none; }
-  .view-switch .btn { gap: 2px; padding: 0 7px; }
+  .view-switch .vw-label { max-width: 96px; }
+  .view-switch .btn { gap: 4px; padding: 0 8px; }
   .search { flex-shrink: 3; min-width: 140px; }
 }
 /* A short laptop screen keeps more of its height for the table than for the order list. */

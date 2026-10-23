@@ -163,6 +163,28 @@ test('the plan name keeps its room next to the view switch on laptop screens', a
   }
 });
 
+test('on laptop screens the toolbar names the workspaces and the view shown, and its icons keep their names', async ({ page }) => {
+  await copyView(page, 'InfiniBand');
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  for (const width of [1100, 1280, 1366]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(page.locator('.ws-switch .ws-label').first(), `at ${width} px`).toBeVisible();
+    await expect(page.locator('#view-label'), `at ${width} px`).toBeVisible();
+    await expect(page.locator('#view-label')).toHaveText('InfiniBand');
+  }
+  for (const width of [1024, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    const cut = await page.locator('#plan-name').evaluate((e) => e.scrollWidth > e.clientWidth);
+    expect(cut, `at ${width} px`).toBe(false);
+    // Icons alone, with a tooltip and a name.
+    await expect(page.locator('#btn-export > span')).toHaveCSS('width', '1px');
+    await expect(page.getByRole('button', { name: 'Export', exact: true })).toHaveAttribute('title', /^Export: /);
+    await expect(page.getByRole('button', { name: 'New plan', exact: true })).toHaveAttribute('title', 'New plan');
+    await expect(page.getByRole('button', { name: 'Plans', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cabling', exact: true })).toBeVisible();
+  }
+});
+
 test('a version 4 plan opens with one view, Default', async ({ page }) => {
   const v4 = {
     app: 'rackplanner',
