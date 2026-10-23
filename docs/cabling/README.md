@@ -15,9 +15,11 @@ show the views as they are built, on the example plan; the
 
 ## 1. Data model
 
-Plan files are version 4. Everything new is optional when reading: older
-files open with no ports beyond those of the standard types, no cables, no
-networks, and the default cable types and transceivers.
+Cabling came with version 4 of the plan file; the README's
+[data model](../../README.md#data-model) describes the current version.
+Everything new is optional when reading: older files open with no ports
+beyond those of the standard types, no cables, no networks, and the default
+cable types and transceivers.
 
 | Addition | Where | Like the existing |
 | --- | --- | --- |
