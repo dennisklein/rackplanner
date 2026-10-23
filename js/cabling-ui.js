@@ -240,6 +240,7 @@
     function reset() {
       Object.assign(ui, { cabSel: null, focusNetwork: null, hoverNetwork: null, cabType: 'auto', pending: null });
       ui.hiddenNetworks.clear();
+      elevAt.clear();
       fab.network = null;
       pm.rack = null;
       sched.filter = '';
@@ -296,16 +297,61 @@
     /** Whether the stage shows a drawing that zooms (an svg view). */
     const zoomable = () => stageKind() === 'svg';
 
-    /** Shows another view; a drawing that zooms opens fitted to the stage's width, the port map at the rack of the device selected. */
+    /**
+     * Shows another view. The elevation comes back at the zoom and scroll it
+     * had for the row, another drawing that zooms opens fitted to the
+     * stage's width, the port map at the rack of the device selected. A
+     * connection being made goes on between the views with ports; another
+     * view stops it, and says so.
+     */
     function setView(id, opts) {
       if (!VIEWS[id] || id === ui.cabView) return;
+      const from = ui.cabView;
+      if (from === 'elevation') keepElevation();
       ui.cabView = id;
       prefs.cabView = id;
       ctx.savePrefs();
-      ui.pending = null;
+      if (!(PORT_VIEWS.has(from) && PORT_VIEWS.has(id))) stopPending();
       if (id === 'ports') pm.rack = startRack();
       ctx.render();
-      if (zoomable() && !(opts && opts.keepZoom)) ctx.fitWidth();
+      if (opts && opts.keepZoom) return;
+      if (id === 'elevation') restoreElevation();
+      else if (zoomable()) ctx.fitWidth();
+    }
+    /** The views whose ports are clicked to connect them. */
+    const PORT_VIEWS = new Set(['elevation', 'ports']);
+    /** Stops a connection being made, with a toast that says so (unlike Esc, which the user pressed). */
+    function stopPending() {
+      const pd = ui.pending;
+      if (!pd) return;
+      ui.pending = null;
+      toast(pd.fill ? `Plugging in leg ${pd.fill.leg + 1} cancelled` : `Connection from ${endText(pd)} cancelled`);
+    }
+
+    /** The zoom and scroll of the elevation of each row as it was left for another view or workspace: { zoom, left, top } by row id. */
+    const elevAt = new Map();
+    function keepElevation() {
+      if (ui.workspace === 'cabling' && ui.cabView === 'elevation' && elev.rowId) elevAt.set(elev.rowId, { zoom: ui.zoom, left: el.canvas.scrollLeft, top: el.canvas.scrollTop });
+    }
+    /** The elevation shown again: at the zoom and scroll it had for the row shown, else fitted to the stage's width. */
+    function restoreElevation() {
+      const at = elevAt.get(ui.rowId);
+      if (!at) return ctx.fitWidth();
+      ui.zoom = at.zoom;
+      ctx.applyZoom();
+      el.canvas.scrollLeft = at.left;
+      el.canvas.scrollTop = at.top;
+    }
+    /** The elevation of another row, as it was left for it: false when it has not been shown at all, or another view is. */
+    function elevationAgain() {
+      if (ui.cabView !== 'elevation' || !elevAt.has(ui.rowId)) return false;
+      restoreElevation();
+      return true;
+    }
+    /** The drawing of the view shown as the workspace opens: the elevation as it was left, another fitted. */
+    function fitStage() {
+      if (ui.cabView === 'elevation') restoreElevation();
+      else if (zoomable()) ctx.fitWidth();
     }
     $('#cab-toggle').addEventListener('click', (e) => {
       const b = e.target.closest('[data-cab-view]');
@@ -493,16 +539,22 @@
       }
       const d = deviceById(deviceId);
       const row = k.ctx.racks.get(d.loc.rack).row.id;
-      const entering = ui.cabView !== 'elevation';
+      const from = ui.cabView;
+      const entering = from !== 'elevation';
       if (row !== ui.rowId) ctx.setRow(row, { render: false });
       prefs.cabSide = side;
       ui.cabView = 'elevation';
       prefs.cabView = 'elevation';
       ctx.savePrefs();
-      // Opening the elevation stops a connection being made, as another view does; within it, as another row does not.
-      if (entering) ui.pending = null;
+      // Opening the elevation stops a connection being made, as another view does (not the port map); within it, as another row does not.
+      if (!PORT_VIEWS.has(from)) stopPending();
       ctx.render();
-      if (entering) ctx.fitWidth();
+      if (entering) restoreElevation();
+      // Close enough to read the ports and click them.
+      if (ui.zoom < 1) {
+        ui.zoom = 1;
+        ctx.applyZoom();
+      }
       const L = elev.layout;
       revealBox(L && (o.cable ? L.cables.get(o.cable) : L.devices.get(deviceId)));
       // A cable selected is drawn though its network is hidden: say so.
@@ -4111,6 +4163,9 @@
       hiddenNetworkIds,
       showInElevation,
       afterFit,
+      fitStage,
+      keepElevation,
+      elevationAgain,
       useCounts,
     };
   }

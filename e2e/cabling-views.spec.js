@@ -475,6 +475,75 @@ test('the zoom buttons, keys and Ctrl+wheel zoom the elevation; a change keeps z
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('rackplanner.prefs.v1')).zoom)).toBeNull();
 });
 
+test('the elevation comes back at the zoom and scroll it had for its row; Show in elevation zooms in to its ports', async ({ page }) => {
+  const where = () => page.locator('#canvas').evaluate((c) => ({ left: c.scrollLeft, top: c.scrollTop }));
+  await page.click('#btn-zoom-reset');
+  await page.click('#btn-zoom-in');
+  await page.locator('#canvas').evaluate((c) => {
+    c.scrollLeft = 300;
+    c.scrollTop = 120;
+  });
+  const at = await where();
+  expect(at.left).toBeGreaterThan(0);
+  // Another view and back.
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await page.click('#cab-toggle [data-cab-view="elevation"]');
+  expect(await zoomText(page)).toBe('120%');
+  expect(await where()).toEqual(at);
+  // The Racks workspace and back.
+  await page.click('.ws-switch [data-workspace="racks"]');
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  expect(await zoomText(page)).toBe('120%');
+  expect(await where()).toEqual(at);
+  // Another row opens at its own, then Row A comes back as it was left.
+  await page.keyboard.press(']');
+  await expect(page.locator('#row-label')).toHaveText('Row B');
+  await page.keyboard.press('0');
+  const fit = await zoomText(page);
+  await page.keyboard.press('[');
+  await expect(page.locator('#row-label')).toHaveText('Row A');
+  expect(await zoomText(page)).toBe('120%');
+  expect(await where()).toEqual(at);
+  await page.keyboard.press(']');
+  expect(await zoomText(page)).toBe(fit);
+
+  // Show in elevation from a fitted elevation: close enough to read the ports.
+  await page.keyboard.press('[');
+  await page.keyboard.press('0');
+  expect(parseInt(await zoomText(page), 10)).toBeLessThan(100);
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await page.locator('#sc-body tr[data-cable]', { has: page.locator('.sc-label', { hasText: /^IB-0012$/ }) }).locator('td').nth(1).click();
+  await page.click('#inspector [data-cab-show-cable]');
+  expect(parseInt(await zoomText(page), 10)).toBeGreaterThanOrEqual(100);
+  const c = await cableBy(page, 'IB-0012');
+  await expect(page.locator(`.scene .cable.is-selected[data-cable="${c.id}"]`)).toBeInViewport();
+});
+
+test('a connection goes on between the elevation and the port map; another view cancels it, and says so', async ({ page }) => {
+  await page.click('#btn-zoom-reset');
+  await (await port(page, 'ib-leaf-a03', 'p5')).click();
+  expect((await ui(page)).pending).toMatchObject({ port: 'p5' });
+  await page.click('#cab-toggle [data-cab-view="ports"]');
+  await expect(page.locator('.pm-top h2')).toHaveText('Rack A03 · switches');
+  await expect(page.locator('#armed-hint')).toContainText('ib-leaf-a03 p5');
+  expect((await ui(page)).pending).toMatchObject({ port: 'p5' });
+  const mgmt = await idOf(page, 'sw-mgmt-a03');
+  await page.locator(`.pm [data-port="${mgmt}|swp7"]`).click();
+  expect(await cableAt(page, 'ib-leaf-a03', 'p5')).toMatchObject({ b: { device: mgmt, port: 'swp7' } });
+
+  // From the port map back to the elevation, too.
+  await page.locator(`.pm [data-port="${await idOf(page, 'ib-leaf-a03')}|p6"]`).click();
+  await page.click('#cab-toggle [data-cab-view="elevation"]');
+  await expect(page.locator('#armed-hint')).toContainText('ib-leaf-a03 p6');
+  // The schedule has no ports: the connection stops, with a toast.
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  expect((await ui(page)).pending).toBeNull();
+  await expect(page.locator('#armed-hint')).toBeHidden();
+  await expect(page.locator('.toast span').last()).toHaveText('Connection from ib-leaf-a03 p6 cancelled');
+  // The inspector no longer offers to end it.
+  await expect(page.locator('#inspector')).not.toContainText('Or select the other end here');
+});
+
 test('the port map shows a rack’s switches with their cabled ports, and steps from rack to rack', async ({ page }) => {
   await page.click('#cab-toggle [data-cab-view="ports"]');
   await expect(page.locator('#cab-host')).toBeVisible();

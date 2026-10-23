@@ -529,6 +529,8 @@
     const o = opts || {};
     if (!M.rowById(project, rowId)) return;
     const changed = rowId !== ui.rowId;
+    // The Cabling elevation keeps its zoom and scroll for each row.
+    if (changed && ui.workspace === 'cabling') cab.keepElevation();
     ui.rowId = rowId;
     if (o.view) ui.view = o.view;
     prefs.rows[planId] = rowId;
@@ -536,7 +538,8 @@
     prefs.view = ui.view;
     savePrefs();
     if (o.render !== false) render();
-    if (changed && !o.keepScroll) scrollToOrigin();
+    if (!changed || o.keepScroll) return;
+    if (o.render === false || ui.workspace !== 'cabling' || !cab.elevationAgain()) scrollToOrigin();
   }
 
   /**
@@ -1001,6 +1004,7 @@
     disarm();
     closeMenus();
     if (ui.workspace === 'racks') racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view, zoom: ui.zoom };
+    else cab.keepElevation();
     ui.workspace = ws;
     prefs.workspace = ws;
     savePrefs();
@@ -1014,9 +1018,8 @@
     render();
     placeToastsSoon();
     announce(ws === 'cabling' ? 'Cabling workspace' : 'Racks workspace');
-    if (ws === 'cabling') {
-      if (cab.zoomable()) fitWidth();
-    } else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
+    if (ws === 'cabling') cab.fitStage();
+    else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
       el.canvas.scrollLeft = racksScroll.at.left;
       el.canvas.scrollTop = racksScroll.at.top;
     } else if (racksScroll.at || prefs.zoom) scrollToOrigin();

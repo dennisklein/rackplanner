@@ -290,7 +290,8 @@ drawing switches between four views:
   on the right), up to the tray above the racks and along it, and to an exit
   at the end of the tray for cables to other rows and floors; click an exit
   to go there. A selected device, port or cable is drawn bold, with the far
-  ends named.
+  ends named. Each row's elevation comes back at the zoom and scroll it was
+  left at; **Show in elevation** zooms in to at least 100%.
 - **Port map**: the faceplates of a rack's **Switches**, or of **All
   devices**, drawn large: every port numbered and colored by network, with
   the device at the other end written above or below it and a dot when that
@@ -328,9 +329,11 @@ doesn't fit its port is still connected, with a warning that says so and
 picked from lists, and so does a free port's inspector, or **Connect…**
 beside a free port in a device's inspector. While connecting, the first
 port's inspector offers to pick the other end there (**Or select the other
-end here**), with the cable type armed and a port that it fits. In Cabling,
-messages show at the foot of the inspector, off the drawing, and each new
-connection's message replaces the one before.
+end here**), with the cable type armed and a port that it fits. A
+connection goes on from the elevation to the port map and back; another
+view cancels it, with a toast that says so. In Cabling, messages show at the
+foot of the inspector, off the drawing, and each new connection's message
+replaces the one before.
 
 **Connect series** (in the schedule, on each faceplate of the port map, and
 in the inspector of a device or of several) joins many devices to one
