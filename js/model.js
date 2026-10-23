@@ -187,21 +187,24 @@
     { key: 'owner', label: 'Owner', csv: 'Owner' },
   ];
 
-  // Ordered so that the first few clusters get clearly distinct hues.
+  // Ordered so that the first eight clusters stay apart for the common kinds
+  // of color blindness too: distinct hues of distinct lightness.
   const CLUSTER_COLORS = [
     '#2f6fdb', // cobalt
-    '#e56b1f', // orange
-    '#0f9d8a', // teal
+    '#e69f00', // amber
+    '#7fc6f0', // sky
+    '#00896b', // teal
+    '#d55e00', // vermilion
+    '#9e2a6e', // plum
+    '#ecd94a', // yellow
+    '#6e4a2e', // brown
     '#8a5cd6', // violet
-    '#d9a21b', // amber
-    '#d64545', // red
     '#3aa655', // green
-    '#1f9fc9', // cyan
     '#d94c8a', // rose
-    '#5b62d6', // indigo
     '#8aa82c', // olive
-    '#9a6b3f', // brown
   ];
+  // Colors nearer than this (colorDistance) are hard to tell apart.
+  const COLOR_NEAR = 12;
 
   /**
    * Port and plug connectors. A plug fits a port whose `accepts` lists the
@@ -327,6 +330,44 @@
   /** Smallest `${prefix}${k}` not in `used`. */
   function nextId(prefix, used) {
     return firstFree(used, 1, (k) => prefix + k);
+  }
+
+  // Color vision deficiencies (Machado et al. 2009, full severity), on linear RGB.
+  const CVD = [
+    [0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998], // protanopia
+    [0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.01182, 0.04294, 0.968881], // deuteranopia
+    [1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.3039], // tritanopia
+  ];
+
+  /** CIE L*a*b* of a #rrggbb color, as seen through `cvd` (a CVD matrix) when given. */
+  function labOf(hex, cvd) {
+    let rgb = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    if (cvd) rgb = [0, 3, 6].map((k) => Math.min(1, Math.max(0, cvd[k] * rgb[0] + cvd[k + 1] * rgb[1] + cvd[k + 2] * rgb[2])));
+    const [r, g, b] = rgb;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+    const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+
+  /**
+   * How far apart two colors look (CIE76 ΔE): the least for normal color
+   * vision, protanopia, deuteranopia and tritanopia.
+   */
+  function colorDistance(a, b) {
+    const ha = normalizeHex(a);
+    const hb = normalizeHex(b);
+    if (!ha || !hb) return Infinity;
+    return Math.min(
+      ...[null, ...CVD].map((cvd) => {
+        const [p, q] = [labOf(ha, cvd), labOf(hb, cvd)];
+        return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+      })
+    );
   }
 
   function normalizeHex(value) {
@@ -1188,13 +1229,13 @@
       },
     ];
     p.views[0].clusters = [
-      { id: 'c-net', name: 'Core network', color: '#d9a21b' },
+      { id: 'c-net', name: 'Core network', color: '#e69f00' },
       { id: 'c-kestrel', name: 'Kestrel HPC', color: '#2f6fdb' },
-      { id: 'c-osprey', name: 'Osprey GPU', color: '#e56b1f' },
-      { id: 'c-ceph', name: 'Ceph object store', color: '#0f9d8a' },
-      { id: 'c-lustre', name: 'Lustre scratch', color: '#8a5cd6' },
-      { id: 'c-heron', name: 'Heron AI', color: '#d94c8a' },
-      { id: 'c-archive', name: 'Archive', color: '#1f9fc9' },
+      { id: 'c-osprey', name: 'Osprey GPU', color: '#d55e00' },
+      { id: 'c-ceph', name: 'Ceph object store', color: '#00896b' },
+      { id: 'c-lustre', name: 'Lustre scratch', color: '#9e2a6e' },
+      { id: 'c-heron', name: 'Heron AI', color: '#ecd94a' },
+      { id: 'c-archive', name: 'Archive', color: '#7fc6f0' },
     ];
     let n = 0;
     const add = (type, name, cluster, rackId, kind, at, extra) =>
@@ -2600,6 +2641,7 @@
     RESERVED,
     FIELDS,
     CLUSTER_COLORS,
+    COLOR_NEAR,
     CONNECTORS,
     MEDIA,
     DEFAULT_CABLE_TYPES,
@@ -2618,6 +2660,7 @@
     nextId,
     structureIds,
     normalizeHex,
+    colorDistance,
     typeOf,
     placeableTypes,
     rackTypeById,

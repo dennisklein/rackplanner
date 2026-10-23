@@ -166,7 +166,8 @@ test('devices mounted back to front are drawn with their rear side', () => {
   const sw = p.devices.find((d) => d.name === 'sw-mgmt-a01');
   assert.equal(sw.reversed, true);
   const type = M.typeOf(p, sw.type);
-  const sc = R.schemeFor('#d9a21b', 'light');
+  const color = M.clusterOf(p, sw).color;
+  const sc = R.schemeFor(color, 'light');
   const rear = R.sideFace(type, sw.name, sc, 'light', measure6, 1, 'rear');
   const front = R.deviceFace(type, sw.name, sc, 'light', measure6, 1);
   const before = R.renderScene(p, { rowId: 'row1', measure: measure6 }).body;
@@ -180,12 +181,12 @@ test('devices mounted back to front are drawn with their rear side', () => {
   assert.equal(bmc.loc.kind, 'side');
   assert.ok(after.includes(R.sideFace(type, bmc.name, sc, 'light', measure6, 1, 'rear')));
   // Ghosts of a moved reversed device keep its side.
-  const ghost = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r1', kind: 'u', at: 40 }, name: 'g', color: '#d9a21b', reversed: true }], true, { measure: measure6 });
+  const ghost = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r1', kind: 'u', at: 40 }, name: 'g', color, reversed: true }], true, { measure: measure6 });
   assert.ok(ghost.includes(R.sideFace(type, 'g', sc, 'light', measure6, 1, 'rear')));
-  const plain = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r1', kind: 'u', at: 40 }, name: 'g', color: '#d9a21b' }], true, { measure: measure6 });
+  const plain = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r1', kind: 'u', at: 40 }, name: 'g', color }], true, { measure: measure6 });
   assert.ok(plain.includes(R.deviceFace(type, 'g', sc, 'light', measure6, 1)));
   // The ghost of one device too.
-  const one = R.renderGhost(p, type.id, { rack: 'r1', kind: 'u', at: 40 }, true, { measure: measure6, name: 'g', color: '#d9a21b', reversed: true });
+  const one = R.renderGhost(p, type.id, { rack: 'r1', kind: 'u', at: 40 }, true, { measure: measure6, name: 'g', color, reversed: true });
   assert.equal(one, ghost);
 });
 

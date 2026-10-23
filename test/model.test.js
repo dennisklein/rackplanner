@@ -1056,3 +1056,17 @@ test('copyLayout keeps the views without their clusters', () => {
   const l = M.copyLayout(p);
   assert.deepEqual(l.views.map((v) => [v.id, v.name, v.clusters]), [['v1', 'Default', []], ['v2', 'InfiniBand', []]]);
 });
+
+test('the first eight cluster colors stay apart for color-blind eyes too', () => {
+  const first = M.CLUSTER_COLORS.slice(0, 8);
+  for (let i = 0; i < first.length; i++) {
+    for (let j = 0; j < i; j++) assert.ok(M.colorDistance(first[i], first[j]) >= M.COLOR_NEAR, `${first[i]} and ${first[j]}`);
+  }
+  // Cobalt and violet differ in hue only, and look the same without red cones.
+  assert.ok(M.colorDistance('#2f6fdb', '#8a5cd6') < M.COLOR_NEAR);
+  assert.equal(M.colorDistance('#2f6fdb', '#2F6FDB'), 0);
+  assert.equal(M.colorDistance('#2f6fdb', 'blue'), Infinity);
+  // The example's clusters keep to them.
+  const example = M.createExampleProject().views[0].clusters.map((c) => c.color);
+  assert.ok(example.every((c) => first.includes(c)));
+});

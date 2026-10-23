@@ -23,7 +23,7 @@
   const HISTORY_CHARS = 40e6;
   /** "Click" in a hint, which a touch screen reads as "Tap" (css/app.css shows one of the two). */
   const CLICK = '<span class="hint-touch">Tap</span><span class="hint-pointer">Click</span>';
-  const COLOR_NAMES = ['Cobalt', 'Orange', 'Teal', 'Violet', 'Amber', 'Red', 'Green', 'Cyan', 'Rose', 'Indigo', 'Olive', 'Brown'];
+  const COLOR_NAMES = ['Cobalt', 'Amber', 'Sky', 'Teal', 'Vermilion', 'Plum', 'Yellow', 'Brown', 'Violet', 'Green', 'Rose', 'Olive'];
   const SHARE_PREFIX = '#plan=';
   // What the theme button offers, and how it names each one.
   const THEME_PICKS = new Map([
