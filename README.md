@@ -809,7 +809,14 @@ Versions 1 to 3 had no ports or cables: their standard device types and rack
 types get the standard ports, sizes, tray distance and slack, and the plan
 gets the standard cable types and transceivers and no networks or cables.
 Versions 1 to 4 had one list of clusters and a `cluster` per device: they
-become one view, `Default`.
+become one view, `Default`. Each of these changes is a step from one version
+to the next in `js/io.js`, and a file goes through the steps from its own
+version on before it is read as a current one. The steps keep the standard
+types as they were when they were written, so a later change of the standard
+catalog does not change how an old file opens. `test/fixtures` holds the
+example plan of each earlier version, as that version wrote it, and what it
+becomes. A hand-made file without a version reads as version 2, and a flat
+list of racks in place of `floors` becomes one row in a file of any version.
 
 ## Tests
 

@@ -67,8 +67,9 @@
 
   /**
    * Builds floors, rows and racks. Returns a map from the file's rack ids to
-   * the plan's. Version 1 and 2 files have a flat list of racks, which
-   * becomes one row; their rack ids are mapped to r1..rN by position.
+   * the plan's. A file may have a flat list of racks instead of floors, as
+   * versions 1 and 2 did, and hand-made files of any version may: it
+   * becomes one row, and its rack ids are mapped to r1..rN by position.
    */
   function readLayout(raw, p, warnings) {
     const rackIds = new Map();
@@ -128,7 +129,7 @@
       return rackIds;
     }
 
-    // Versions 1 and 2: one row.
+    // A flat list of racks: one row.
     const rawRacks = Array.isArray(raw.racks) ? raw.racks.filter(isObj) : [];
     const n = rawRacks.length ? Math.min(rawRacks.length, L.racks) : M.DEFAULT_RACKS;
     M.addFloor(p, { racks: n, type: defaultType });
@@ -144,21 +145,6 @@
       row.racks.forEach((r) => rackIds.set(r.id, r.id));
     }
     return rackIds;
-  }
-
-  /**
-   * Files before version 4 have no ports, lengths or slack: standard types
-   * (matched by id) get the standard values of the fields they lack.
-   */
-  function withStandard(list, standard, keys) {
-    if (!Array.isArray(list)) return list;
-    return list.map((t) => {
-      const std = isObj(t) && standard.find((x) => x.id === idOf(t.id));
-      if (!std) return t;
-      const out = Object.assign({}, t);
-      for (const k of keys) if (!(k in t)) out[k] = M.clone(std[k]);
-      return out;
-    });
   }
 
   /**
@@ -183,12 +169,13 @@
   }
 
   /**
-   * Reads the views and their clusters into `p.views`. Files before
-   * version 5 have one list of clusters and a cluster per device: they
-   * become one view, "Default". Cluster ids are unique across the plan, so
-   * a cluster id used in two views gets a new id in the second. Returns a
-   * map from the file's view ids to { id, clusters: map from the file's
-   * cluster ids to the plan's }; the key '' stands for a file without views.
+   * Reads the views and their clusters into `p.views`. A file without views
+   * is read as one before version 5 was: its one list of clusters and a
+   * cluster per device become one view, "Default". Cluster ids are unique
+   * across the plan, so a cluster id used in two views gets a new id in the
+   * second. Returns a map from the file's view ids to { id, clusters: map
+   * from the file's cluster ids to the plan's }; the key '' stands for a file
+   * without views.
    */
   function readViews(raw, p, warnings) {
     const out = new Map();
@@ -232,8 +219,8 @@
   }
 
   /**
-   * A device's clusters in the plan's views, from `d.groups` (version 5) or
-   * `d.cluster` (before), with a warning for each one the plan doesn't have.
+   * A device's clusters in the plan's views, from `d.groups`, or `d.cluster`
+   * in a file without views, with a warning for each one the plan doesn't have.
    */
   function readDeviceGroups(d, name, views, warnings) {
     const groups = {};
@@ -250,7 +237,7 @@
       if (!cluster) continue;
       const view = views.get(idOf(fileView));
       if (!view) warnings.push(`${name} refers to unknown view “${fileView}”; its cluster there is dropped.`);
-      else if (!view.clusters.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned in that view.`);
+      else if (!view.clusters.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned${views.size > 1 ? ' in that view' : ''}.`);
       else groups[view.id] = view.clusters.get(cluster);
     }
     return groups;
@@ -314,6 +301,168 @@
     if (dropped) warnings.push(`Only the first ${L.cables} cables were kept.`);
   }
 
+  // ------------------------------------------------------------- migration
+
+  /*
+   * A file of an earlier version is brought up to the current one by one
+   * step per version, each a pure function from a file of its version to
+   * one of the next. Only then is it read, as a current file. The steps
+   * keep the standard catalog as it was when they were written (below), so
+   * a later change of the standard types does not change how an old file
+   * reads.
+   */
+  const STANDARD = (() => {
+    const port = (name, connector, speedGbps, side) => ({ name, connector, speedGbps, side });
+    const ports = (name, first, count, connector, speedGbps, side) => ({ name, first, count, connector, speedGbps, side });
+    const deviceType = (id, label, tag, spec, height, face, defaultName, powerW, weightKg, portList, slackM) => ({ id, label, tag, spec, height, face, defaultName, powerW, weightKg, ports: portList, slackM });
+    const rackType = (id, name, units, powerW, weightKg, widthMm) => ({ id, name, units, sideSlots: 2, powerW, weightKg, widthMm, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
+    const cableType = (id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM) => ({ id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM });
+    const transceiver = (id, name, connector, fiber, mode, speedGbps, reachM) => ({ id, name, connector, fiber, mode, speedGbps, reachM });
+    return {
+      deviceTypes: [
+        deviceType('switch-rj45', '48-port switch', 'SWITCH', '48 × RJ45', 1, 'rj45', 'sw-rj45-01', 150, 6, [ports('swp', 1, 48, 'rj45', 1, 'front'), ports('swp', 49, 4, 'sfp+', 10, 'front')], 0),
+        deviceType('switch-qsfp', '24-port switch', 'SWITCH', '24 × QSFP', 1, 'qsfp', 'sw-qsfp-01', 350, 9, [ports('p', 1, 24, 'qsfp56', 200, 'front')], 0),
+        deviceType('compute-node', 'Compute node', 'COMPUTE', 'server', 2, 'compute', 'cn-001', 700, 25, [port('bmc', 'rj45', 1, 'rear'), port('eth0', 'rj45', 1, 'rear'), port('ib0', 'qsfp56', 200, 'rear')], 0.3),
+        deviceType('storage-node', 'Storage node', 'STORAGE', 'server, 24 bays', 4, 'storage', 'sn-01', 900, 40, [
+          port('bmc', 'rj45', 1, 'rear'),
+          port('eth0', 'rj45', 1, 'rear'),
+          port('eth1', 'sfp28', 25, 'rear'),
+          ports('ib', 0, 2, 'qsfp56', 200, 'rear'),
+          ports('sas', 0, 4, 'sas-hd', 12, 'rear'),
+        ], 0.3),
+        deviceType('storage-enclosure', 'Storage enclosure', 'JBOD', 'JBOD, 2 drawers', 4, 'jbod', 'jbod-01', 800, 60, [port('mgmt', 'rj45', 1, 'rear'), port('sas-a', 'sas-hd', 12, 'rear'), port('sas-b', 'sas-hd', 12, 'rear')], 0.3),
+      ],
+      rackTypes: [
+        rackType('rack-47', '47U rack', 47, 12000, 1200, 600),
+        rackType('rack-42', '42U rack', 42, 8000, 1000, 600),
+        rackType('rack-48', '48U high-density rack', 48, 20000, 1500, 800),
+      ],
+      cableTypes: [
+        cableType('cat6a', 'Cat6a patch cord', 'cat6a', 'rj45', 'rj45', 1, 10, 100, [0.5, 1, 1.5, 2, 3, 5, 7, 10, 15, 20]),
+        cableType('dac-sfp28', 'SFP28 DAC', 'dac', 'sfp28', 'sfp28', 1, 25, 5, [0.5, 1, 1.5, 2, 3, 5]),
+        cableType('dac-qsfp56', 'QSFP56 DAC', 'dac', 'qsfp56', 'qsfp56', 1, 200, 3, [0.5, 1, 1.5, 2, 2.5, 3]),
+        cableType('aoc-qsfp56', 'QSFP56 AOC', 'aoc', 'qsfp56', 'qsfp56', 1, 200, 100, [3, 5, 7, 10, 15, 20, 30]),
+        cableType('dac-osfp-2x', 'OSFP to 2 × QSFP56 DAC', 'dac', 'osfp', 'qsfp56', 2, 400, 3, [1, 1.5, 2, 2.5, 3]),
+        cableType('aoc-osfp-2x', 'OSFP to 2 × QSFP56 AOC', 'aoc', 'osfp', 'qsfp56', 2, 400, 50, [3, 5, 7, 10, 15, 20]),
+        cableType('lc-om4', 'LC duplex OM4', 'om4', 'lc', 'lc', 1, 0, 0, [1, 2, 3, 5, 7, 10, 15, 20, 30]),
+        cableType('mpo-om4', 'MPO-12 OM4', 'om4', 'mpo', 'mpo', 1, 0, 0, []),
+        cableType('sas-hd', 'Mini-SAS HD cable', 'sas', 'sas-hd', 'sas-hd', 1, 12, 6, [0.5, 1, 2, 3, 4]),
+      ],
+      transceivers: [
+        transceiver('sfp-10g-sr', 'SFP+ 10G SR', 'sfp+', 'lc', 'mmf', 10, 300),
+        transceiver('sfp28-25g-sr', 'SFP28 25G SR', 'sfp28', 'lc', 'mmf', 25, 100),
+        transceiver('qsfp28-100g-sr4', 'QSFP28 100G SR4', 'qsfp28', 'mpo', 'mmf', 100, 100),
+        transceiver('qsfp28-100g-lr4', 'QSFP28 100G LR4', 'qsfp28', 'lc', 'smf', 100, 10000),
+        transceiver('qsfp56-200g-sr4', 'QSFP56 200G SR4', 'qsfp56', 'mpo', 'mmf', 200, 100),
+        transceiver('osfp-400g-sr4', 'OSFP 400G SR4', 'osfp', 'mpo', 'mmf', 400, 50),
+      ],
+    };
+  })();
+
+  /** Standard types (matched by id) get the standard values of the fields in `keys` they lack. */
+  function withStandard(list, standard, keys) {
+    if (!Array.isArray(list)) return list;
+    return list.map((t) => {
+      const std = isObj(t) && standard.find((x) => x.id === idOf(t.id));
+      if (!std) return t;
+      const out = Object.assign({}, t);
+      for (const k of keys) if (!(k in t)) out[k] = M.clone(std[k]);
+      return out;
+    });
+  }
+
+  /**
+   * Version 1 counted units from the bottom of a 47U rack, so `at` was the
+   * lowest unit a device fills. Heights come from the file's catalog if it
+   * has one, else from the standard types.
+   */
+  function v1to2(raw) {
+    const types = readTypes(raw.deviceTypes, 'device type', 'label', M.cleanDeviceType, L.deviceTypes, [M.RESERVED.id], []) || STANDARD.deviceTypes;
+    const rackTypes = readTypes(raw.rackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], []);
+    const rackTypeList = rackTypes && rackTypes.length ? rackTypes : STANDARD.rackTypes;
+    // Reserved space is at most as high as its rack; a flat list of racks has the first rack type.
+    const list = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
+    const racks = list(raw.floors).flatMap((f) => list(f.rows).flatMap((r) => list(r.racks)));
+    const unitsOf = (ref) => {
+      const rack = racks.find((k) => idOf(k.id) === idOf(ref));
+      return (rackTypeList.find((t) => rack && t.id === idOf(rack.type)) || rackTypeList[0]).units;
+    };
+    const heightOf = (d) => {
+      const id = idOf(d.type);
+      if (id === M.RESERVED.id) return M.clampInt(d.height, 1, unitsOf(d.loc.rack), 1);
+      const t = types.find((x) => x.id === id) || STANDARD.deviceTypes.find((x) => x.id === id);
+      return t ? t.height : 0;
+    };
+    const devices = (Array.isArray(raw.devices) ? raw.devices : []).map((d) => {
+      if (!isObj(d) || !isObj(d.loc) || d.loc.kind === 'side') return d;
+      const at = Number(d.loc.at);
+      const h = heightOf(d);
+      return h && Number.isFinite(at) ? Object.assign({}, d, { loc: Object.assign({}, d.loc, { at: 47 + 2 - at - h }) }) : d;
+    });
+    return Object.assign({}, raw, { version: 2 }, Array.isArray(raw.devices) ? { devices } : null);
+  }
+
+  /**
+   * Version 3 put the device and rack types into the file: an older one
+   * gets the standard types. (Versions 1 and 2 also had a flat list of
+   * racks, which readLayout still reads.)
+   */
+  function v2to3(raw) {
+    const out = Object.assign({}, raw, { version: 3 });
+    if (!Array.isArray(raw.deviceTypes)) out.deviceTypes = M.clone(STANDARD.deviceTypes);
+    if (!Array.isArray(raw.rackTypes) || !raw.rackTypes.length) out.rackTypes = M.clone(STANDARD.rackTypes);
+    return out;
+  }
+
+  /**
+   * Version 4 added ports, lengths, slack and the cable catalogs: standard
+   * types get the standard ports and sizes they lack, and a file without
+   * cable types or transceivers the standard ones.
+   */
+  function v3to4(raw) {
+    const out = Object.assign({}, raw, {
+      version: 4,
+      deviceTypes: withStandard(raw.deviceTypes, STANDARD.deviceTypes, ['ports', 'slackM']),
+      rackTypes: withStandard(raw.rackTypes, STANDARD.rackTypes, ['widthMm', 'depthMm', 'trayM', 'slackM']),
+    });
+    if (!Array.isArray(raw.cableTypes)) out.cableTypes = M.clone(STANDARD.cableTypes);
+    if (!Array.isArray(raw.transceivers)) out.transceivers = M.clone(STANDARD.transceivers);
+    return out;
+  }
+
+  /**
+   * Version 5 grouped the devices in views: the one list of clusters
+   * becomes the view Default, and each device's cluster its group there.
+   */
+  function v4to5(raw) {
+    const out = Object.assign({}, raw, { version: 5 });
+    // A hand-made file may have views already.
+    if (Array.isArray(raw.views)) return out;
+    out.views = [{ id: 'v1', name: 'Default', clusters: raw.clusters }];
+    if (Array.isArray(raw.devices)) out.devices = raw.devices.map((d) => (isObj(d) ? Object.assign({}, d, { groups: d.cluster === undefined ? {} : { v1: d.cluster } }) : d));
+    return out;
+  }
+
+  const MIGRATIONS = { 1: v1to2, 2: v2to3, 3: v3to4, 4: v4to5 };
+
+  /**
+   * The version a file's steps start from. A file without a valid version
+   * (hand-made ones often have none) reads as it always did: version 1
+   * only when it says 1, as version 4 when it says 4 or more, else as 2.
+   */
+  function startVersion(raw) {
+    const v = Number(raw.version);
+    if (v === 1 || v === 2 || v === 3) return v;
+    return v >= 4 ? Math.min(Math.floor(v), M.SCHEMA_VERSION) : 2;
+  }
+
+  /** `raw` as a file of the current version. */
+  function migrate(raw) {
+    let out = raw;
+    for (let v = startVersion(raw); v < M.SCHEMA_VERSION; v++) out = MIGRATIONS[v](out);
+    return out;
+  }
+
   /**
    * Turns untrusted JSON (an imported file or saved state) into a valid
    * project. Anything that doesn't fit is dropped and reported in `warnings`.
@@ -324,14 +473,11 @@
       throw new Error('This file is not a rack plan: it has no racks or devices.');
     }
     const warnings = [];
-    // Version 1 counted units from the bottom of the rack.
-    const bottomUp = Number(raw.version) === 1;
-    const legacy = !(Number(raw.version) >= 4);
+    // From here on the file has the current shape.
+    raw = migrate(raw);
     const p = M.newProjectShell({ name: str(raw.name, 120) || 'Untitled rack plan' });
-    const deviceTypes = legacy ? withStandard(raw.deviceTypes, M.DEFAULT_DEVICE_TYPES, ['ports', 'slackM']) : raw.deviceTypes;
-    p.deviceTypes = readTypes(deviceTypes, 'device type', 'label', M.cleanDeviceType, L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
-    const rawRackTypes = legacy ? withStandard(raw.rackTypes, M.DEFAULT_RACK_TYPES, ['widthMm', 'depthMm', 'trayM', 'slackM']) : raw.rackTypes;
-    const rackTypes = readTypes(rawRackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
+    p.deviceTypes = readTypes(raw.deviceTypes, 'device type', 'label', M.cleanDeviceType, L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
+    const rackTypes = readTypes(raw.rackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
     if (rackTypes && rackTypes.length) p.rackTypes = rackTypes;
     p.cableTypes = uniqueNames(readTypes(raw.cableTypes, 'cable type', 'name', M.cleanCableType, L.cableTypes, [], warnings) || p.cableTypes, 'cable type', warnings);
     p.transceivers = uniqueNames(readTypes(raw.transceivers, 'transceiver', 'name', M.cleanTransceiver, L.transceivers, [], warnings) || p.transceivers, 'transceiver', warnings);
@@ -366,7 +512,6 @@
         return void warnings.push(`Skipped ${name}: ${ref ? `rack “${ref}” is not in the plan` : 'it has no rack'}.`);
       }
       const height = type.variable ? M.clampInt(d.height, 1, M.rackUnits(p, nloc.rack), 1) : undefined;
-      if (bottomUp && nloc.kind === 'u') nloc.at = M.RACK_UNITS + 2 - nloc.at - M.heightOf(p, type.id, height);
       let list = perRack.get(nloc.rack);
       if (!list) perRack.set(nloc.rack, (list = []));
       const fit = M.canPlace(Object.assign({}, p, { devices: list }), type.id, nloc, null, height);

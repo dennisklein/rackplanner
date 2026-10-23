@@ -1,0 +1,546 @@
+{
+  "app": "rackplanner",
+  "version": 5,
+  "name": "Hall 2, row A",
+  "info": {
+    "site": "",
+    "author": "",
+    "revision": ""
+  },
+  "deviceTypes": [
+    {
+      "id": "switch-rj45",
+      "label": "48-port switch",
+      "tag": "SWITCH",
+      "spec": "48 × RJ45",
+      "height": 1,
+      "face": "rj45",
+      "defaultName": "sw-rj45-01",
+      "powerW": 150,
+      "weightKg": 6,
+      "ports": [
+        {
+          "name": "swp",
+          "first": 1,
+          "count": 48,
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "front"
+        },
+        {
+          "name": "swp",
+          "first": 49,
+          "count": 4,
+          "connector": "sfp+",
+          "speedGbps": 10,
+          "side": "front"
+        }
+      ],
+      "slackM": 0
+    },
+    {
+      "id": "switch-qsfp",
+      "label": "24-port switch",
+      "tag": "SWITCH",
+      "spec": "24 × QSFP",
+      "height": 1,
+      "face": "qsfp",
+      "defaultName": "sw-qsfp-01",
+      "powerW": 350,
+      "weightKg": 9,
+      "ports": [
+        {
+          "name": "p",
+          "first": 1,
+          "count": 24,
+          "connector": "qsfp56",
+          "speedGbps": 200,
+          "side": "front"
+        }
+      ],
+      "slackM": 0
+    },
+    {
+      "id": "compute-node",
+      "label": "Compute node",
+      "tag": "COMPUTE",
+      "spec": "server",
+      "height": 2,
+      "face": "compute",
+      "defaultName": "cn-001",
+      "powerW": 700,
+      "weightKg": 25,
+      "ports": [
+        {
+          "name": "bmc",
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "rear"
+        },
+        {
+          "name": "eth0",
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "rear"
+        },
+        {
+          "name": "ib0",
+          "connector": "qsfp56",
+          "speedGbps": 200,
+          "side": "rear"
+        }
+      ],
+      "slackM": 0.3
+    },
+    {
+      "id": "storage-node",
+      "label": "Storage node",
+      "tag": "STORAGE",
+      "spec": "server, 24 bays",
+      "height": 4,
+      "face": "storage",
+      "defaultName": "sn-01",
+      "powerW": 900,
+      "weightKg": 40,
+      "ports": [
+        {
+          "name": "bmc",
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "rear"
+        },
+        {
+          "name": "eth0",
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "rear"
+        },
+        {
+          "name": "eth1",
+          "connector": "sfp28",
+          "speedGbps": 25,
+          "side": "rear"
+        },
+        {
+          "name": "ib",
+          "first": 0,
+          "count": 2,
+          "connector": "qsfp56",
+          "speedGbps": 200,
+          "side": "rear"
+        },
+        {
+          "name": "sas",
+          "first": 0,
+          "count": 4,
+          "connector": "sas-hd",
+          "speedGbps": 12,
+          "side": "rear"
+        }
+      ],
+      "slackM": 0.3
+    },
+    {
+      "id": "storage-enclosure",
+      "label": "Storage enclosure",
+      "tag": "JBOD",
+      "spec": "JBOD, 2 drawers",
+      "height": 4,
+      "face": "jbod",
+      "defaultName": "jbod-01",
+      "powerW": 800,
+      "weightKg": 60,
+      "ports": [
+        {
+          "name": "mgmt",
+          "connector": "rj45",
+          "speedGbps": 1,
+          "side": "rear"
+        },
+        {
+          "name": "sas-a",
+          "connector": "sas-hd",
+          "speedGbps": 12,
+          "side": "rear"
+        },
+        {
+          "name": "sas-b",
+          "connector": "sas-hd",
+          "speedGbps": 12,
+          "side": "rear"
+        }
+      ],
+      "slackM": 0.3
+    }
+  ],
+  "rackTypes": [
+    {
+      "id": "rack-47",
+      "name": "47U rack",
+      "units": 47,
+      "sideSlots": 2,
+      "powerW": 12000,
+      "weightKg": 1200,
+      "widthMm": 600,
+      "depthMm": 1200,
+      "trayM": 0.5,
+      "slackM": 0.25
+    },
+    {
+      "id": "rack-42",
+      "name": "42U rack",
+      "units": 42,
+      "sideSlots": 2,
+      "powerW": 8000,
+      "weightKg": 1000,
+      "widthMm": 600,
+      "depthMm": 1200,
+      "trayM": 0.5,
+      "slackM": 0.25
+    },
+    {
+      "id": "rack-48",
+      "name": "48U high-density rack",
+      "units": 48,
+      "sideSlots": 2,
+      "powerW": 20000,
+      "weightKg": 1500,
+      "widthMm": 800,
+      "depthMm": 1200,
+      "trayM": 0.5,
+      "slackM": 0.25
+    }
+  ],
+  "cableTypes": [
+    {
+      "id": "cat6a",
+      "name": "Cat6a patch cord",
+      "media": "cat6a",
+      "connector": "rj45",
+      "connectorB": "rj45",
+      "legs": 1,
+      "speedGbps": 10,
+      "maxM": 100,
+      "lengthsM": [
+        0.5,
+        1,
+        1.5,
+        2,
+        3,
+        5,
+        7,
+        10,
+        15,
+        20
+      ]
+    },
+    {
+      "id": "dac-sfp28",
+      "name": "SFP28 DAC",
+      "media": "dac",
+      "connector": "sfp28",
+      "connectorB": "sfp28",
+      "legs": 1,
+      "speedGbps": 25,
+      "maxM": 5,
+      "lengthsM": [
+        0.5,
+        1,
+        1.5,
+        2,
+        3,
+        5
+      ]
+    },
+    {
+      "id": "dac-qsfp56",
+      "name": "QSFP56 DAC",
+      "media": "dac",
+      "connector": "qsfp56",
+      "connectorB": "qsfp56",
+      "legs": 1,
+      "speedGbps": 200,
+      "maxM": 3,
+      "lengthsM": [
+        0.5,
+        1,
+        1.5,
+        2,
+        2.5,
+        3
+      ]
+    },
+    {
+      "id": "aoc-qsfp56",
+      "name": "QSFP56 AOC",
+      "media": "aoc",
+      "connector": "qsfp56",
+      "connectorB": "qsfp56",
+      "legs": 1,
+      "speedGbps": 200,
+      "maxM": 100,
+      "lengthsM": [
+        3,
+        5,
+        7,
+        10,
+        15,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "dac-osfp-2x",
+      "name": "OSFP to 2 × QSFP56 DAC",
+      "media": "dac",
+      "connector": "osfp",
+      "connectorB": "qsfp56",
+      "legs": 2,
+      "speedGbps": 400,
+      "maxM": 3,
+      "lengthsM": [
+        1,
+        1.5,
+        2,
+        2.5,
+        3
+      ]
+    },
+    {
+      "id": "aoc-osfp-2x",
+      "name": "OSFP to 2 × QSFP56 AOC",
+      "media": "aoc",
+      "connector": "osfp",
+      "connectorB": "qsfp56",
+      "legs": 2,
+      "speedGbps": 400,
+      "maxM": 50,
+      "lengthsM": [
+        3,
+        5,
+        7,
+        10,
+        15,
+        20
+      ]
+    },
+    {
+      "id": "lc-om4",
+      "name": "LC duplex OM4",
+      "media": "om4",
+      "connector": "lc",
+      "connectorB": "lc",
+      "legs": 1,
+      "speedGbps": 0,
+      "maxM": 0,
+      "lengthsM": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        10,
+        15,
+        20,
+        30
+      ]
+    },
+    {
+      "id": "mpo-om4",
+      "name": "MPO-12 OM4",
+      "media": "om4",
+      "connector": "mpo",
+      "connectorB": "mpo",
+      "legs": 1,
+      "speedGbps": 0,
+      "maxM": 0,
+      "lengthsM": []
+    },
+    {
+      "id": "sas-hd",
+      "name": "Mini-SAS HD cable",
+      "media": "sas",
+      "connector": "sas-hd",
+      "connectorB": "sas-hd",
+      "legs": 1,
+      "speedGbps": 12,
+      "maxM": 6,
+      "lengthsM": [
+        0.5,
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "transceivers": [
+    {
+      "id": "sfp-10g-sr",
+      "name": "SFP+ 10G SR",
+      "connector": "sfp+",
+      "fiber": "lc",
+      "mode": "mmf",
+      "speedGbps": 10,
+      "reachM": 300
+    },
+    {
+      "id": "sfp28-25g-sr",
+      "name": "SFP28 25G SR",
+      "connector": "sfp28",
+      "fiber": "lc",
+      "mode": "mmf",
+      "speedGbps": 25,
+      "reachM": 100
+    },
+    {
+      "id": "qsfp28-100g-sr4",
+      "name": "QSFP28 100G SR4",
+      "connector": "qsfp28",
+      "fiber": "mpo",
+      "mode": "mmf",
+      "speedGbps": 100,
+      "reachM": 100
+    },
+    {
+      "id": "qsfp28-100g-lr4",
+      "name": "QSFP28 100G LR4",
+      "connector": "qsfp28",
+      "fiber": "lc",
+      "mode": "smf",
+      "speedGbps": 100,
+      "reachM": 10000
+    },
+    {
+      "id": "qsfp56-200g-sr4",
+      "name": "QSFP56 200G SR4",
+      "connector": "qsfp56",
+      "fiber": "mpo",
+      "mode": "mmf",
+      "speedGbps": 200,
+      "reachM": 100
+    },
+    {
+      "id": "osfp-400g-sr4",
+      "name": "OSFP 400G SR4",
+      "connector": "osfp",
+      "fiber": "mpo",
+      "mode": "mmf",
+      "speedGbps": 400,
+      "reachM": 50
+    }
+  ],
+  "floors": [
+    {
+      "id": "f1",
+      "name": "Floor 1",
+      "rowPitchM": 3,
+      "rows": [
+        {
+          "id": "row1",
+          "name": "Row A",
+          "racks": [
+            {
+              "id": "r1",
+              "name": "Rack A01",
+              "type": "rack-47",
+              "trayM": null,
+              "slackM": null
+            },
+            {
+              "id": "r2",
+              "name": "Rack A02",
+              "type": "rack-47",
+              "trayM": null,
+              "slackM": null
+            },
+            {
+              "id": "r3",
+              "name": "Rack A03",
+              "type": "rack-47",
+              "trayM": null,
+              "slackM": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "v1",
+      "name": "Default",
+      "clusters": [
+        {
+          "id": "c-net",
+          "name": "Core network",
+          "color": "#d9a21b"
+        },
+        {
+          "id": "c-kestrel",
+          "name": "Kestrel HPC",
+          "color": "#2f6fdb"
+        },
+        {
+          "id": "c-osprey",
+          "name": "Osprey GPU",
+          "color": "#e56b1f"
+        },
+        {
+          "id": "c-ceph",
+          "name": "Ceph object store",
+          "color": "#0f9d8a"
+        },
+        {
+          "id": "c-lustre",
+          "name": "Lustre scratch",
+          "color": "#8a5cd6"
+        }
+      ]
+    }
+  ],
+  "networks": [],
+  "devices": [
+    {"id":"ex-1","type":"switch-rj45","name":"sw-mgmt-a01","groups":{"v1":"c-net"},"loc":{"rack":"r1","kind":"u","at":1}},
+    {"id":"ex-2","type":"switch-qsfp","name":"ib-leaf-a01","groups":{"v1":"c-net"},"loc":{"rack":"r1","kind":"u","at":2}},
+    {"id":"ex-3","type":"switch-rj45","name":"sw-mgmt-a02","groups":{"v1":"c-net"},"loc":{"rack":"r2","kind":"u","at":1}},
+    {"id":"ex-4","type":"switch-qsfp","name":"ib-leaf-a02","groups":{"v1":"c-net"},"loc":{"rack":"r2","kind":"u","at":2}},
+    {"id":"ex-5","type":"switch-rj45","name":"sw-mgmt-a03","groups":{"v1":"c-net"},"loc":{"rack":"r3","kind":"u","at":1}},
+    {"id":"ex-6","type":"switch-qsfp","name":"ib-leaf-a03","groups":{"v1":"c-net"},"loc":{"rack":"r3","kind":"u","at":2}},
+    {"id":"ex-7","type":"switch-rj45","name":"sw-bmc-a01","groups":{"v1":"c-net"},"loc":{"rack":"r1","kind":"side","at":0}},
+    {"id":"ex-8","type":"switch-rj45","name":"sw-bmc-a03","groups":{"v1":"c-net"},"loc":{"rack":"r3","kind":"side","at":0}},
+    {"id":"ex-9","type":"compute-node","name":"cn-001","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":4}},
+    {"id":"ex-10","type":"compute-node","name":"cn-002","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":6}},
+    {"id":"ex-11","type":"compute-node","name":"cn-003","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":8}},
+    {"id":"ex-12","type":"compute-node","name":"cn-004","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":10}},
+    {"id":"ex-13","type":"compute-node","name":"cn-005","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":12}},
+    {"id":"ex-14","type":"compute-node","name":"cn-006","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":14}},
+    {"id":"ex-15","type":"compute-node","name":"cn-007","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":16}},
+    {"id":"ex-16","type":"compute-node","name":"cn-008","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":18}},
+    {"id":"ex-17","type":"compute-node","name":"cn-009","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":20}},
+    {"id":"ex-18","type":"compute-node","name":"cn-010","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":22}},
+    {"id":"ex-19","type":"compute-node","name":"cn-011","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":24}},
+    {"id":"ex-20","type":"compute-node","name":"cn-012","groups":{"v1":"c-kestrel"},"loc":{"rack":"r1","kind":"u","at":26}},
+    {"id":"ex-21","type":"compute-node","name":"gpu-001","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":4}},
+    {"id":"ex-22","type":"compute-node","name":"gpu-002","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":6}},
+    {"id":"ex-23","type":"compute-node","name":"gpu-003","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":8}},
+    {"id":"ex-24","type":"compute-node","name":"gpu-004","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":10}},
+    {"id":"ex-25","type":"compute-node","name":"gpu-005","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":12}},
+    {"id":"ex-26","type":"compute-node","name":"gpu-006","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":14}},
+    {"id":"ex-27","type":"compute-node","name":"gpu-007","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":16}},
+    {"id":"ex-28","type":"compute-node","name":"gpu-008","groups":{"v1":"c-osprey"},"loc":{"rack":"r2","kind":"u","at":18}},
+    {"id":"ex-29","type":"storage-node","name":"ceph-01","groups":{"v1":"c-ceph"},"loc":{"rack":"r2","kind":"u","at":24}},
+    {"id":"ex-30","type":"storage-node","name":"ceph-02","groups":{"v1":"c-ceph"},"loc":{"rack":"r2","kind":"u","at":28}},
+    {"id":"ex-31","type":"storage-node","name":"ceph-03","groups":{"v1":"c-ceph"},"loc":{"rack":"r2","kind":"u","at":32}},
+    {"id":"ex-32","type":"storage-node","name":"oss-01","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":4}},
+    {"id":"ex-33","type":"storage-node","name":"oss-02","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":8}},
+    {"id":"ex-34","type":"storage-enclosure","name":"jbod-01","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":12}},
+    {"id":"ex-35","type":"storage-enclosure","name":"jbod-02","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":16}},
+    {"id":"ex-36","type":"storage-enclosure","name":"jbod-03","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":20}},
+    {"id":"ex-37","type":"storage-enclosure","name":"jbod-04","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":24}}
+  ],
+  "cables": [],
+  "meta": {
+    "example": true
+  }
+}

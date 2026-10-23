@@ -1,0 +1,495 @@
+{
+  "app": "rackplanner",
+  "version": 2,
+  "name": "Hall 2, row A",
+  "racks": [
+    {
+      "id": "r1",
+      "name": "Rack A01"
+    },
+    {
+      "id": "r2",
+      "name": "Rack A02"
+    },
+    {
+      "id": "r3",
+      "name": "Rack A03"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "c-net",
+      "name": "Core network",
+      "color": "#d9a21b"
+    },
+    {
+      "id": "c-kestrel",
+      "name": "Kestrel HPC",
+      "color": "#2f6fdb"
+    },
+    {
+      "id": "c-osprey",
+      "name": "Osprey GPU",
+      "color": "#e56b1f"
+    },
+    {
+      "id": "c-ceph",
+      "name": "Ceph object store",
+      "color": "#0f9d8a"
+    },
+    {
+      "id": "c-lustre",
+      "name": "Lustre scratch",
+      "color": "#8a5cd6"
+    }
+  ],
+  "devices": [
+    {
+      "id": "ex-1",
+      "type": "switch-rj45",
+      "name": "sw-mgmt-a01",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 1
+      }
+    },
+    {
+      "id": "ex-2",
+      "type": "switch-qsfp",
+      "name": "ib-leaf-a01",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 2
+      }
+    },
+    {
+      "id": "ex-3",
+      "type": "switch-rj45",
+      "name": "sw-mgmt-a02",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 1
+      }
+    },
+    {
+      "id": "ex-4",
+      "type": "switch-qsfp",
+      "name": "ib-leaf-a02",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 2
+      }
+    },
+    {
+      "id": "ex-5",
+      "type": "switch-rj45",
+      "name": "sw-mgmt-a03",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 1
+      }
+    },
+    {
+      "id": "ex-6",
+      "type": "switch-qsfp",
+      "name": "ib-leaf-a03",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 2
+      }
+    },
+    {
+      "id": "ex-7",
+      "type": "switch-rj45",
+      "name": "sw-bmc-a01",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "side",
+        "at": 0
+      }
+    },
+    {
+      "id": "ex-8",
+      "type": "switch-rj45",
+      "name": "sw-bmc-a03",
+      "cluster": "c-net",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "side",
+        "at": 0
+      }
+    },
+    {
+      "id": "ex-9",
+      "type": "compute-node",
+      "name": "cn-001",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 4
+      }
+    },
+    {
+      "id": "ex-10",
+      "type": "compute-node",
+      "name": "cn-002",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 6
+      }
+    },
+    {
+      "id": "ex-11",
+      "type": "compute-node",
+      "name": "cn-003",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 8
+      }
+    },
+    {
+      "id": "ex-12",
+      "type": "compute-node",
+      "name": "cn-004",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 10
+      }
+    },
+    {
+      "id": "ex-13",
+      "type": "compute-node",
+      "name": "cn-005",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 12
+      }
+    },
+    {
+      "id": "ex-14",
+      "type": "compute-node",
+      "name": "cn-006",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 14
+      }
+    },
+    {
+      "id": "ex-15",
+      "type": "compute-node",
+      "name": "cn-007",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 16
+      }
+    },
+    {
+      "id": "ex-16",
+      "type": "compute-node",
+      "name": "cn-008",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 18
+      }
+    },
+    {
+      "id": "ex-17",
+      "type": "compute-node",
+      "name": "cn-009",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 20
+      }
+    },
+    {
+      "id": "ex-18",
+      "type": "compute-node",
+      "name": "cn-010",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 22
+      }
+    },
+    {
+      "id": "ex-19",
+      "type": "compute-node",
+      "name": "cn-011",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 24
+      }
+    },
+    {
+      "id": "ex-20",
+      "type": "compute-node",
+      "name": "cn-012",
+      "cluster": "c-kestrel",
+      "notes": "",
+      "loc": {
+        "rack": "r1",
+        "kind": "u",
+        "at": 26
+      }
+    },
+    {
+      "id": "ex-21",
+      "type": "compute-node",
+      "name": "gpu-001",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 4
+      }
+    },
+    {
+      "id": "ex-22",
+      "type": "compute-node",
+      "name": "gpu-002",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 6
+      }
+    },
+    {
+      "id": "ex-23",
+      "type": "compute-node",
+      "name": "gpu-003",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 8
+      }
+    },
+    {
+      "id": "ex-24",
+      "type": "compute-node",
+      "name": "gpu-004",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 10
+      }
+    },
+    {
+      "id": "ex-25",
+      "type": "compute-node",
+      "name": "gpu-005",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 12
+      }
+    },
+    {
+      "id": "ex-26",
+      "type": "compute-node",
+      "name": "gpu-006",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 14
+      }
+    },
+    {
+      "id": "ex-27",
+      "type": "compute-node",
+      "name": "gpu-007",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 16
+      }
+    },
+    {
+      "id": "ex-28",
+      "type": "compute-node",
+      "name": "gpu-008",
+      "cluster": "c-osprey",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 18
+      }
+    },
+    {
+      "id": "ex-29",
+      "type": "storage-node",
+      "name": "ceph-01",
+      "cluster": "c-ceph",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 24
+      }
+    },
+    {
+      "id": "ex-30",
+      "type": "storage-node",
+      "name": "ceph-02",
+      "cluster": "c-ceph",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 28
+      }
+    },
+    {
+      "id": "ex-31",
+      "type": "storage-node",
+      "name": "ceph-03",
+      "cluster": "c-ceph",
+      "notes": "",
+      "loc": {
+        "rack": "r2",
+        "kind": "u",
+        "at": 32
+      }
+    },
+    {
+      "id": "ex-32",
+      "type": "storage-node",
+      "name": "oss-01",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 4
+      }
+    },
+    {
+      "id": "ex-33",
+      "type": "storage-node",
+      "name": "oss-02",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 8
+      }
+    },
+    {
+      "id": "ex-34",
+      "type": "storage-enclosure",
+      "name": "jbod-01",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 12
+      }
+    },
+    {
+      "id": "ex-35",
+      "type": "storage-enclosure",
+      "name": "jbod-02",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 16
+      }
+    },
+    {
+      "id": "ex-36",
+      "type": "storage-enclosure",
+      "name": "jbod-03",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 20
+      }
+    },
+    {
+      "id": "ex-37",
+      "type": "storage-enclosure",
+      "name": "jbod-04",
+      "cluster": "c-lustre",
+      "notes": "",
+      "loc": {
+        "rack": "r3",
+        "kind": "u",
+        "at": 24
+      }
+    }
+  ],
+  "meta": {
+    "example": true
+  }
+}

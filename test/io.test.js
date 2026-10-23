@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const M = require('../js/model.js');
@@ -102,6 +104,32 @@ test('version 1 plans, counted from the bottom, keep their layout', () => {
   assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
   assert.equal(p.version, 5);
   assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 5 is kept');
+});
+
+// test/fixtures/vN.json is the example plan as version N wrote it, with that version's own code.
+const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
+
+test('files written by versions 1 to 4 read as the committed version 5 snapshots', () => {
+  for (const v of [1, 2, 3, 4]) {
+    const raw = JSON.parse(fixture(`v${v}.json`));
+    assert.equal(raw.version, v);
+    const { project, warnings } = IO.normalizeProject(raw);
+    assert.deepEqual(warnings, [], `v${v}`);
+    assert.equal(IO.serialize(project) + '\n', fixture(`v${v}-as-v5.json`), `v${v}`);
+  }
+});
+
+test('a change of the standard catalog does not change how old files read', () => {
+  const saved = M.clone([M.DEFAULT_DEVICE_TYPES, M.DEFAULT_RACK_TYPES, M.DEFAULT_CABLE_TYPES, M.DEFAULT_TRANSCEIVERS]);
+  try {
+    for (const t of M.DEFAULT_DEVICE_TYPES) Object.assign(t, { height: 1, ports: [], label: 'Changed' });
+    for (const t of M.DEFAULT_RACK_TYPES) Object.assign(t, { units: 42, widthMm: 700 });
+    M.DEFAULT_CABLE_TYPES.splice(0);
+    M.DEFAULT_TRANSCEIVERS.splice(0);
+    for (const v of [1, 2, 3, 4]) assert.equal(IO.serialize(IO.normalizeProject(JSON.parse(fixture(`v${v}.json`))).project) + '\n', fixture(`v${v}-as-v5.json`), `v${v}`);
+  } finally {
+    [M.DEFAULT_DEVICE_TYPES, M.DEFAULT_RACK_TYPES, M.DEFAULT_CABLE_TYPES, M.DEFAULT_TRANSCEIVERS].forEach((list, i) => list.splice(0, list.length, ...saved[i]));
+  }
 });
 
 test('plans keep floors, rows, catalogs, fields, reserved space and cabling', () => {
