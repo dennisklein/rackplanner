@@ -756,6 +756,14 @@
     let s = bodyShell(sc, w, h, units, g.u);
     // What the label must keep clear of on its line.
     let clear = w - EAR - 6;
+    if (o.rearMark) {
+      // Bare faces draw no fans or power supplies: a mark says that the rear faces out.
+      const mw = Math.ceil(measure('REAR', FONTS.tag.css)) + 8;
+      clear -= mw + 4;
+      const y = (Math.min(h, g.u) - 11) / 2;
+      s += `<rect x="${r1(clear + 4)}" y="${r1(y)}" width="${mw}" height="11" rx="2" fill="none" stroke="${sc.sub}" stroke-width="0.8"/>`;
+      s += text(clear + 4 + mw / 2, y + 8.2, 'REAR', FONTS.tag, sc.sub, ' text-anchor="middle" letter-spacing="0.6"');
+    }
     if (psu) {
       s += powerSupplies(sc, w, h, units, g);
       clear = psuX(w) - 6;
@@ -786,9 +794,10 @@
     return s + edgeLine(sc, w, h);
   }
 
-  /** The face seen from the front of the rack: a device mounted back to front shows its rear. */
+  /** The face seen from the front of the rack: a device mounted back to front shows its rear, marked REAR when bare. */
   function faceOf(type, name, sc, theme, measure, hU, extra, reversed) {
-    return reversed && type.face !== 'reserved' ? sideFace(type, name, sc, theme, measure, hU, 'rear', extra) : deviceFace(type, name, sc, theme, measure, hU, extra);
+    if (!reversed || type.face === 'reserved') return deviceFace(type, name, sc, theme, measure, hU, extra);
+    return sideFace(type, name, sc, theme, measure, hU, 'rear', extra && extra.bare ? Object.assign({ rearMark: true }, extra) : extra);
   }
 
   // Side-mounted devices are drawn rotated so their label reads bottom to top.
@@ -927,9 +936,11 @@
     let s = `<g class="${cls.join(' ')}" data-id="${esc(d.id)}" transform="${placeTransform(rect)}"${dim ? ' opacity="0.2"' : ''}`;
     if (o.interactive) {
       const where = M.formatDeviceLoc(project, d);
-      const label = `${d.name}, ${type.label}, ${where}${cluster ? `, cluster ${cluster.name}` : ''}`;
+      const reversed = d.reversed && type.face !== 'reserved';
+      const label = `${d.name}, ${type.label}, ${where}${cluster ? `, cluster ${cluster.name}` : ''}${reversed ? ', mounted back to front' : ''}`;
       s += ` tabindex="0" role="button" aria-label="${esc(label)}">`;
       const lines = [d.name, `${type.label} (${hU}U)`, where];
+      if (reversed) lines.push('Mounted back to front');
       if (cluster) lines.push(`Cluster: ${cluster.name}`);
       const power = M.powerOf(project, d);
       if (power) lines.push(`Power: ${formatPower(power)}`);

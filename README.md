@@ -90,8 +90,9 @@ makes a 1U PDU look like a vertical power strip.
 
 A device can be mounted **back to front**, as switches often are so that
 their ports face the servers' rear. The rack then shows its rear side, with
-its fans or power supplies, and its front ports are at the rack's rear. A
-new device of a type with all its ports at the front, such as a switch, is
+its fans or power supplies, and its front ports are at the rack's rear;
+with bare devices (<kbd>B</kbd>) it is marked **REAR**, and its tooltip says
+**Mounted back to front**. A new device of a type with all its ports at the front, such as a switch, is
 mounted that way by default. Where a type has all its ports on one side, the
 placement dialog and the inspector ask where they face (**Ports at Front |
 Rear**); otherwise they ask how it is **Mounted**.

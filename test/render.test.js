@@ -291,6 +291,22 @@ test('contrast and inkOn follow WCAG: dark ink on light fills, white on dark one
   for (const bg of ['#ddab32', '#4eaf66', '#447ddf', '#d33c3c', '#f06464', '#98a1ac', '#2d67c9']) assert.ok(R.contrast(R.inkOn(bg), bg) >= 4.5, bg);
 });
 
+test('a device mounted back to front says so in bare faces and in its tooltip', () => {
+  const p = M.createExampleProject();
+  const sw = p.devices.find((d) => d.name === 'ib-leaf-a01');
+  assert.equal(sw.reversed, true);
+  const devOf = (body, name) => body.slice(body.indexOf(`aria-label="${name},`), body.indexOf('</g>', body.indexOf(`aria-label="${name},`)));
+  const bare = R.renderScene(p, { rowId: 'row1', measure: measure6, bare: true, interactive: true }).body;
+  const leaf = devOf(bare, 'ib-leaf-a01');
+  assert.ok(leaf.includes('>REAR</text>'), 'a mark in the bare face');
+  assert.ok(leaf.includes('Mounted back to front'), 'a line in the tooltip');
+  assert.ok(leaf.includes(', mounted back to front"'), 'and in its name');
+  const node = devOf(bare, 'cn-001');
+  assert.ok(!node.includes('REAR') && !node.includes('back to front'), 'nothing on a device mounted the usual way');
+  const full = R.renderScene(p, { rowId: 'row1', measure: measure6, interactive: true }).body;
+  assert.ok(!devOf(full, 'ib-leaf-a01').includes('>REAR</text>'), 'the full face shows its rear instead');
+});
+
 test('bare faces drop the drawing and give the name the whole face', () => {
   const p = M.createExampleProject();
   const sw = M.typeOf(p, 'switch-qsfp');
