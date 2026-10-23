@@ -55,22 +55,32 @@ test.describe('in a dark system theme', () => {
   });
 });
 
-test('the focus ring of a segment stands out from it, pressed or not', async ({ page }) => {
-  await page.focus('#plan-name');
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
-  const cabling = page.locator('.ws-switch [data-workspace="cabling"]');
-  await expect(cabling).toBeFocused();
-  const look = (loc) => loc.evaluate((e) => ({ ring: getComputedStyle(e).outlineColor, ink: getComputedStyle(document.body).color }));
-  const off = await look(cabling);
-  expect(off.ring).toBe(off.ink);
-  await page.keyboard.press('Shift+Tab');
-  const racks = page.locator('.ws-switch [data-workspace="racks"]');
-  await expect(racks).toBeFocused();
-  const on = await look(racks);
-  expect(on.ring).not.toBe(on.ink);
-  expect(await contrastOf(page, 'body', on.ring, 'var(--ink)')).toBeGreaterThanOrEqual(3);
-});
+for (const theme of ['light', 'dark']) {
+  test(`the focus ring of a segment stands out from it, pressed or not, in the ${theme} theme`, async ({ page }) => {
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    await page.focus('#plan-name');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    const cabling = page.locator('.ws-switch [data-workspace="cabling"]');
+    await expect(cabling).toBeFocused();
+    // The ring and the fill under it: the button's own, or the first one behind it.
+    const look = (loc) =>
+      loc.evaluate((e) => {
+        let fill = 'rgba(0, 0, 0, 0)';
+        for (let n = e; n && /rgba\(.*, 0\)|transparent/.test(fill); n = n.parentElement) fill = getComputedStyle(n).backgroundColor;
+        return { ring: getComputedStyle(e).outlineColor, fill, ink: getComputedStyle(document.body).color };
+      });
+    const off = await look(cabling);
+    expect(off.ring).toBe(off.ink);
+    expect(await contrastOf(page, 'body', off.ring, off.fill)).toBeGreaterThanOrEqual(3);
+    await page.keyboard.press('Shift+Tab');
+    const racks = page.locator('.ws-switch [data-workspace="racks"]');
+    await expect(racks).toBeFocused();
+    const on = await look(racks);
+    expect(on.fill).toBe(on.ink);
+    expect(await contrastOf(page, 'body', on.ring, on.fill)).toBeGreaterThanOrEqual(3);
+  });
+}
 
 test('[ and ] step rows when typed with AltGr or Option', async ({ page }) => {
   await expect(page.locator('#row-label')).toHaveText('Row A');
