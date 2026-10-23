@@ -135,7 +135,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   renaming devices with names that are taken asks first.
 - **Select several**: <kbd>Shift</kbd>-click devices, <kbd>Shift</kbd>-drag
   across the empty sheet, press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole row,
-  or use the select buttons on a rack, row or cluster. Then move them
+  or use the select buttons on a rack, row or cluster. Dragging and
+  <kbd>Ctrl</kbd>+<kbd>A</kbd> leave out the devices of hidden clusters; the
+  inspector counts the hidden devices in a selection. Then move them
   together (drag, or the arrow keys), duplicate them, give them one cluster
   or owner, mount them back to front, rename them in series or delete them.
 - **Duplicate**: <kbd>Ctrl</kbd>+<kbd>D</kbd> (or the Duplicate button) copies
@@ -243,7 +245,7 @@ Rear**); otherwise they ask how it is **Mounted**.
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack (Racks) |
 | <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling, add or remove a cable, or in the schedule select a range of cables |
 | <kbd>Ctrl</kbd>+click | In Cabling, add or remove a cable |
-| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device in the row; in Cabling, the cables shown |
+| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device shown in the row; in Cabling, the cables shown |
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
 | <kbd>Enter</kbd> on a device type | Place one: the placement dialog picks its rack and position (Racks) |
 | <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling, edit the selected cable's label |

@@ -1633,6 +1633,8 @@
     const sorted = M.sortedDevices(Object.assign({}, project, { devices: devs }));
     const power = devs.reduce((a, d) => a + M.powerOf(project, d), 0);
     const units = devs.filter((d) => d.loc.kind === 'u').reduce((a, d) => a + M.deviceHeight(project, d), 0);
+    const hide = hiddenFn();
+    const hidden = hide ? devs.filter(hide).length : 0;
     const rows = sorted
       .map((d) => {
         const c = M.clusterOf(project, d, ui.clusterView);
@@ -1645,7 +1647,7 @@
       .join('');
     el.inspector.innerHTML =
       `<div class="insp-head"><div class="kicker">${icon('select', 'ic-sm')}Selection</div>` +
-      `<div class="multi-title">${plural(devs.length, 'device')}</div>` +
+      `<div class="multi-title">${plural(devs.length, 'device')}${hidden ? ` (${hidden} hidden)` : ''}</div>` +
       `<div class="insp-where">${esc(summary)}</div>` +
       `<div class="insp-sub">${units} U · ${esc(fmtPower(power))}</div></div>` +
       `<section class="insp-sec"><h3 id="multi-cluster-label">${esc(clusterHeading())}</h3>` +
@@ -2521,14 +2523,17 @@
     ui.marquee = { pointerId: e.pointerId, x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, add: e.ctrlKey || e.metaKey, base: selIds() };
     capturePointer(el.svg, e.pointerId);
   }
+  /** The devices inside the selection rectangle `m`, but not those hidden. */
   function marqueeIds(m) {
     const x = Math.min(m.x0, m.x1);
     const y = Math.min(m.y0, m.y1);
     const w = Math.abs(m.x1 - m.x0);
     const h = Math.abs(m.y1 - m.y0);
     const ids = [];
+    const hide = hiddenFn();
     for (const r of ui.layout.racks) {
       for (const d of M.devicesWithin(project, r.rack.id)) {
+        if (hide && hide(d)) continue;
         const b = R.locRect(project, d.loc, d.type, d.height, ui.layout);
         if (b.x < x + w && b.x + b.w > x && b.y < y + h && b.y + b.h > y) ids.push(d.id);
       }
@@ -5610,7 +5615,9 @@
     }
     if (mod && letter === 'a' && ui.view === 'sheet' && !cabling) {
       e.preventDefault();
-      return selectDevices(M.devicesWithin(project, ui.rowId).map((x) => x.id));
+      // As on the sheet, what is hidden is left out; a cluster's select button takes its devices all the same.
+      const hide = hiddenFn();
+      return selectDevices(M.devicesWithin(project, ui.rowId).filter((x) => !hide || !hide(x)).map((x) => x.id));
     }
     // Many layouts type these with AltGr (Ctrl+Alt on Windows) or Option: the character typed counts.
     const typed = !e.metaKey && (e.altKey || !e.ctrlKey) ? key : '';

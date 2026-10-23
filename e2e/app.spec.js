@@ -1434,6 +1434,32 @@ test('the eye of a cluster hides its devices in the racks and shows them again',
   await expect(page.locator('.scene .dev.is-hidden')).toHaveCount(0);
 });
 
+test('Ctrl+A and Shift-drag leave hidden devices out; a cluster\'s select button takes them', async ({ page }) => {
+  await page.click('#clusters [data-cl-eye="c-kestrel"]');
+  await page.locator('#scene').focus();
+  await page.keyboard.press('Control+a');
+  await expect(page.locator('.multi-title')).toHaveText('25 devices');
+  await expect(device(page, 'cn-001')).not.toHaveClass(/is-selected/);
+  await page.keyboard.press('Escape');
+
+  const a = await device(page, 'sw-mgmt-a01').boundingBox();
+  const b = await device(page, 'cn-003').boundingBox();
+  await page.keyboard.down('Shift');
+  await page.mouse.move(a.x - 30, a.y + 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 10, b.y + b.height - 2, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await expect(device(page, 'sw-mgmt-a01')).toHaveClass(/is-selected/);
+  for (const name of ['cn-001', 'cn-002', 'cn-003']) await expect(device(page, name)).not.toHaveClass(/is-selected/);
+
+  // The inspector says how many of the selection are hidden.
+  const row = page.locator('#clusters .cl-row[data-cluster="c-kestrel"]');
+  await row.hover();
+  await row.locator('.cl-select').click();
+  await expect(page.locator('.multi-title')).toHaveText('12 devices (12 hidden)');
+});
+
 test('a cluster row shows its full name: buttons over its end on hover, a long name cut in the middle', async ({ page }) => {
   const row = page.locator('#clusters .cl-row[data-cluster="c-ceph"]');
   await row.hover();
