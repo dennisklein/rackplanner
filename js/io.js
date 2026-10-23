@@ -1004,15 +1004,25 @@
     return { added, warnings };
   }
 
-  /** The order list as CSV: stock cables by length, cables made to length, then transceivers. */
-  function exportOrderCSV(project, cables) {
-    const bom = cabling().billOfMaterials(project, cables);
+  /**
+   * The order list of `cables` (default: all) as CSV: stock cables by
+   * length, cables made to length, then transceivers. With `parts` ([{
+   * name, cables }]) instead, a list for each part, its lines in a first
+   * column Part: "Within Row A", "Shared with other rows".
+   */
+  function exportOrderCSV(project, cables, parts) {
     const total = (l, n) => Math.round(l * n * 100) / 100;
-    const rows = [['Item', 'Kind', 'Length (m)', 'Count', 'Total (m)']];
-    for (const x of bom.cables) rows.push([x.type.name, 'Cable', x.lengthM, x.count, total(x.lengthM, x.count)]);
-    for (const x of bom.madeToLength) for (const l of x.lengths) rows.push([x.type.name, 'Cable, made to length', l.lengthM, l.count, total(l.lengthM, l.count)]);
-    for (const x of bom.transceivers) rows.push([x.transceiver.name, 'Transceiver', '', x.count, '']);
-    return csvText(rows);
+    const lines = (list, part) => {
+      const bom = cabling().billOfMaterials(project, list);
+      const out = [];
+      for (const x of bom.cables) out.push([x.type.name, 'Cable', x.lengthM, x.count, total(x.lengthM, x.count)]);
+      for (const x of bom.madeToLength) for (const l of x.lengths) out.push([x.type.name, 'Cable, made to length', l.lengthM, l.count, total(l.lengthM, l.count)]);
+      for (const x of bom.transceivers) out.push([x.transceiver.name, 'Transceiver', '', x.count, '']);
+      return part === undefined ? out : out.map((r) => [part].concat(r));
+    };
+    const head = ['Item', 'Kind', 'Length (m)', 'Count', 'Total (m)'];
+    if (!parts) return csvText([head].concat(lines(cables)));
+    return csvText([['Part'].concat(head)].concat(...parts.map((x) => lines(x.cables, x.name))));
   }
 
   // ----------------------------------------------------------- share links

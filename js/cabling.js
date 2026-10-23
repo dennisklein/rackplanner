@@ -154,6 +154,15 @@
     return project.cables.filter((c) => M.cableEnds(c).some((x) => devices.has(x.end.device)));
   }
 
+  /** Of the cablesWithin a rack, row or floor, those with an end outside it too: the cables it shares with others. */
+  function cablesShared(project, id) {
+    const devices = new Set(M.devicesWithin(project, id).map((d) => d.id));
+    return project.cables.filter((c) => {
+      const ends = M.cableEnds(c);
+      return ends.some((x) => devices.has(x.end.device)) && ends.some((x) => !devices.has(x.end.device));
+    });
+  }
+
   // --------------------------------------------------------------- catalogs
 
   /** `name`, or with a number when `list` has it: "QSFP56 DAC 2". The base is cut so that the name keeps within 60 characters. */
@@ -1273,6 +1282,7 @@
     portFace,
     cablesOfDevice,
     cablesWithin,
+    cablesShared,
     cleanCableType: M.cleanCableType,
     addCableType,
     updateCableType,

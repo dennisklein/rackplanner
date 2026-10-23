@@ -1418,17 +1418,23 @@
 
     // ------------------------------------------------------------ schedule
 
-    /** The cables of the schedule's scope: { name, what, cables, key, file }. */
+    /**
+     * The cables of the schedule's scope: { name, what, cables, shared,
+     * others, key, file }, where `shared` are those with an end in other
+     * rows or floors (`others`) too.
+     */
     function scopeInfo() {
       const p = project();
       const pos = ctx.currentRow();
-      if (prefs.cabScope === 'plan') return { name: p.name || 'Plan', what: 'in the plan', cables: p.cables, key: 'plan', file: ctx.fileBase() };
+      if (prefs.cabScope === 'plan') return { name: p.name || 'Plan', what: 'in the plan', cables: p.cables, shared: [], others: '', key: 'plan', file: ctx.fileBase() };
       const id = prefs.cabScope === 'floor' ? pos.floor.id : pos.row.id;
       const file = prefs.cabScope === 'floor' ? `${ctx.fileBase()}-${M.slug(pos.floor.name)}`.slice(0, 100) : ctx.fileBase(true);
       return {
         name: prefs.cabScope === 'floor' ? pos.floor.name : pos.row.name,
         what: prefs.cabScope === 'floor' ? 'with an end on this floor' : 'with an end in this row',
         cables: C.cablesWithin(p, id),
+        shared: C.cablesShared(p, id),
+        others: prefs.cabScope === 'floor' ? 'floors' : 'rows',
         key: `${prefs.cabScope}:${id}`,
         file,
       };
@@ -1816,41 +1822,58 @@
       return chips + `<button type="button" class="btn sm subtle sc-unfocus" data-sc-unfocus title="Show the cables of every network (Esc)">Show all</button>`;
     }
 
+    /**
+     * The order list of the scope: what to buy for its cables, by type and
+     * length. Cables shared with other rows (or floors) are a part of their
+     * own, with its subtotal: their rows' lists count them too.
+     */
     function bomHTML(scope) {
-      const bom = C.billOfMaterials(project(), scope.cables, fresh().ctx);
-      const groups = new Map();
-      for (const x of bom.cables) {
-        if (!groups.has(x.type.id)) groups.set(x.type.id, { type: x.type, items: [] });
-        groups.get(x.type.id).items.push(x);
-      }
       const item = (l, n) => `<span class="bom-item"><b>${esc(C.fmtM(l))}</b> × ${n}</span>`;
       const dot = '<i>·</i>';
-      let metres = 0;
-      let html = '';
-      for (const g of groups.values()) {
-        const n = g.items.reduce((a, x) => a + x.count, 0);
-        metres += g.items.reduce((a, x) => a + x.count * x.lengthM, 0);
-        html += `<div class="bom-type"><span class="bom-name">${esc(g.type.name)} <small>${n}</small></span><span class="bom-items">${g.items.map((x) => item(x.lengthM, x.count)).join(dot)}</span></div>`;
-      }
-      for (const x of bom.madeToLength) {
-        const n = x.lengths.reduce((a, l) => a + l.count, 0);
-        metres += x.totalM;
-        html +=
-          `<div class="bom-type is-made"><span class="bom-name">${esc(x.type.name)} <small>${n}</small></span>` +
-          `<span class="bom-items">${x.lengths.map((l) => item(l.lengthM, l.count)).join(dot)}${dot}<span class="bom-item bom-total">total <b>${esc(C.fmtM(x.totalM))}</b></span></span></div>`;
-      }
-      for (const x of bom.transceivers) {
-        html += `<div class="bom-type is-optic"><span class="bom-name">${esc(x.transceiver.name)}</span><span class="bom-items"><span class="bom-item">× <b>${x.count}</b></span></span></div>`;
-      }
-      const cables = bom.cables.reduce((a, x) => a + x.count, 0) + bom.madeToLength.reduce((a, x) => a + x.lengths.reduce((s, l) => s + l.count, 0), 0);
-      const optics = bom.transceivers.reduce((a, x) => a + x.count, 0);
-      const summary = [plural(cables, 'cable'), `${Math.round(metres * 10) / 10} m`].concat(optics ? [plural(optics, 'transceiver')] : []).join(', ');
-      return (
-        `<div class="bom-head"><b>To order</b><span>${esc(summary)}${bom.unresolved ? ` · <em class="bom-warn">${esc(plural(bom.unresolved, 'cable'))} without a type or a length to buy</em>` : ''}</span>` +
+      /** A list of what to buy for `cables`: { html, summary, unresolved }. */
+      const part = (cables) => {
+        const bom = C.billOfMaterials(project(), cables, fresh().ctx);
+        const groups = new Map();
+        for (const x of bom.cables) {
+          if (!groups.has(x.type.id)) groups.set(x.type.id, { type: x.type, items: [] });
+          groups.get(x.type.id).items.push(x);
+        }
+        let metres = 0;
+        let html = '';
+        for (const g of groups.values()) {
+          const n = g.items.reduce((a, x) => a + x.count, 0);
+          metres += g.items.reduce((a, x) => a + x.count * x.lengthM, 0);
+          html += `<div class="bom-type"><span class="bom-name">${esc(g.type.name)} <small>${n}</small></span><span class="bom-items">${g.items.map((x) => item(x.lengthM, x.count)).join(dot)}</span></div>`;
+        }
+        for (const x of bom.madeToLength) {
+          const n = x.lengths.reduce((a, l) => a + l.count, 0);
+          metres += x.totalM;
+          html +=
+            `<div class="bom-type is-made"><span class="bom-name">${esc(x.type.name)} <small>${n}</small></span>` +
+            `<span class="bom-items">${x.lengths.map((l) => item(l.lengthM, l.count)).join(dot)}${dot}<span class="bom-item bom-total">total <b>${esc(C.fmtM(x.totalM))}</b></span></span></div>`;
+        }
+        for (const x of bom.transceivers) {
+          html += `<div class="bom-type is-optic"><span class="bom-name">${esc(x.transceiver.name)}</span><span class="bom-items"><span class="bom-item">× <b>${x.count}</b></span></span></div>`;
+        }
+        const count = bom.cables.reduce((a, x) => a + x.count, 0) + bom.madeToLength.reduce((a, x) => a + x.lengths.reduce((s, l) => s + l.count, 0), 0);
+        const optics = bom.transceivers.reduce((a, x) => a + x.count, 0);
+        const summary = [plural(count, 'cable'), `${Math.round(metres * 10) / 10} m`].concat(optics ? [plural(optics, 'transceiver')] : []).join(', ');
+        const warn = bom.unresolved ? ` · <em class="bom-warn">${esc(plural(bom.unresolved, 'cable'))} without a type or a length to buy</em>` : '';
+        return { html, summary: esc(summary) + warn };
+      };
+      const all = part(scope.cables);
+      const head =
+        `<div class="bom-head"><b>${esc(`To order · ${scope.name}`)}</b><span>${all.summary}</span>` +
         `<button type="button" class="btn sm subtle" id="sc-order-csv" title="What to order for these cables, as CSV">${icon('download', 'ic-sm')}Order list (CSV)</button>` +
-        `<button type="button" class="btn sm subtle" id="sc-cables-csv" title="These cables with both ends, as CSV">${icon('download', 'ic-sm')}Cable schedule (CSV)</button></div>` +
-        (html ? `<div class="bom-types">${html}</div>` : `<p class="bom-empty">Nothing to order yet.</p>`)
-      );
+        `<button type="button" class="btn sm subtle" id="sc-cables-csv" title="These cables with both ends, as CSV">${icon('download', 'ic-sm')}Cable schedule (CSV)</button></div>`;
+      if (!all.html) return head + `<p class="bom-empty">Nothing to order yet.</p>`;
+      if (!scope.shared.length) return head + `<div class="bom-types">${all.html}</div>`;
+      const shared = new Set(scope.shared.map((c) => c.id));
+      const own = part(scope.cables.filter((c) => !shared.has(c.id)));
+      const theirs = part(scope.shared);
+      const sub = (name, x, note) =>
+        `<div class="bom-part"><b>${esc(name)}</b><span>${x.summary}${note ? ` · ${esc(note)}` : ''}</span></div>` + (x.html ? `<div class="bom-types">${x.html}</div>` : '');
+      return head + sub(`Within ${scope.name}`, own) + sub(`Shared with other ${scope.others}`, theirs, `also on the lists of the ${scope.others} they go to`);
     }
 
     function renderSchedule(box) {
@@ -2079,7 +2102,10 @@
       const scope = scopeInfo();
       try {
         const name = `${scope.file}-${what === 'order' ? 'cable-order' : 'cables'}.csv`;
-        const text = what === 'order' ? IO.exportOrderCSV(project(), scope.cables) : IO.exportCablesCSV(project(), scope.cables);
+        const shared = new Set(scope.shared.map((c) => c.id));
+        // Cables shared with other rows or floors are listed apart, as under the schedule.
+        const parts = shared.size ? [{ name: `Within ${scope.name}`, cables: scope.cables.filter((c) => !shared.has(c.id)) }, { name: `Shared with other ${scope.others}`, cables: scope.shared }] : null;
+        const text = what === 'order' ? IO.exportOrderCSV(project(), scope.cables, parts) : IO.exportCablesCSV(project(), scope.cables);
         ctx.download(name, new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
         toast(`Exported ${name}`);
       } catch (err) {

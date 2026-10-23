@@ -786,6 +786,9 @@ test('the order list exports as CSV', () => {
   assert.deepEqual(lines.slice(-2), ['SFP+ 10G SR,Transceiver,,8,', 'QSFP56 200G SR4,Transceiver,,24,']);
   const sas = IO.exportOrderCSV(ex, ex.cables.filter((c) => c.network === 'n-sas')).trim().split('\r\n');
   assert.deepEqual(sas, ['Item,Kind,Length (m),Count,Total (m)', 'Mini-SAS HD cable,Cable,2,12,24']);
+  // In parts: each line names its part.
+  const sasParts = IO.exportOrderCSV(ex, null, [{ name: 'Within Row A', cables: ex.cables.filter((c) => c.network === 'n-sas') }, { name: 'Shared with other rows', cables: [] }]).trim().split('\r\n');
+  assert.deepEqual(sasParts, ['Part,Item,Kind,Length (m),Count,Total (m)', 'Within Row A,Mini-SAS HD cable,Cable,2,12,24']);
   assert.equal(C.billOfMaterials(ex).unresolved, 1);
 });
 

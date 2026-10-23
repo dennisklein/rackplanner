@@ -405,7 +405,11 @@ CSV). Cables between floors are not estimated: enter their length by hand.
 **To order**, under the schedule, counts the cables of each type by stock
 length, lists every length of the types made to length with their total, and
 counts the transceivers, for all the cables of the row, floor or plan the
-schedule shows, whatever its filters.
+schedule shows, whatever its filters. Its heading names the scope. Cables
+between rows (or floors) are on the lists of both: a row's list shows them
+apart, **Shared with other rows**, with their own subtotal, and its CSV has
+a **Part** column that tells them apart. The plan's list counts each cable
+once.
 
 **Checks** flag what needs a look, in the schedule's Check column, the
 cable's inspector and the **To check** list of the row: a plug that doesn't

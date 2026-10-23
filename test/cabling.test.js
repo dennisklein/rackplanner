@@ -111,6 +111,11 @@ test('cables are connected, changed and disconnected', () => {
   assert.equal(C.cablesOfDevice(p, 'leaf1').length, 3);
   assert.equal(C.cablesWithin(p, 'r1').length, 3);
   assert.equal(C.cablesWithin(p, 'r3').length, 0);
+  link(p, end('n2', 'eth0'), end('sw3', 'swp1'));
+  assert.deepEqual([C.cablesWithin(p, 'r1').length, C.cablesWithin(p, 'r3').length, C.cablesWithin(p, 'row1').length], [4, 1, 4]);
+  assert.deepEqual(C.cablesShared(p, 'r1').map((c) => c.b.device), ['sw3'], 'the cable to another rack');
+  assert.deepEqual(C.cablesShared(p, 'row1'), [], 'all within the row');
+  assert.equal(C.disconnect(p, C.cablesShared(p, 'r3')[0].id), 1);
   assert.equal(C.disconnect(p, [a.id, 'nope']), 1);
   assert.equal(C.disconnect(p, p.cables[0].id), 1);
   assert.equal(p.cables.length, 1);

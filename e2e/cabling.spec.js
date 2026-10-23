@@ -454,26 +454,43 @@ test('a breakout cable shows its legs; a leg is unplugged from the inspector', a
 
 test('the order list shows stock lengths, cables made to length with their total, and transceivers', async ({ page }) => {
   await toCabling(page);
-  const bom = await plan(page, (p, a, RP) => {
-    const b = RP.cabling.billOfMaterials(p, RP.cabling.cablesWithin(p, 'row1'));
-    return {
-      stock: b.cables.map((x) => [x.type.name, RP.cabling.fmtM(x.lengthM), x.count]),
-      made: b.madeToLength.map((x) => [x.type.name, x.lengths.map((l) => `${RP.cabling.fmtM(l.lengthM)} × ${l.count}`), RP.cabling.fmtM(x.totalM)]),
-      optics: b.transceivers.map((x) => [x.transceiver.name, x.count]),
-    };
+  // The cables within the row, then those it shares with Row B, each a part of its own.
+  const parts = await plan(page, (p, a, RP) => {
+    const shared = new Set(RP.cabling.cablesShared(p, 'row1').map((c) => c.id));
+    const row = RP.cabling.cablesWithin(p, 'row1');
+    return [row.filter((c) => !shared.has(c.id)), row.filter((c) => shared.has(c.id))].map((list) => {
+      const b = RP.cabling.billOfMaterials(p, list);
+      return {
+        count: b.cables.reduce((n, x) => n + x.count, 0) + b.madeToLength.reduce((n, x) => n + x.lengths.reduce((k, l) => k + l.count, 0), 0),
+        stock: b.cables.map((x) => [x.type.name, RP.cabling.fmtM(x.lengthM), x.count]),
+        made: b.madeToLength.map((x) => [x.type.name, x.lengths.map((l) => `${RP.cabling.fmtM(l.lengthM)} × ${l.count}`), RP.cabling.fmtM(x.totalM)]),
+        optics: b.transceivers.map((x) => [x.transceiver.name, x.count]),
+      };
+    });
   });
-  expect(bom.made.length).toBeGreaterThan(0);
-  expect(bom.optics.length).toBeGreaterThan(0);
+  expect(parts[1].made.length).toBeGreaterThan(0);
+  expect(parts[1].optics.length).toBeGreaterThan(0);
   const strip = page.locator('#sc-bom');
-  const [type, len, n] = bom.stock[0];
-  await expect(strip.locator('.bom-type', { hasText: type }).first()).toContainText(`${len} × ${n}`);
-  for (const [name, lengths, total] of bom.made) {
-    const t = strip.locator('.bom-type.is-made', { hasText: name });
-    for (const l of lengths) await expect(t).toContainText(l);
-    await expect(t.locator('.bom-total')).toHaveText(`total ${total}`);
+  await expect(strip.locator('.bom-head b')).toHaveText('To order · Row A');
+  await expect(strip.locator('.bom-head > span')).toContainText(`${parts[0].count + parts[1].count} cables`);
+  await expect(strip.locator('.bom-part')).toHaveCount(2);
+  await expect(strip.locator('.bom-part').first()).toContainText(`Within Row A${parts[0].count} cables`);
+  await expect(strip.locator('.bom-part').last()).toContainText(`Shared with other rows${parts[1].count} cables`);
+  await expect(strip.locator('.bom-part').last()).toContainText('also on the lists of the rows they go to');
+  for (const [k, bom] of parts.entries()) {
+    const list = strip.locator('.bom-types').nth(k);
+    for (const [type, len, n] of bom.stock) await expect(list.locator('.bom-type', { hasText: type }).first()).toContainText(`${len} × ${n}`);
+    for (const [name, lengths, total] of bom.made) {
+      const t = list.locator('.bom-type.is-made', { hasText: name });
+      for (const l of lengths) await expect(t).toContainText(l);
+      await expect(t.locator('.bom-total')).toHaveText(`total ${total}`);
+    }
+    for (const [name, count] of bom.optics) await expect(list.locator('.bom-type.is-optic', { hasText: name })).toContainText(`× ${count}`);
   }
-  for (const [name, count] of bom.optics) await expect(strip.locator('.bom-type.is-optic', { hasText: name })).toContainText(`× ${count}`);
-  await expect(strip.locator('.bom-head')).toContainText('To order');
+  // The plan shares nothing.
+  await page.click('[data-sc-scope="plan"]');
+  await expect(strip.locator('.bom-head b')).toHaveText('To order · Hall 2 expansion');
+  await expect(strip.locator('.bom-part')).toHaveCount(0);
 });
 
 test('the cable schedule and the order list download as CSV, for the plan and for the scope', async ({ page }) => {
@@ -507,6 +524,9 @@ test('the cable schedule and the order list download as CSV, for the plan and fo
   expect(rowCsv.text.trim().split('\r\n').length - 1).toBe(rowLegs);
   const rowOrder = await read(() => page.click('#sc-order-csv'));
   expect(rowOrder.name).toBe('hall-2-expansion-ground-floor-row-a-cable-order.csv');
+  expect(rowOrder.text).toContain('Part,Item,Kind,Length (m),Count,Total (m)');
+  expect(rowOrder.text).toContain('Within Row A,Cat6a patch cord,Cable,');
+  expect(rowOrder.text).toContain('Shared with other rows,MPO-12 OM4,"Cable, made to length",');
   // The Racks workspace keeps its exports.
   await page.keyboard.press('c');
   const inv = await read(async () => {
