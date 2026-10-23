@@ -1369,6 +1369,33 @@ test.describe('on a phone', () => {
     await expect(page.locator('#inspector .insp-where')).toHaveCount(0);
   });
 
+  test('a tap on the selected device, then on a free slot, moves it', async ({ page }) => {
+    await page.locator('#btn-keep-example').tap();
+    await page.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'start' }));
+    await device(page, 'cn-001').tap();
+    await expect(where(page)).toHaveText('Rack A01 · U4–5');
+    await expect(page.locator('#inspector .hint-touch')).toHaveText('To move it in the drawing, tap it again, then tap a free slot.');
+    await device(page, 'cn-001').tap();
+    await expect(page.locator('#armed-hint')).toHaveText('Tap a free slot to move cn-001', { useInnerText: true });
+
+    // A tap on another device selects that one instead.
+    await device(page, 'cn-002').tap();
+    await expect(where(page)).toHaveText('Rack A01 · U6–7');
+    await expect(page.locator('#armed-hint')).toBeHidden();
+    await device(page, 'cn-001').tap();
+    await device(page, 'cn-001').tap();
+    await expect(page.locator('#armed-hint')).toBeVisible();
+
+    let target = await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 30 });
+    await page.evaluate((y) => (document.querySelector('#canvas').scrollTop += y - window.innerHeight / 2), target.y);
+    target = await spot(page, 'compute-node', { rack: 'r1', kind: 'u', at: 30 });
+    await page.touchscreen.tap(target.x, target.y);
+    await expect(where(page)).toHaveText('Rack A01 · U30–31');
+    await expect(page.locator('#armed-hint')).toBeHidden();
+    await page.locator('#btn-nav-undo').tap();
+    await expect(where(page)).toHaveText('Rack A01 · U4–5');
+  });
+
   test('adds a device type from a template in the catalog', async ({ page }) => {
     await page.locator('#btn-catalog').tap();
     const list = await page.locator('#cat-list').boundingBox();

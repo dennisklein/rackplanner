@@ -123,7 +123,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   Tick **Spread evenly across racks in this row** and pick the racks to share
   them out; a rack that runs out of space leaves the rest to the others.
 - **Move**: drag devices between units, racks and side slots. Hold <kbd>Alt</kbd>
-  while dropping to copy instead.
+  while dropping to copy instead. On a touch screen, tap the selected device
+  again, then tap a free slot.
 - **Edit a device**: select it to rename it, change its cluster, move it to any
   rack in the plan, turn its ports to the front or the rear, and fill in
   its serial number, asset tag, IP address, owner and notes. Power and

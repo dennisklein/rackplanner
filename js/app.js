@@ -161,6 +161,7 @@
     searchActive: -1,
     searchItems: [],
     armed: null, // device type id while click-to-place is active
+    moving: null, // id of the selected device that a tap on a free slot moves (touch screens)
     drag: null,
     press: null,
     pan: null,
@@ -614,6 +615,7 @@
     if (!valid(ui.hoverCluster)) ui.hoverCluster = null;
     for (const c of ui.hiddenClusters) if (!valid(c)) ui.hiddenClusters.delete(c);
     if (ui.armed && !M.typeOf(project, ui.armed)) ui.armed = null;
+    if (ui.moving && selIds().join() !== ui.moving) ui.moving = null;
     cab.prune();
   }
 
@@ -1207,8 +1209,14 @@
     renderUndoButtons();
     if (document.activeElement !== el.planName) el.planName.value = project.name;
     el.notice.hidden = !(project.meta && project.meta.example);
-    el.stage.classList.toggle('is-armed', !!ui.armed);
-    if (ui.armed) {
+    el.stage.classList.toggle('is-armed', !!(ui.armed || ui.moving));
+    if (ui.moving) {
+      const what = `<strong>${esc(M.deviceById(project, ui.moving).name)}</strong>`;
+      el.armedHint.innerHTML =
+        `<span class="hint-pointer">Click a free slot to move ${what} <kbd>Esc</kbd></span>` +
+        `<span class="hint-touch">Tap a free slot to move ${what}</span>` +
+        `<button type="button" data-disarm aria-label="Stop moving">${icon('x', 'ic-sm')}</button>`;
+    } else if (ui.armed) {
       const t = M.typeOf(project, ui.armed);
       const what = `${t.variable ? '' : 'a '}<strong>${esc(t.label.toLowerCase())}</strong>`;
       el.armedHint.innerHTML =
@@ -1216,7 +1224,7 @@
         `<span class="hint-touch">Tap a free slot to place ${what}</span>` +
         `<button type="button" data-disarm aria-label="Stop placing">${icon('x', 'ic-sm')}</button>`;
     }
-    el.armedHint.hidden = !ui.armed;
+    el.armedHint.hidden = !(ui.armed || ui.moving);
     if (cabling) cab.renderChrome();
   }
 
@@ -1488,6 +1496,7 @@
         ? `<div class="nudge"><button type="button" class="btn sm" id="insp-up"${canUp ? '' : ' disabled'} title="Next free position above (↑)">${icon('up')}Move up</button>` +
           `<button type="button" class="btn sm" id="insp-down"${canDown ? '' : ' disabled'} title="Next free position below (↓)">${icon('down')}Move down</button></div>`
         : '') +
+      `<p class="sec-hint hint-touch">To move it in the drawing, tap it again, then tap a free slot.</p>` +
       `</section>` +
       `<section class="insp-sec"><h3>Details</h3><div class="field-grid">${fields}` +
       `<div class="field"><label for="insp-power">Power (W)</label><input id="insp-power" type="number" min="0" step="10" inputmode="decimal" value="${d.powerW == null ? '' : d.powerW}" placeholder="${type.powerW} (type)"></div>` +
@@ -2535,8 +2544,9 @@
   }
 
   function disarm() {
-    if (!ui.armed) return;
+    if (!ui.armed && !ui.moving) return;
     ui.armed = null;
+    ui.moving = null;
     hideDragFeedback();
     renderParts();
     renderChrome();
@@ -2567,6 +2577,11 @@
       return;
     }
     const devEl = e.target.closest('.dev');
+    // Moving a device by touch: a tap beside the devices is where it goes.
+    if (ui.moving && !devEl) {
+      ui.press = Object.assign(press, { kind: 'move' });
+      return;
+    }
     if (devEl) {
       const dev = M.deviceById(project, devEl.dataset.id);
       if (!dev) return;
@@ -2633,6 +2648,33 @@
     openPlaceDialog(type.id, loc);
   }
 
+  /**
+   * A tap on a device selects it; a tap on the device selected (alone)
+   * starts moving it, where a touch screen cannot drag, and a tap on it
+   * while it moves stops that.
+   */
+  function tapDevice(id) {
+    const ids = selIds();
+    if (ui.moving === id) return disarm();
+    if (ids.length !== 1 || ids[0] !== id) return selectDevice(id, false);
+    ui.moving = id;
+    hideDragFeedback();
+    renderChrome();
+  }
+
+  /** Moves the device being moved to the slot tapped; a tap off the racks stops moving it. */
+  function moveTo(e) {
+    const d = M.deviceById(project, ui.moving);
+    const h = M.deviceHeight(project, d);
+    const pt = toScene(e);
+    const loc = R.locateDrop(project, ui.rowId, d.type, pt.x, pt.y, (h * G.U) / 2, d.height);
+    if (!loc) return disarm();
+    const check = M.canPlace(project, d.type, loc, d.id, d.height);
+    if (!check.ok) return toast(check.reason, { warn: true });
+    ui.moving = null;
+    moveDevice(d.id, loc);
+  }
+
   window.addEventListener('pointermove', (e) => {
     const pan = ui.pan;
     if (pan && e.pointerId === pan.pointerId) {
@@ -2679,7 +2721,8 @@
     ui.press = null;
     if (!p || p.pointerId !== e.pointerId || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) return;
     if (p.kind === 'armed') placeArmedAt(e);
-    else if (p.kind === 'device') selectDevice(p.id, false);
+    else if (p.kind === 'move') moveTo(e);
+    else if (p.kind === 'device') tapDevice(p.id);
     else if (p.kind === 'toggle') toggleDevice(p.id);
     else if (p.kind === 'rack') selectThing('rack', p.id);
     else if (p.kind === 'add-rack') addRackTo(ui.rowId);
@@ -5440,7 +5483,7 @@
         ui.marquee = null;
         hideDragFeedback();
       } else if (cabling && cab.cancelPending()) return;
-      else if (ui.armed) disarm();
+      else if (ui.armed || ui.moving) disarm();
       else if (!$$('.menu').every((m) => m.hidden)) closeMenus();
       else if (cabling ? cab.hasSelection() : ui.selection) {
         if (cabling) cab.clearSelection();
