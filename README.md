@@ -837,9 +837,14 @@ view `v1`; the standard catalog types have ids such as `compute-node`. Every
 floor, row, rack, view and catalog type added after that gets a random id
 (`r-mvltsu84qbghj`), as devices, clusters, networks and cables do, so an id
 is never given to something else after a delete. Plans saved before keep
-the ids they have (`r4`, `t1`, `ct2`, …), and any id stays valid. Cluster ids are unique across all views; an import gives a
-cluster id used in an earlier view a new one. View and cluster ids starting
-with `__` are reserved for the app and replaced on import.
+the ids they have (`r4`, `t1`, `ct2`, …), and any id stays valid. Ids keep up
+to 80 characters. An import gives a device whose id an earlier device in the
+file has (also once cut to 80 characters) a new id, and a cable end on such
+an id finds neither device: the cable is skipped (a breakout loses that leg),
+with a warning. A device the import skips does not count here. Cluster ids
+are unique across all views; an import gives a cluster id used in an earlier
+view a new one. View and cluster ids starting with `__` are reserved for the
+app and replaced on import.
 
 CSV files find things by name, in any case, so these names are unique in
 their list, in any case: device type labels, the names of rack types, cable

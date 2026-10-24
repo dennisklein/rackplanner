@@ -588,7 +588,7 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
   const extra = [
     { id: 'k1', label: 'K-1', network: '__new', a: { device: 77, port: 'swp1' }, b: { device: 'ex-59', port: 'swp3' } },
     { id: 'k2', label: 'K-2', network: 'gone', a: { device: 77, port: 'swp2' }, b: { device: 'ex-59', port: 'swp4' } },
-    { id: 'k3', label: 'K-3', a: { device: 'ex-9', port: 'eth0' }, b: { device: 'ex-59', port: 'swp5' } },
+    { id: 'k3', label: 'K-3', a: { device: 'ex-10', port: 'eth0' }, b: { device: 'ex-59', port: 'swp5' } },
     { id: 'k4', label: 'K-4', type: 'nope', a: { device: 77, port: 'swp3' }, b: { device: 'ex-59', port: 'swp6' } },
     { id: 'k5', label: 'K-5', a: { device: 77, port: 'swp4', transceiver: 'nope' }, b: { device: 'ex-59', port: 'swp7' } },
     { id: 'k6', label: 'K-6', a: { device: 'ghost', port: 'swp5' }, b: { device: 'ex-59', port: 'swp8' } },
@@ -603,8 +603,11 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
   assert.deepEqual(warnings, [
     'Skipped network No id: it has no id.',
     'twin has the id “ex-9” of another device and gets a new one.',
+    'Skipped cable MGT-0001: device id “ex-9” names more than one device.',
+    'Skipped cable BMC-0001: device id “ex-9” names more than one device.',
+    'Skipped cable IB-0001: device id “ex-9” names more than one device.',
     'Cable K-2 refers to unknown network “gone” and has none.',
-    'Skipped cable K-3: cn-001 eth0 already has cable MGT-0001.',
+    'Skipped cable K-3: cn-002 eth0 already has cable MGT-0002.',
     'Skipped cable K-4: unknown cable type “nope”.',
     'Skipped cable K-5: unknown transceiver “nope”.',
     'Skipped cable K-6: device “ghost” is not in the plan.',
@@ -612,7 +615,7 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
     'Skipped cable K-8: OSFP to 2 × QSFP56 DAC has 2 legs, not 1.',
     'Skipped cable K-9: OSFP to 2 × QSFP56 DAC is a breakout cable: give it its legs.',
   ]);
-  assert.equal(p.cables.length, 147 + 3);
+  assert.equal(p.cables.length, 147 - 3 + 3);
   const k1 = p.cables.find((c) => c.id === 'k1');
   assert.ok(!k1.network.startsWith('__'), 'reserved ids are replaced');
   assert.equal(M.networkById(p, k1.network).name, 'Sneaky');
@@ -623,7 +626,7 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
   assert.equal(last.label, '', 'labels are not invented on reading');
   const twin = p.devices.find((d) => d.name === 'twin');
   assert.notEqual(twin.id, 'ex-9');
-  assert.ok(!p.cables.some((c) => M.cableEnds(c).some((x) => x.end.device === twin.id)), 'cables find the first device with an id');
+  assert.ok(!p.cables.some((c) => M.cableEnds(c).some((x) => x.end.device === twin.id || x.end.device === 'ex-9')), 'an id two devices have finds neither');
   assert.equal(M.pruneCables(p), 0);
 });
 
@@ -1136,17 +1139,37 @@ test('connectors this version does not know are kept, fit nothing and are named 
   assert.equal(IO.serialize(IO.normalizeProject(JSON.parse(text)).project), text);
 });
 
-test('a device id used before, or the same as another after the cut to 80 characters, is named in a warning', () => {
-  const p = M.createEmptyProject(1);
-  const raw = JSON.parse(IO.serialize(p));
+test('a device id used before, or the same as another after the cut to 80 characters, is named in a warning and finds no cable end', () => {
+  // The example's catalog, with devices and cables of the test's own.
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
   const long = 'd'.repeat(80);
   raw.devices = [
     { id: `${long}-A`, type: 'compute-node', name: 'a', loc: { rack: 'r1', kind: 'u', at: 1 } },
     { id: `${long}-B`, type: 'compute-node', name: 'b', loc: { rack: 'r1', kind: 'u', at: 3 } },
+    { id: 'sw', type: 'switch-qsfp', name: 'sw', loc: { rack: 'r1', kind: 'u', at: 5 } },
+    { id: 'gpu', type: 'gpu-server', name: 'gpu', loc: { rack: 'r1', kind: 'u', at: 10 } },
+    { id: 'osfp', type: 'switch-osfp', name: 'osfp', loc: { rack: 'r1', kind: 'u', at: 6 } },
+  ];
+  raw.cables = [
+    { id: 'k1', label: 'meant for B', a: { device: `${long}-B`, port: 'ib0' }, b: { device: 'sw', port: 'p1' } },
+    { id: 'k2', label: 'K-2', type: 'dac-osfp-2x', a: { device: 'osfp', port: 'p1' }, b: [{ device: 'gpu', port: 'ib0' }, { device: `${long}-A`, port: 'ib0' }] },
   ];
   const { project, warnings } = IO.normalizeProject(raw);
-  assert.deepEqual(warnings, [`b has the id “${long}” of another device and gets a new one.`]);
-  assert.equal(project.devices.length, 2);
+  assert.deepEqual(warnings, [
+    `b has the id “${long}” of another device and gets a new one.`,
+    `Skipped cable meant for B: device id “${long}” names more than one device.`,
+    `Cable K-2 loses leg 2: device id “${long}” names more than one device.`,
+  ]);
+  assert.equal(project.devices.length, 5);
+  assert.deepEqual(project.cables.map((c) => c.id), ['k2']);
+
+  // A device skipped on reading does not count: the cables find the one placed, before or after it.
+  const one = JSON.parse(IO.serialize(M.createExampleProject()));
+  one.devices.unshift({ id: 'ex-9', type: 'compute-node', name: 'early', loc: { rack: 'nowhere', kind: 'u', at: 1 } });
+  one.devices.push({ id: 'ex-9', type: 'nope', name: 'ghost', loc: { rack: 'r1', kind: 'u', at: 1 } });
+  const kept = IO.normalizeProject(one);
+  assert.deepEqual(kept.warnings, ['Skipped early: rack “nowhere” is not in the plan.', 'Skipped ghost: unknown device type “nope”.']);
+  assert.equal(kept.project.cables.length, 147);
 });
 
 /** A plan written as a file, read back and written again gives the same text, without warnings. */

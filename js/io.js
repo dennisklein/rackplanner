@@ -300,10 +300,11 @@
 
   /**
    * Reads the cables of a file. Ends refer to devices by their id in the
-   * file (`deviceIds` maps them to the plan's) and to ports by name. A
-   * cable that would break the plan's rules is skipped with a warning; as
-   * pruneCables does in the app, a breakout only loses the legs that
-   * would, unless it loses them all or its head.
+   * file (`deviceIds` maps them to the plan's, or to null for an id that
+   * more than one device placed has) and to ports by name. A cable that would
+   * break the plan's rules is skipped with a warning; as pruneCables does
+   * in the app, a breakout only loses the legs that would, unless it loses
+   * them all or its head.
    */
   function readCables(list, p, deviceIds, networkIds, warnings) {
     const ctx = M.cableContext(p);
@@ -331,7 +332,8 @@
         const tr = idOf(e.transceiver);
         if (tr) out.transceiver = tr;
         let why = null;
-        if (!device) why = fileId ? `device “${fileId}” is not in the plan` : 'an end has no device';
+        if (device === null) why = `device id “${fileId}” names more than one device`;
+        else if (!device) why = fileId ? `device “${fileId}” is not in the plan` : 'an end has no device';
         else if (tr && !M.transceiverById(p, tr)) why = `unknown transceiver “${tr}”`;
         return { end: out, why };
       };
@@ -658,8 +660,8 @@
       if (fileId && planIds.has(fileId)) warnings.push(`${name} has the id “${fileId}” of another device and gets a new one.`);
       if (!id || planIds.has(id)) id = M.uid('d');
       planIds.add(id);
-      // Cables find a device by its id in the file; with an id used twice, the first device.
-      if (fileId && !deviceIds.has(fileId)) deviceIds.set(fileId, id);
+      // Cables find a device by its id in the file; an id that more than one device placed has (also after the cut to 80 characters) finds neither.
+      if (fileId) deviceIds.set(fileId, deviceIds.has(fileId) ? null : id);
       const dev = M.newDevice({
         id,
         type: type.id,
