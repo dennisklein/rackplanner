@@ -466,6 +466,9 @@
     });
   }
 
+  /** A device's position as a file gives it: a number, or digits in a string ("7"); NaN for anything else (null, true, "", [7], "0x0a"). */
+  const readAt = (at) => (typeof at === 'number' || (typeof at === 'string' && /^\s*\d+\s*$/.test(at)) ? Number(at) : NaN);
+
   /**
    * Version 1 counted units from the bottom of a 47U rack, so `at` was the
    * lowest unit a device fills. Heights come from the file's catalog if it
@@ -490,7 +493,8 @@
     };
     const devices = (Array.isArray(raw.devices) ? raw.devices : []).map((d) => {
       if (!isObj(d) || !isObj(d.loc) || d.loc.kind === 'side') return d;
-      const at = Number(d.loc.at);
+      // A position that is not a number stays as it is, for the reader to skip.
+      const at = readAt(d.loc.at);
       const h = heightOf(d);
       return h && Number.isFinite(at) ? Object.assign({}, d, { loc: Object.assign({}, d.loc, { at: 47 + 2 - at - h }) }) : d;
     });
@@ -645,11 +649,17 @@
       const name = str(d.name, 80) || (type ? M.suggestName(p, type.id) : `device ${i + 1}`);
       if (!type) return void warnings.push(`Skipped ${name}: unknown device type “${String(d.type)}”.`);
       const loc = isObj(d.loc) ? d.loc : {};
-      const nloc = { rack: rackIds.get(idOf(loc.rack)) || null, kind: loc.kind === 'side' ? 'side' : 'u', at: Number(loc.at) };
-      if (!nloc.rack) {
+      const rack = rackIds.get(idOf(loc.rack)) || null;
+      if (!rack) {
         const ref = idOf(loc.rack);
         return void warnings.push(`Skipped ${name}: ${ref ? `rack “${ref}” is not in the plan` : 'it has no rack'}.`);
       }
+      // A kind this version does not know (a newer one's, say) or a position that is not a number is not guessed at; no kind is 'u'.
+      const kind = loc.kind === undefined || loc.kind === null || loc.kind === '' ? 'u' : loc.kind;
+      if (!M.MOUNT_KINDS.includes(kind)) return void warnings.push(`Skipped ${name}: unknown mounting kind “${String(kind).slice(0, 40)}”.`);
+      const at = readAt(loc.at);
+      if (!Number.isFinite(at)) return void warnings.push(`Skipped ${name}: ${loc.at === undefined ? 'it has no position' : `its position ${JSON.stringify(loc.at).slice(0, 40)} is not a number`}.`);
+      const nloc = { rack, kind, at };
       const height = type.variable ? M.clampInt(d.height, 1, M.rackUnits(p, nloc.rack), 1) : undefined;
       let list = perRack.get(nloc.rack);
       if (!list) perRack.set(nloc.rack, (list = []));

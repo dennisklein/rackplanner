@@ -787,6 +787,10 @@ Where a device sits:
   and 0 kg unless it has its own `powerW` or `weightKg`, such as the power
   booked for equipment still to come.
 
+A `loc` without `kind` is in the rack's units. An import skips a device with
+another `kind`, or with an `at` that is not a number (or digits in a string),
+with a warning.
+
 A port group with `first` and `count` is a numbered series (`swp` 1 to 48 is
 `swp1` … `swp48`), one with neither is a single port named `name`. Port names
 are unique within a type, and cables name their ports. `side` is the side of

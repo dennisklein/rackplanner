@@ -87,6 +87,8 @@
   const DEFAULT_RACKS = 3;
   // A side slot runs along 12U of the rack (a 19" device on its side) plus a 1U gap.
   const SIDE_SLOT_SPAN = 13;
+  // The kinds of `loc`: in the rack's units, or in a side slot.
+  const MOUNT_KINDS = ['u', 'side'];
 
   const FACES = [
     { id: 'rj45', label: 'Switch, RJ45 ports' },
@@ -2918,6 +2920,7 @@
     RACK_UNITS,
     SIDE_SLOTS,
     DEFAULT_RACKS,
+    MOUNT_KINDS,
     FACES,
     DEFAULT_DEVICE_TYPES,
     DEFAULT_RACK_TYPES,

@@ -1172,6 +1172,42 @@ test('a device id used before, or the same as another after the cut to 80 charac
   assert.equal(kept.project.cables.length, 147);
 });
 
+test('a mounting kind this version does not know, or a position that is not a number, skips the device', () => {
+  const raw = JSON.parse(IO.serialize(M.createEmptyProject(1)));
+  const dev = (name, loc) => ({ id: name, type: 'storage-enclosure', name, loc: Object.assign({ rack: 'r1' }, loc) });
+  const side = (name, at) => ({ id: name, type: 'switch-rj45', name, loc: { rack: 'r1', kind: 'side', at } });
+  raw.devices = [
+    dev('blade', { kind: 'child', at: 3, parent: 'x' }),
+    dev('arr', { kind: 'u', at: [7] }),
+    dev('hex', { kind: 'u', at: '0x0a' }),
+    dev('none', { kind: 'u' }),
+    side('nul', null),
+    side('yes', true),
+    side('blank', ''),
+    dev('text', { kind: 'u', at: ' 7 ' }),
+    dev('bare', { at: 12 }),
+    side('slot', 1),
+  ];
+  const { project, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, [
+    'Skipped blade: unknown mounting kind “child”.',
+    'Skipped arr: its position [7] is not a number.',
+    'Skipped hex: its position "0x0a" is not a number.',
+    'Skipped none: it has no position.',
+    'Skipped nul: its position null is not a number.',
+    'Skipped yes: its position true is not a number.',
+    'Skipped blank: its position "" is not a number.',
+  ]);
+  assert.deepEqual(project.devices.map((d) => [d.name, d.loc.kind, d.loc.at]), [['text', 'u', 7], ['bare', 'u', 12], ['slot', 'side', 1]]);
+
+  // So in a version 1 file, which counted units from the bottom.
+  const v1 = { version: 1, name: 'Old hall', racks: [{ id: 'r1', name: 'A' }] };
+  v1.devices = [true, [20], '0x0a', null, '', ' 20 '].map((at, i) => ({ id: `d${i}`, type: 'compute-node', name: `n${i}`, loc: { rack: 'r1', kind: 'u', at } }));
+  const old = IO.normalizeProject(v1);
+  assert.deepEqual(old.warnings, ['true', '[20]', '"0x0a"', 'null', '""'].map((at, i) => `Skipped n${i}: its position ${at} is not a number.`));
+  assert.deepEqual(old.project.devices.map((d) => [d.name, d.loc.at]), [['n5', 47 + 2 - 20 - M.typeOf(old.project, 'compute-node').height]]);
+});
+
 /** A plan written as a file, read back and written again gives the same text, without warnings. */
 function assertRoundTrip(p, what) {
   const text = IO.serialize(p);
