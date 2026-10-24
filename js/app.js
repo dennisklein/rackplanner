@@ -1525,7 +1525,7 @@
       `<span>${color !== undefined ? `<i class="sw" style="--c:${color || 'var(--unassigned)'}"></i>` : ''}${esc(label)}</span></label>`;
     let s = chip('', 'None', null, selected === null);
     for (const c of viewClusters()) s += chip(c.id, c.name, c.color, selected === c.id);
-    if (withNew) s += chip('__new', '+ New cluster', undefined, selected === '__new', ' chip-new');
+    if (withNew && viewClusters().length < M.LIMITS.clusters) s += chip('__new', '+ New cluster', undefined, selected === '__new', ' chip-new');
     return s;
   }
 
@@ -3876,6 +3876,11 @@
 
   function openClusterDialog(id, onCreate, onCancel) {
     const c = id ? M.clusterById(project, id) : null;
+    if (!c && viewClusters().length >= M.LIMITS.clusters) {
+      toast(`A view holds up to ${M.LIMITS.clusters} clusters`, { warn: true });
+      if (onCancel) onCancel();
+      return;
+    }
     Object.assign(clusterDlg, {
       id: c ? c.id : null,
       color: c ? c.color : M.nextClusterColor(project, ui.clusterView),

@@ -336,3 +336,21 @@ test('each view keeps the clusters it hides', async ({ page }) => {
   await page.keyboard.press('v');
   await expect(hiddenDevs).toHaveCount(12);
 });
+
+test('a view holds up to 1000 clusters', async ({ page }) => {
+  const M = require('../js/model.js');
+  const IO = require('../js/io.js');
+  const p = M.createExampleProject();
+  p.name = 'Many clusters';
+  const view = p.views[0];
+  while (view.clusters.length < M.LIMITS.clusters) view.clusters.push({ id: `cx${view.clusters.length}`, name: `Group ${view.clusters.length}`, color: '#2f6fdb' });
+  await page.click('#btn-open');
+  await page.setInputFiles('#file-input', { name: 'plan.json', mimeType: 'application/json', buffer: Buffer.from(IO.serialize(p)) });
+  await expect(page.locator('#plan-name')).toHaveValue('Many clusters');
+  await page.click('#btn-add-cluster');
+  await expect(page.locator('.toast').last()).toContainText('A view holds up to 1000 clusters');
+  await expect(page.locator('#dlg-cluster')).toBeHidden();
+  await device(page, 'cn-001').click();
+  await expect(page.locator('#insp-cluster-cx999')).toHaveCount(1);
+  await expect(page.locator('#insp-cluster-__new')).toHaveCount(0);
+});

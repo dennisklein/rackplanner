@@ -1084,7 +1084,7 @@ test('files and cable schedules keep to the catalog, network and leg limits', ()
   assert.deepEqual(IO.importCablesCSV(r, 'Leg,A device,A port,B device,B port\n1/9,ib-leaf-b02,p1,gpu-srv-01,ib0'), { added: 0, warnings: ['Skipped line 2: a breakout cable has at most 8 legs, not 9.'] });
 });
 
-test('clusters without a name or color get those the model gives next, and a long list reads in one pass', () => {
+test('clusters without a name or color get those the model gives next; a long list reads in one pass, up to the limit of a view', () => {
   const raw = JSON.parse(IO.serialize(M.createEmptyProject(1)));
   const given = [{ id: 'a' }, { id: 'b', name: 'Cluster 3' }, { id: 'c', color: M.CLUSTER_COLORS[2] }, { id: 'd' }, { id: 'e', name: 'Cluster 2' }, { id: 'f' }];
   raw.views[0].clusters = given;
@@ -1098,10 +1098,16 @@ test('clusters without a name or color get those the model gives next, and a lon
   assert.deepEqual(project.views[0].clusters, view.clusters);
 
   raw.views[0].clusters = Array.from({ length: 20000 }, (_, i) => ({ id: `c${i}` }));
+  raw.views.push({ id: 'v2', name: 'Other', clusters: Array.from({ length: M.LIMITS.clusters }, (_, i) => ({ id: `o${i}` })) });
   const t0 = Date.now();
-  const many = IO.normalizeProject(raw).project.views[0].clusters;
+  const read = IO.normalizeProject(raw);
   assert.ok(Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
-  assert.deepEqual([many[19999].name, new Set(many.map((c) => c.name)).size], ['Cluster 20000', 20000]);
+  const many = read.project.views[0].clusters;
+  assert.equal(M.LIMITS.clusters, 1000);
+  assert.deepEqual([many.length, many[999].name, new Set(many.map((c) => c.name)).size], [1000, 'Cluster 1000', 1000]);
+  assert.equal(read.project.views[1].clusters.length, 1000, 'the limit is per view');
+  assert.equal(read.warnings.length, 19000);
+  assert.equal(read.warnings[0], 'Skipped cluster #1001: a view holds 1000 clusters.');
 });
 
 test('connectors this version does not know are kept, fit nothing and are named in warnings', () => {

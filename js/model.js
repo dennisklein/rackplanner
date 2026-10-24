@@ -77,6 +77,7 @@
     transceivers: 50,
     networks: 30,
     views: 8,
+    clusters: 1000, // per view
     cables: 20000,
     legs: 8, // of a breakout cable
     name: 60, // characters of a floor, row, rack, view, cluster, network or catalog name

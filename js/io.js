@@ -196,10 +196,11 @@
 
   /**
    * Reads clusters or networks into `out` (`make` builds one, seeing the
-   * ones before it). Ids starting with "__" are reserved for the app and
+   * ones before it), at most `max` of them (`holder` holds them, for
+   * warnings). Ids starting with "__" are reserved for the app and
    * replaced. Returns a map from the file's ids to the plan's.
    */
-  function readGroups(list, kind, max, out, make, warnings) {
+  function readGroups(list, kind, max, out, make, warnings, holder) {
     const ids = new Map();
     (Array.isArray(list) ? list : []).forEach((c, i) => {
       if (!isObj(c)) return;
@@ -207,7 +208,7 @@
       const label = str(c.name, 60) || `#${i + 1}`;
       if (!fileId) return void warnings.push(`Skipped ${kind} ${label}: it has no id.`);
       if (ids.has(fileId)) return void warnings.push(`Skipped ${kind} ${label}: its id “${fileId}” is used twice.`);
-      if (out.length >= max) return void warnings.push(`Skipped ${kind} ${label}: a plan holds ${max} ${kind}s.`);
+      if (out.length >= max) return void warnings.push(`Skipped ${kind} ${label}: ${holder || 'a plan'} holds ${max} ${kind}s.`);
       const id = fileId.startsWith('__') ? M.uid(kind[0]) : fileId;
       ids.set(fileId, id);
       out.push(make(c, id));
@@ -242,7 +243,7 @@
         colors.add(out.color);
         return out;
       };
-      const clusters = readGroups(v.clusters, 'cluster', Infinity, view.clusters, make, warnings);
+      const clusters = readGroups(v.clusters, 'cluster', L.clusters, view.clusters, make, warnings, 'a view');
       // The map lists the clusters in the order of view.clusters.
       let k = 0;
       for (const [fileId, cid] of clusters) {
