@@ -897,6 +897,40 @@ test('device fields are saved and found by search', async ({ page }) => {
   expect(csv).toContain('Ground floor,Row A,Rack A01,U16-17,2,Compute node,cn-007,Kestrel HPC,SN-777,,,Team Kestrel,950,25,');
 });
 
+test('a copy gets no serial number, asset tag or IP address, and one on two devices is flagged', async ({ page }) => {
+  await device(page, 'cn-007').click();
+  await page.fill('#insp-f-serial', 'SN-777');
+  await page.fill('#insp-f-asset', 'AT-7');
+  await page.fill('#insp-f-ip', '10.0.0.7');
+  await page.fill('#insp-f-owner', 'Team Kestrel');
+  await expect(page.locator('#insp-repeats')).toBeHidden();
+  await page.click('#insp-dup');
+  await expect(page.locator('#insp-name')).toHaveValue('cn-013');
+  await expect(page.locator('#insp-f-serial')).toHaveValue('');
+  await expect(page.locator('#insp-f-asset')).toHaveValue('');
+  await expect(page.locator('#insp-f-ip')).toHaveValue('');
+  await expect(page.locator('#insp-f-owner')).toHaveValue('Team Kestrel');
+
+  // A value another device has is flagged as it is typed, case aside.
+  await page.fill('#insp-f-serial', 'sn-777');
+  await expect(page.locator('#insp-repeats')).toHaveText('Serial number SN-777 is on cn-007 too.');
+  await page.fill('#insp-f-ip', '10.0.0.7');
+  await expect(page.locator('#insp-repeats p')).toHaveText(['Serial number SN-777 is on cn-007 too.', 'IP address 10.0.0.7 is on cn-007 too.']);
+  await page.fill('#insp-f-ip', '10.0.0.8');
+  await expect(page.locator('#insp-repeats p')).toHaveCount(1);
+  await page.click('#insp-repeats [data-select]');
+  await expect(page.locator('#insp-name')).toHaveValue('cn-007');
+  await expect(page.locator('#insp-repeats')).toHaveText('Serial number SN-777 is on cn-013 too.');
+
+  // The plan overview counts them and selects their devices.
+  await page.locator('#scene').focus();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#overview-repeats')).toContainText('1 serial number is on more than one device.');
+  await page.click('#overview-repeats-select');
+  await expect(page.locator('.multi-title')).toHaveText('2 devices');
+  await expect(page.locator('.contents .nm')).toHaveText(['cn-007', 'cn-013']);
+});
+
 test('asks before deleting many devices, or several that take cables', async ({ page }) => {
   await device(page, 'cn-005').click();
   await page.keyboard.press('Control+a');

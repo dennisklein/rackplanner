@@ -401,6 +401,28 @@ test('copies leave out the serial number, asset tag and IP address of the origin
   M.duplicateFloor(p, 'f1');
   assert.equal(p.devices.length, 16);
   assert.deepEqual(p.devices.filter((d) => d.serial || d.asset || d.ip).map((d) => d.id), ['d1']);
+  assert.deepEqual(M.repeatedFields(p), []);
+});
+
+test('repeatedFields finds serial numbers, asset tags and IP addresses on more than one device', () => {
+  const p = project([
+    ['compute-node', 'r1', 'u', 1, 'cn-001', { serial: 'SN-1', ip: '10.0.0.5', owner: 'HPC' }],
+    ['compute-node', 'r1', 'u', 3, 'cn-002', { serial: ' sn-1 ', asset: 'AT-1', ip: '10.0.0.6', owner: 'HPC' }],
+    ['compute-node', 'r1', 'u', 5, 'cn-003', { asset: 'AT-2', ip: '10.0.0.5' }],
+    ['compute-node', 'r1', 'u', 7, 'cn-004', { ip: '10.0.0.5' }],
+  ]);
+  const [a, b, c, d] = p.devices;
+  const shown = (list) => list.map((r) => [r.key, r.label, r.value, r.devices.map((x) => x.name)]);
+  assert.deepEqual(shown(M.repeatedFields(p)), [
+    ['serial', 'Serial number', 'SN-1', ['cn-001', 'cn-002']],
+    ['ip', 'IP address', '10.0.0.5', ['cn-001', 'cn-003', 'cn-004']],
+  ], 'case and spaces around a value aside; an owner is shared on purpose');
+  assert.deepEqual(shown(M.repeatedFields(p, b)), [['serial', 'Serial number', 'SN-1', ['cn-001', 'cn-002']]]);
+  assert.deepEqual(M.repeatedFields(p, d).map((r) => r.key), ['ip']);
+  c.ip = '';
+  d.ip = '10.0.0.7';
+  a.serial = 'SN-0';
+  assert.deepEqual(M.repeatedFields(p), []);
 });
 
 test('names count up in series', () => {

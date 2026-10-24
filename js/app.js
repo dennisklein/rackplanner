@@ -1740,7 +1740,7 @@
       `<section class="insp-sec"><h3>Details</h3><div class="field-grid">${fields}` +
       `<div class="field"><label for="insp-power">Power (W)</label><input id="insp-power" type="number" min="0" step="10" inputmode="decimal" value="${d.powerW == null ? '' : d.powerW}" placeholder="${type.powerW} (type)"></div>` +
       `<div class="field"><label for="insp-weight">Weight (kg)</label><input id="insp-weight" type="number" min="0" step="0.5" inputmode="decimal" value="${d.weightKg == null ? '' : d.weightKg}" placeholder="${type.weightKg} (type)"></div>` +
-      `</div></section>` +
+      `</div><div class="warn-note" id="insp-repeats" role="status" hidden></div></section>` +
       `<section class="insp-sec"><h3><label for="insp-notes">Notes</label></h3>` +
       `<textarea id="insp-notes" rows="3" maxlength="${M.NOTES_MAX}" placeholder="Cabling, purchase order, plans …">${esc(d.notes || '')}</textarea></section>` +
       `<div class="insp-actions is-pinned">` +
@@ -1808,12 +1808,37 @@
     if (up) up.addEventListener('click', () => nudge(id, -1));
     if (down) down.addEventListener('click', () => nudge(id, 1));
     for (const f of M.FIELDS) bindField($(`#insp-f-${f.key}`), id, f.key);
+    // A serial number, asset tag or IP address another device has too, as it is typed.
+    const repeats = $('#insp-repeats');
+    const noteRepeats = () => {
+      const cur = M.deviceById(project, id);
+      repeats.innerHTML = cur ? M.repeatedFields(project, cur).map((r) => `<p>${esc(`${r.label} ${r.value} is on`)} ${deviceLinks(r.devices.filter((x) => x !== cur))} too.</p>`).join('') : '';
+      repeats.hidden = !repeats.innerHTML;
+    };
+    noteRepeats();
+    for (const f of M.FIELDS) if (f.instance) $(`#insp-f-${f.key}`).addEventListener('input', noteRepeats);
     bindField($('#insp-power'), id, 'powerW', parseOptNum(100000));
     bindField($('#insp-weight'), id, 'weightKg', parseOptNum(5000));
     bindField($('#insp-notes'), id, 'notes');
     $('#insp-dup').addEventListener('click', () => duplicateDevice(id));
     $('#insp-del').addEventListener('click', () => deleteDevices([id]));
     if (hidden) $('#insp-show-cluster').addEventListener('click', () => showCluster(clusterIdOf(d) || '__none'));
+  }
+
+  /** Buttons that select devices `devs`: "cn-002, cn-003 and 4 more". */
+  function deviceLinks(devs) {
+    const shown = devs.slice(0, 3).map((d) => `<button type="button" class="btn-link" data-select="${esc(d.id)}">${esc(d.name)}</button>`);
+    return listAnd(devs.length > shown.length ? shown.concat([`${devs.length - shown.length} more`]) : shown);
+  }
+
+  /** "2 serial numbers and 1 IP address are on more than one device", or '' when none is. */
+  function repeatsText(repeats) {
+    const parts = M.FIELDS.filter((f) => f.instance).map((f) => {
+      const n = repeats.filter((r) => r.key === f.key).length;
+      if (!n) return '';
+      return n === 1 ? `1 ${/^[A-Z][a-z]/.test(f.label) ? f.label[0].toLowerCase() + f.label.slice(1) : f.label}` : `${n} ${M.pluralName(f.label)}`;
+    });
+    return repeats.length ? `${listAnd(parts)} ${repeats.length === 1 ? 'is' : 'are'} on more than one device.` : '';
   }
 
   function renderMultiInspector(devs) {
@@ -2150,6 +2175,7 @@
         return `<tr><td>${esc(ty.label)}</td><td>${devs.length}</td><td>${u}</td><td>${(w / 1000).toFixed(1)}</td></tr>`;
       })
       .join('');
+    const repeats = M.repeatedFields(project);
     const info = project.info;
     const infoField = (k, label, ph) =>
       `<div class="field"><label for="info-${k}">${label}</label><input id="info-${k}" type="text" value="${esc(info[k] || '')}" placeholder="${ph}" autocomplete="off" maxlength="60"></div>`;
@@ -2172,6 +2198,7 @@
       `</dl>` +
       budgetMeters(t) +
       (t.overPower || t.overWeight ? `<p class="warn-note">${esc(`${plural(t.overPower, 'rack')} over the power budget, ${plural(t.overWeight, 'rack')} over the weight limit.`)}</p>` : '') +
+      (repeats.length ? `<p class="warn-note" id="overview-repeats">${esc(repeatsText(repeats))} <button type="button" class="btn-link" id="overview-repeats-select">Select them</button></p>` : '') +
       `</section>` +
       `<section class="insp-sec"><h3>${esc(`${pos.floor.name} · ${pos.row.name}`)}</h3><div class="rack-bars">${rackBars(pos.row, stats)}</div></section>` +
       `<section class="insp-sec"><h3>By device type</h3>` +
@@ -2199,6 +2226,7 @@
       `<dt><kbd>Esc</kbd></dt><dd>Cancel, deselect, clear search</dd>` +
       `</dl></section>`;
     for (const k of ['site', 'author', 'revision']) bindText($(`#info-${k}`), 'info:' + k, (p, v) => (p.info[k] = v));
+    if (repeats.length) $('#overview-repeats-select').addEventListener('click', () => selectDevices([].concat(...repeats.map((r) => r.devices.map((d) => d.id))), { follow: true }));
   }
 
   el.inspector.addEventListener('click', (e) => {

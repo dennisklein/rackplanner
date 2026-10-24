@@ -183,7 +183,8 @@
 
   /**
    * Structured device fields, besides name, cluster and notes. Those of
-   * one device only (`instance`) are left empty on copies.
+   * one device only (`instance`) are left empty on copies, and a value
+   * that more devices have is flagged (see repeatedFields).
    */
   const FIELDS = [
     { key: 'serial', label: 'Serial number', csv: 'Serial number', instance: true },
@@ -2272,6 +2273,29 @@
     d[key] = String(value == null ? '' : value).slice(0, key === 'notes' ? NOTES_MAX : FIELD_MAX);
   }
 
+  /**
+   * The serial numbers, asset tags and IP addresses that more than one
+   * device has (case and spaces around them aside), in the order of FIELDS
+   * and of the devices: [{ key, label, value, devices }]. With `d`, only
+   * those of device `d`.
+   */
+  function repeatedFields(project, d) {
+    const out = [];
+    for (const f of FIELDS) {
+      if (!f.instance) continue;
+      const by = new Map();
+      for (const x of project.devices) {
+        const v = typeof x[f.key] === 'string' ? x[f.key].trim() : '';
+        if (!v) continue;
+        const k = v.toLowerCase();
+        if (!by.has(k)) by.set(k, { key: f.key, label: f.label, value: v, devices: [] });
+        by.get(k).devices.push(x);
+      }
+      for (const r of by.values()) if (r.devices.length > 1 && (!d || r.devices.includes(d))) out.push(r);
+    }
+    return out;
+  }
+
   // ----------------------------------------------------------------- cables
 
   /** The set ends of a cable: [{ end, role: 'a'|'b', leg }], `leg` being the index in a breakout's `b` (null otherwise). */
@@ -2981,6 +3005,7 @@
     moveView,
     newDevice,
     setDeviceText,
+    repeatedFields,
     cableEnds,
     legsOf,
     cleanCableEnd,
