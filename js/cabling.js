@@ -291,9 +291,8 @@
   }
 
   function nextNetworkName(project) {
-    const used = new Set(project.networks.map((n) => n.name));
     let i = project.networks.length + 1;
-    while (used.has(`Network ${i}`)) i++;
+    while (M.nameTaken(project.networks, `Network ${i}`)) i++;
     return `Network ${i}`;
   }
 

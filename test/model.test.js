@@ -1356,6 +1356,12 @@ test('names the CSVs find things by stay apart in their list, in any case', () =
   const copy2 = M.addView(p, M.copyViewName(p, ib.id), ib.id);
   assert.deepEqual([copy1.name, copy2.name], ['INFINIBAND (copy)', 'INFINIBAND (copy 2)']);
 
+  // A name made up for something new skips the names taken in any case.
+  first.name = 'floor 4';
+  assert.equal(M.nextFloorName(p), 'Floor 5');
+  ib.clusters.push({ id: 'c-low', name: 'cluster 2', color: '#123456' });
+  assert.equal(M.nextClusterName(p, ib.id), 'Cluster 3');
+
   // A plan that has a name twice still lets those things change, as long as the name stays.
   p.deviceTypes.find((t) => t.id === 'compute-node').label = 'Storage node';
   assert.equal(M.updateDeviceType(p, 'compute-node', { powerW: 800 }), null);

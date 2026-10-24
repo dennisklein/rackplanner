@@ -336,6 +336,18 @@ test('version 5 files keep their views; ids and names that clash are made unique
   assert.deepEqual(IO.normalizeProject({ version: 5, views: [], devices: [] }).project.views, [{ id: 'v1', name: 'Default', clusters: [] }], 'a plan has at least one view');
 });
 
+test('a floor, row, view or cluster without a name gets one no other has, in any case', () => {
+  const { project: p, warnings } = IO.normalizeProject({
+    version: 5,
+    floors: [{ id: 'f1', name: 'floor 2', rows: [{ id: 'row1', name: 'row b', racks: [{ id: 'r1' }] }, { id: 'row2', racks: [{ id: 'r2' }] }] }, { id: 'f2', rows: [{ id: 'row3', racks: [{ id: 'r3' }] }] }],
+    views: [{ id: 'v1', name: 'view 2', clusters: [{ id: 'c1', name: 'cluster 2' }, { id: 'c2' }] }, { id: 'v2' }],
+    devices: [],
+  });
+  assert.deepEqual(p.floors.map((f) => [f.name, f.rows.map((r) => r.name)]), [['floor 2', ['row b', 'Row C']], ['Floor 3', ['Row A']]]);
+  assert.deepEqual(p.views.map((v) => [v.name, v.clusters.map((c) => c.name)]), [['view 2', ['cluster 2', 'Cluster 3']], ['View 3', []]]);
+  assert.deepEqual(warnings, []);
+});
+
 test('a plan that has a name twice keeps it, with a warning for each name', () => {
   const ex = M.createExampleProject();
   ex.deviceTypes.find((t) => t.id === 'storage-node').label = 'compute node';

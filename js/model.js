@@ -1053,10 +1053,10 @@
   // ------------------------------------------------------------- structure
 
   function nextFloorName(project) {
-    return firstFree(namesOf(project.floors), project.floors.length + 1, (i) => `Floor ${i}`);
+    return firstFreeName(project.floors, project.floors.length + 1, (i) => `Floor ${i}`);
   }
   function nextRowName(floor) {
-    return firstFree(namesOf(floor.rows), floor.rows.length, (i) => `Row ${letters(i)}`);
+    return firstFreeName(floor.rows, floor.rows.length, (i) => `Row ${letters(i)}`);
   }
 
   /** Short code of a row for rack names: "Row C" → C; on floor 2 → 2C. */
@@ -1073,7 +1073,7 @@
   }
   function nextRackName(project, rowId) {
     const racks = (rowById(project, rowId) || { racks: [] }).racks;
-    return firstFree(namesOf(racks), racks.length, (i) => defaultRackName(project, rowId, i));
+    return firstFreeName(racks, racks.length, (i) => defaultRackName(project, rowId, i));
   }
 
   /** A plan with the standard catalog and nothing on it, not even a floor; `props` overrides. */
@@ -2206,7 +2206,7 @@
 
   function nextClusterName(project, viewId) {
     const list = clustersOf(project, viewId);
-    return firstFree(namesOf(list), list.length + 1, (i) => `Cluster ${i}`);
+    return firstFreeName(list, list.length + 1, (i) => `Cluster ${i}`);
   }
 
   /**
@@ -2247,7 +2247,7 @@
   // ------------------------------------------------------------------ views
 
   function nextViewName(project) {
-    return firstFree(namesOf(project.views), project.views.length + 1, (i) => `View ${i}`);
+    return firstFreeName(project.views, project.views.length + 1, (i) => `View ${i}`);
   }
 
   /** Name for a copy of view `id`: "Lustre (copy)", then "Lustre (copy 2)"; no other view has it, in any case. */

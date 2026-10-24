@@ -231,15 +231,15 @@
       // A cluster without a name or color gets the one M.nextClusterName or
       // M.nextClusterColor gives after the clusters before it, kept track of
       // here so that a long list reads in one pass.
-      const names = new Set();
+      const names = new Set(); // in lower case, as the model compares names
       const colors = new Set();
       const make = (c, cid) => {
         const n = view.clusters.length;
         let name = str(c.name, 60);
-        for (let i = n + 1; !name; i++) if (!names.has(`Cluster ${i}`)) name = `Cluster ${i}`;
+        for (let i = n + 1; !name; i++) if (!names.has(`cluster ${i}`)) name = `Cluster ${i}`;
         const color = M.normalizeHex(c.color) || M.CLUSTER_COLORS.find((x) => !colors.has(x)) || M.CLUSTER_COLORS[n % M.CLUSTER_COLORS.length];
         const out = { id: cid, name, color };
-        names.add(out.name);
+        names.add(out.name.toLowerCase());
         colors.add(out.color);
         return out;
       };
