@@ -304,8 +304,8 @@ test('CSVs have a cluster column per view, and read them back into the views of 
   p.views[0].clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });
   const ib = M.addView(p, 'InfiniBand');
   ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
-  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', v2: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
-  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-2', groups: { v2: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 3 } }));
+  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
+  p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-2', groups: { [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 3 } }));
   const lines = IO.toCSV(p).trim().split('\r\n');
   assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes');
   assert.match(lines[1], /,cn-1,Alpha,HDR,/);
@@ -317,9 +317,9 @@ test('CSVs have a cluster column per view, and read them back into the views of 
 
   // A plain Cluster column fills the view given; a column for a new view adds it.
   const csv = ['Rack,Position,Name,Type,Cluster,Cluster: Power', 'Rack A02,U1,x-1,Compute node,OPA,Feed A'].join('\n');
-  const merged = IO.importCSV(csv, p, 'v2').project;
+  const merged = IO.importCSV(csv, p, ib.id).project;
   const x = merged.devices.find((d) => d.name === 'x-1');
-  assert.equal(M.clusterOf(merged, x, 'v2').name, 'OPA');
+  assert.equal(M.clusterOf(merged, x, ib.id).name, 'OPA');
   assert.equal(M.clusterIdOf(merged, x, 'v1'), null);
   const power = merged.views.find((v) => v.name === 'Power');
   assert.equal(M.clusterOf(merged, x, power.id).name, 'Feed A');
@@ -328,8 +328,9 @@ test('CSVs have a cluster column per view, and read them back into the views of 
 test('a new plan from view columns only has those views, without an empty Default', () => {
   const csv = ['Rack,Position,Name,Type,Cluster: InfiniBand,Cluster: Lustre', 'Rack A01,U1,cn-1,Compute node,HDR-21,Hebe', 'Rack A01,U3,cn-2,Compute node,HDR-2D,'].join('\n');
   const p = IO.importCSV(csv).project;
-  assert.deepEqual(p.views.map((v) => [v.id, v.name, v.clusters.map((c) => c.name)]), [['v1', 'InfiniBand', ['HDR-21', 'HDR-2D']], ['v2', 'Lustre', ['Hebe']]]);
-  assert.equal(M.clusterOf(p, p.devices[0], 'v1').name, 'HDR-21');
+  assert.deepEqual(p.views.map((v) => [v.name, v.clusters.map((c) => c.name)]), [['InfiniBand', ['HDR-21', 'HDR-2D']], ['Lustre', ['Hebe']]]);
+  assert.ok(p.views.every((v) => v.id !== 'v1'), 'the id of the Default view left out is not given again');
+  assert.equal(M.clusterOf(p, p.devices[0], p.views[0].id).name, 'HDR-21');
   // A plain Cluster column fills the first view, so Default stays.
   const plain = IO.importCSV(csv.replace('Cluster: InfiniBand', 'Cluster')).project;
   assert.deepEqual(plain.views.map((v) => v.name), ['Default', 'Lustre']);

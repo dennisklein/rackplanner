@@ -324,6 +324,11 @@
   }
 
   let uidCounter = 0;
+  /**
+   * A random id such as r-mvltsu84qbghj: what devices, cables, clusters,
+   * networks, floors, rows, racks, views and catalog types get when they
+   * are made, so that an id is never given to something else after a delete.
+   */
   function uid(prefix) {
     uidCounter = (uidCounter + 1) % 1679616;
     return `${prefix}-${Date.now().toString(36)}${uidCounter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -336,7 +341,7 @@
     return make(i);
   }
 
-  /** Smallest `${prefix}${k}` not in `used`. */
+  /** Smallest `${prefix}${k}` not in `used`: the id the loader gives a floor, row, rack or view whose id in the file cannot be kept. */
   function nextId(prefix, used) {
     return firstFree(used, 1, (k) => prefix + k);
   }
@@ -895,7 +900,7 @@
   function addDeviceType(project, template) {
     if (project.deviceTypes.length >= LIMITS.deviceTypes) return null;
     const t = cleanDeviceType(template);
-    t.id = nextId('t', new Set(project.deviceTypes.map((x) => x.id)));
+    t.id = uid('t');
     // Numbered past a label in the same case only, as a CSV import has
     // always named the generic types it adds; updateDeviceType refuses a
     // label another type has in any case.
@@ -969,7 +974,7 @@
   function addRackType(project, template) {
     if (project.rackTypes.length >= LIMITS.rackTypes) return null;
     const t = cleanRackType(template);
-    t.id = nextId('rt', new Set(project.rackTypes.map((x) => x.id)));
+    t.id = uid('rt');
     t.name = uniqueLabel(project.rackTypes, 'name', t.name);
     project.rackTypes.push(t);
     return t;
@@ -1072,10 +1077,24 @@
     return clampInt(n, 1, LIMITS.racks, DEFAULT_RACKS);
   }
 
+  /**
+   * Adds the first floor of a plan that has none (see addFloor), with the
+   * ids a new plan starts with: f1, row1 and r1, r2, … by position. Floors,
+   * rows and racks added later get random ids, so these are never given
+   * out again.
+   */
+  function addFirstFloor(project, opts) {
+    const floor = addFloor(project, opts);
+    floor.id = 'f1';
+    floor.rows[0].id = 'row1';
+    floor.rows[0].racks.forEach((r, i) => (r.id = `r${i + 1}`));
+    return floor;
+  }
+
   /** A plan with one floor and one row of `rackCount` empty 47U racks. */
   function createEmptyProject(rackCount) {
     const p = newProjectShell();
-    addFloor(p, { racks: rackCount ? clampRackCount(rackCount) : DEFAULT_RACKS });
+    addFirstFloor(p, { racks: rackCount ? clampRackCount(rackCount) : DEFAULT_RACKS });
     return p;
   }
 
@@ -1098,7 +1117,7 @@
    */
   function insertFloor(project, name, index) {
     if (project.floors.length >= LIMITS.floors) return null;
-    const floor = { id: nextId('f', structureIds(project)), name: uniqueLabel(project.floors, 'name', str(name, LIMITS.name) || nextFloorName(project)), rowPitchM: DEFAULT_ROW_PITCH_M, rows: [] };
+    const floor = { id: uid('f'), name: uniqueLabel(project.floors, 'name', str(name, LIMITS.name) || nextFloorName(project)), rowPitchM: DEFAULT_ROW_PITCH_M, rows: [] };
     project.floors.splice(index == null ? project.floors.length : index, 0, floor);
     return floor;
   }
@@ -1106,7 +1125,7 @@
   /** Inserts a row without racks into `floor`, like insertFloor. Null when the floor has eight rows. */
   function insertRow(project, floor, name, index) {
     if (floor.rows.length >= LIMITS.rows) return null;
-    const row = { id: nextId('row', structureIds(project)), name: uniqueLabel(floor.rows, 'name', str(name, LIMITS.name) || nextRowName(floor)), racks: [] };
+    const row = { id: uid('row'), name: uniqueLabel(floor.rows, 'name', str(name, LIMITS.name) || nextRowName(floor)), racks: [] };
     floor.rows.splice(index == null ? floor.rows.length : index, 0, row);
     return row;
   }
@@ -1146,7 +1165,7 @@
       (o.type && rackTypeById(project, o.type) && o.type) ||
       (neighbour && rackTypeById(project, neighbour.type) && neighbour.type) ||
       project.rackTypes[0].id;
-    const rack = { id: nextId('r', structureIds(project)), name: uniqueLabel(row.racks, 'name', str(o.name, LIMITS.name) || nextRackName(project, rowId)), type, trayM: null, slackM: null };
+    const rack = { id: uid('r'), name: uniqueLabel(row.racks, 'name', str(o.name, LIMITS.name) || nextRackName(project, rowId)), type, trayM: null, slackM: null };
     row.racks.splice(index, 0, rack);
     return rack;
   }
@@ -1890,7 +1909,7 @@
   function copyRowInto(project, source, floor, index, name, rackMap) {
     const row = insertRow(project, floor, name, index);
     source.racks.forEach((r, i) => {
-      const rack = { id: nextId('r', structureIds(project)), name: defaultRackName(project, row.id, i), type: r.type, trayM: orNull(r.trayM), slackM: orNull(r.slackM) };
+      const rack = { id: uid('r'), name: defaultRackName(project, row.id, i), type: r.type, trayM: orNull(r.trayM), slackM: orNull(r.slackM) };
       row.racks.push(rack);
       rackMap.set(r.id, rack.id);
     });
@@ -2219,7 +2238,7 @@
    */
   function addView(project, name, fromViewId) {
     if (project.views.length >= LIMITS.views) return null;
-    const view = { id: nextId('v', new Set(project.views.map((v) => v.id))), name: uniqueLabel(project.views, 'name', str(name, LIMITS.name) || nextViewName(project)), clusters: [] };
+    const view = { id: uid('v'), name: uniqueLabel(project.views, 'name', str(name, LIMITS.name) || nextViewName(project)), clusters: [] };
     const from = fromViewId ? viewById(project, fromViewId) : null;
     if (from) {
       const ids = new Map();
@@ -2901,6 +2920,7 @@
     letters,
     uid,
     nextId,
+    addFirstFloor,
     nameTaken,
     uniqueLabel,
     structureIds,

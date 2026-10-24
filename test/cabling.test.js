@@ -17,8 +17,14 @@ const near = (actual, expected, msg) => assert.ok(Math.abs(actual - expected) < 
  */
 function plan() {
   const p = M.createEmptyProject(3);
-  M.addRow(p, 'f1', { racks: 2 });
-  M.addFloor(p, { racks: 1 });
+  // New floors, rows and racks get random ids; these get fixed ones.
+  const row = M.addRow(p, 'f1', { racks: 2 });
+  row.id = 'row2';
+  row.racks.forEach((r, i) => (r.id = `r${i + 4}`));
+  const floor = M.addFloor(p, { racks: 1 });
+  floor.id = 'f2';
+  floor.rows[0].id = 'row3';
+  floor.rows[0].racks[0].id = 'r6';
   const osfp = M.addDeviceType(p, { label: 'OSFP switch', face: 'qsfp', ports: [{ name: 'p', first: 1, count: 8, connector: 'osfp', speedGbps: 400, side: 'front' }] });
   const add = (type, rack, kind, at, id, extra) => p.devices.push(M.newDevice(Object.assign({ id, type, name: id, loc: { rack, kind, at } }, extra)));
   const sw = { reversed: true };
@@ -890,7 +896,7 @@ test('a transceiver chosen at an end goes when the cable changes to a type that 
 test('cable types, transceivers and networks are kept in catalogs', () => {
   const p = M.createExampleProject();
   const t = C.addCableType(p, { name: 'QSFP56 DAC', media: 'dac', connector: 'qsfp56', maxM: 2, lengthsM: [2, 1, 1, 'x', -3] });
-  assert.equal(t.id, 'ct1');
+  assert.match(t.id, /^ct-[0-9a-z]+$/, 'a random id');
   assert.equal(t.name, 'QSFP56 DAC 2', 'names stay unique');
   assert.deepEqual(t.lengthsM, [0.1, 1, 2], 'sorted, unique, positive');
   assert.deepEqual(M.cleanCableType({ media: 'cat6a', connector: 'qsfp56' }).connector, 'rj45', 'a plug that suits the media');
@@ -911,9 +917,11 @@ test('cable types, transceivers and networks are kept in catalogs', () => {
   assert.ok(!C.moveCableType(p, t.id, -5));
   while (p.cableTypes.length < M.LIMITS.cableTypes) C.addCableType(p, {});
   assert.equal(C.addCableType(p, {}), null, 'at most 50');
+  assert.equal(new Set(p.cableTypes.map((x) => x.id)).size, p.cableTypes.length, 'each with an id of its own');
 
   const tr = C.addTransceiver(p, { connector: 'qsfp112', mode: 'smf', fiber: 'lc' });
-  assert.deepEqual(tr, { id: 'tr1', name: 'QSFP112 400G LR', connector: 'qsfp112', fiber: 'lc', mode: 'smf', speedGbps: 400, reachM: 100 });
+  assert.match(tr.id, /^tr-[0-9a-z]+$/);
+  assert.deepEqual(tr, { id: tr.id, name: 'QSFP112 400G LR', connector: 'qsfp112', fiber: 'lc', mode: 'smf', speedGbps: 400, reachM: 100 });
   assert.equal(M.cleanTransceiver({ connector: 'rj45' }).connector, 'qsfp56', 'transceivers fit cages');
   assert.equal(C.transceiverUse(p, 'sfp-10g-sr'), 0, 'picked, not named');
   p.cables.find((c) => c.label === 'MGT-0041').a.transceiver = 'sfp-10g-sr';

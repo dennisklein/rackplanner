@@ -119,6 +119,41 @@ test('racks can be inserted, reordered, moved to another row and removed', () =>
   assert.ok(!M.removeFloor(p, 'f1'), 'a plan keeps one floor');
 });
 
+test('new floors, rows, racks, views and types get ids that a delete never gives out again', () => {
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-1']]);
+  const C = require('../js/cabling.js');
+  const seen = new Set(['f1', 'row1', 'r1', 'r2', 'r3', 'v1']);
+  const kinds = [
+    ['f', () => M.addFloor(p, { racks: 1 }), (x) => M.removeFloor(p, x.id)],
+    ['row', () => M.addRow(p, 'f1', { racks: 1 }), (x) => M.removeRow(p, x.id)],
+    ['r', () => M.addRack(p, 'row1'), (x) => M.removeRack(p, x.id)],
+    ['v', () => M.addView(p, ''), (x) => M.removeView(p, x.id)],
+    ['t', () => M.addDeviceType(p, M.TYPE_TEMPLATES[0]), (x) => M.deleteDeviceType(p, x.id)],
+    ['rt', () => M.addRackType(p, { name: 'Custom rack', units: 42 }), (x) => M.deleteRackType(p, x.id)],
+    ['ct', () => C.addCableType(p, {}), (x) => C.deleteCableType(p, x.id)],
+    ['tr', () => C.addTransceiver(p, {}), (x) => C.deleteTransceiver(p, x.id)],
+  ];
+  for (const [prefix, add, remove] of kinds) {
+    for (let i = 0; i < 3; i++) {
+      const x = add();
+      assert.match(x.id, new RegExp(`^${prefix}-[0-9a-z]+$`));
+      assert.ok(x.id.length - prefix.length <= 17, 'as long as the ids of devices and cables');
+      assert.ok(!seen.has(x.id), `${x.id} is new`);
+      seen.add(x.id);
+      assert.ok(remove(x) !== false);
+    }
+  }
+  // Floors, rows and racks added in one go, and copies.
+  const floor = M.addFloor(p, { racks: 3 });
+  const ids = [floor.id, floor.rows[0].id].concat(floor.rows[0].racks.map((r) => r.id));
+  const copy = M.duplicateRow(p, floor.rows[0].id);
+  ids.push(copy.id, ...copy.racks.map((r) => r.id));
+  assert.equal(new Set(ids.concat([...seen])).size, ids.length + seen.size);
+  // The first floor of a new plan, and the example, keep their fixed ids.
+  assert.deepEqual(M.allRacks(M.createEmptyProject(2)).map((r) => [r.floor.id, r.row.id, r.rack.id]), [['f1', 'row1', 'r1'], ['f1', 'row1', 'r2']]);
+  assert.deepEqual(M.createExampleProject(), M.createExampleProject());
+});
+
 test('rows and floors move within their limits', () => {
   const p = M.createEmptyProject(1);
   const f2 = M.addFloor(p, { racks: 1 });
@@ -594,11 +629,11 @@ test('rack stats report space, reserved units, power and weight against budgets'
 test('device types can be added, changed and deleted', () => {
   const p = project([['compute-node', 'r1', 'u', 1, 'cn-1'], ['compute-node', 'r1', 'u', 3, 'cn-2']]);
   const gpu = M.addDeviceType(p, M.TYPE_TEMPLATES[1]);
-  assert.equal(gpu.id, 't1');
+  assert.match(gpu.id, /^t-[0-9a-z]+$/, 'a random id');
   assert.equal(gpu.label, 'GPU server');
   assert.equal(M.addDeviceType(p, M.TYPE_TEMPLATES[1]).label, 'GPU server 2', 'labels stay unique');
   assert.equal(M.updateDeviceType(p, gpu.id, { height: 8, face: 'bogus', powerW: -5 }), null);
-  assert.deepEqual([gpu.id, M.typeOf(p, gpu.id).height, M.typeOf(p, gpu.id).face, M.typeOf(p, gpu.id).powerW], ['t1', 8, 'generic', 0]);
+  assert.deepEqual([gpu.id, M.typeOf(p, gpu.id).height, M.typeOf(p, gpu.id).face, M.typeOf(p, gpu.id).powerW], [gpu.id, 8, 'generic', 0]);
   assert.match(M.updateDeviceType(p, 'compute-node', { height: 3 }), /overlap/);
   assert.equal(M.typeOf(p, 'compute-node').height, 2, 'refused changes leave the type alone');
   M.deleteDeviceType(p, 'compute-node');
@@ -1118,27 +1153,28 @@ test('a new plan has one view, and every view groups the same devices in cluster
   assert.equal(M.clusterIdOf(p, b), null);
 
   const ib = M.addView(p, 'InfiniBand');
-  assert.deepEqual([ib.id, ib.name, ib.clusters], ['v2', 'InfiniBand', []]);
-  assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a new view starts unassigned');
+  assert.deepEqual([ib.name, ib.clusters], ['InfiniBand', []]);
+  assert.match(ib.id, /^v-[0-9a-z]+$/, 'a random id');
+  assert.equal(M.clusterIdOf(p, a, ib.id), null, 'a new view starts unassigned');
   ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
-  assert.equal(M.setClusterOf(p, b, 'v2', 'c2'), true);
-  assert.deepEqual([M.clusterIdOf(p, a, 'v1'), M.clusterIdOf(p, b, 'v1'), M.clusterIdOf(p, b, 'v2')], ['c1', null, 'c2']);
+  assert.equal(M.setClusterOf(p, b, ib.id, 'c2'), true);
+  assert.deepEqual([M.clusterIdOf(p, a, 'v1'), M.clusterIdOf(p, b, 'v1'), M.clusterIdOf(p, b, ib.id)], ['c1', null, 'c2']);
   assert.equal(M.clusterById(p, 'c2').name, 'HDR', 'cluster ids are unique across views');
   assert.equal(M.viewOfCluster(p, 'c2'), ib);
   assert.equal(M.clusterIdOf(p, a, 'nope'), 'c1', 'an unknown view id falls back to the first view');
-  assert.equal(M.setClusterOf(p, a, 'v2', 'c1'), false, 'a cluster of another view is refused');
-  assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a cluster of another view does not count');
+  assert.equal(M.setClusterOf(p, a, ib.id, 'c1'), false, 'a cluster of another view is refused');
+  assert.equal(M.clusterIdOf(p, a, ib.id), null, 'a cluster of another view does not count');
   assert.deepEqual(a.groups, { v1: 'c1' }, 'and not stored');
   // Writes have no fallback to the first view: its cluster stays.
   assert.equal(M.setClusterOf(p, a, 'v-gone', 'c2'), false);
   assert.equal(M.setClusterOf(p, a, 'v-gone', null), false);
   assert.equal(M.setClusterOf(p, a, undefined, null), false);
   assert.deepEqual(a.groups, { v1: 'c1' });
-  assert.equal(M.setClusterOf(p, b, 'v2', null), true);
+  assert.equal(M.setClusterOf(p, b, ib.id, null), true);
   assert.deepEqual(b.groups, {});
 
-  assert.equal(M.nextClusterName(p, 'v2'), 'Cluster 2');
-  assert.notEqual(M.nextClusterColor(p, 'v2'), '#d64545');
+  assert.equal(M.nextClusterName(p, ib.id), 'Cluster 2');
+  assert.notEqual(M.nextClusterColor(p, ib.id), '#d64545');
   assert.equal(M.nextViewName(p), 'View 3');
 });
 
@@ -1173,16 +1209,17 @@ test('a copy of a view gets a name no other view has', () => {
 test('views can be renamed, moved and removed; a plan keeps one, and devices drop what goes', () => {
   const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
   for (let i = 2; i <= M.LIMITS.views; i++) assert.ok(M.addView(p, '', i === 2 ? 'v1' : null));
+  const v2 = p.views[1].id;
   assert.equal(M.addView(p), null, `a plan holds ${M.LIMITS.views} views`);
-  assert.ok(M.renameView(p, 'v2', '  Lustre '));
-  assert.equal(M.viewById(p, 'v2').name, 'Lustre');
-  assert.ok(!M.renameView(p, 'v2', '   '), 'an empty name keeps the old one');
-  assert.ok(M.moveView(p, 'v2', 0));
-  assert.equal(p.views[0].id, 'v2');
+  assert.ok(M.renameView(p, v2, '  Lustre '));
+  assert.equal(M.viewById(p, v2).name, 'Lustre');
+  assert.ok(!M.renameView(p, v2, '   '), 'an empty name keeps the old one');
+  assert.ok(M.moveView(p, v2, 0));
+  assert.equal(p.views[0].id, v2);
   assert.equal(M.clusterOf(p, p.devices[0]).name, 'Alpha', 'the first view is now the copy');
   const copied = p.views[0].clusters[0].id;
-  assert.ok(M.removeView(p, 'v2'));
-  assert.ok(!('v2' in p.devices[0].groups));
+  assert.ok(M.removeView(p, v2));
+  assert.ok(!(v2 in p.devices[0].groups));
   assert.equal(M.clusterById(p, copied), null);
   while (p.views.length > 1) M.removeView(p, p.views[p.views.length - 1].id);
   assert.ok(!M.removeView(p, p.views[0].id), 'the last view stays');
@@ -1228,9 +1265,9 @@ test('suggestPlacement and search use the clusters of the view asked for', () =>
 
 test('copyLayout keeps the views without their clusters', () => {
   const p = project([['compute-node', 'r1', 'u', 1, 'cn-1', { groups: { v1: 'c1' } }]]);
-  M.addView(p, 'InfiniBand', 'v1');
+  const ib = M.addView(p, 'InfiniBand', 'v1');
   const l = M.copyLayout(p);
-  assert.deepEqual(l.views.map((v) => [v.id, v.name, v.clusters]), [['v1', 'Default', []], ['v2', 'InfiniBand', []]]);
+  assert.deepEqual(l.views.map((v) => [v.id, v.name, v.clusters]), [['v1', 'Default', []], [ib.id, 'InfiniBand', []]]);
 });
 
 test('the first eight cluster colors stay apart for color-blind eyes too', () => {

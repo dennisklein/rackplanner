@@ -165,7 +165,7 @@
         else warnings.push(`Skipped ${floor.name}: it has no rows.`);
       }
       if (droppedFloors) warnings.push(`Only the first ${L.floors} floors were kept.`);
-      if (!p.floors.length) M.addFloor(p, { type: defaultType });
+      if (!p.floors.length) M.addFirstFloor(p, { type: defaultType });
       // Racks without a name are named by position once their row exists.
       for (const { rack, row, index } of M.allRacks(p)) if (unnamed.has(rack.id)) rack.name = M.defaultRackName(p, row.id, index);
       return rackIds;
@@ -174,7 +174,7 @@
     // A flat list of racks: one row.
     const rawRacks = Array.isArray(raw.racks) ? raw.racks.filter(isObj) : [];
     const n = rawRacks.length ? Math.min(rawRacks.length, L.racks) : M.DEFAULT_RACKS;
-    M.addFloor(p, { racks: n, type: defaultType });
+    M.addFirstFloor(p, { racks: n, type: defaultType });
     const row = p.floors[0].rows[0];
     if (rawRacks.length) {
       rawRacks.slice(0, L.racks).forEach((r, i) => {

@@ -187,7 +187,7 @@
   function addCableType(project, template) {
     if (project.cableTypes.length >= L.cableTypes) return null;
     const t = M.cleanCableType(template);
-    t.id = M.nextId('ct', new Set(project.cableTypes.map((x) => x.id)));
+    t.id = M.uid('ct');
     t.name = uniqueName(project.cableTypes, t.name);
     project.cableTypes.push(t);
     return t;
@@ -254,7 +254,7 @@
   function addTransceiver(project, template) {
     if (project.transceivers.length >= L.transceivers) return null;
     const t = M.cleanTransceiver(template);
-    t.id = M.nextId('tr', new Set(project.transceivers.map((x) => x.id)));
+    t.id = M.uid('tr');
     t.name = uniqueName(project.transceivers, t.name);
     project.transceivers.push(t);
     return t;

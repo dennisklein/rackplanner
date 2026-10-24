@@ -620,25 +620,25 @@ erDiagram
     CABLE }o..o{ TRANSCEIVER : "optics at an end"
 
     FLOOR {
-        string id PK "f1, f2, ..."
+        string id PK "f1, or random"
         string name "Floor 1"
         number rowPitchM "row to row, 3"
         Row[] rows "1 to 8"
     }
     ROW {
-        string id PK "row1, row2, ..."
+        string id PK "row1, or random"
         string name "Row A"
         Rack[] racks "1 to 16"
     }
     RACK {
-        string id PK "r1, r2, ..."
+        string id PK "r1, or random"
         string name "Rack A01"
         string type FK "rack type"
         number trayM "null = the type's value"
         number slackM "null = the type's value"
     }
     RACK_TYPE {
-        string id PK "rack-47, rt1, ..."
+        string id PK "rack-47, or random"
         string name "47U rack"
         int units "10 to 60"
         int sideSlots "0 to 4"
@@ -669,7 +669,7 @@ erDiagram
         string notes
     }
     DEVICE_TYPE {
-        string id PK "compute-node, t1, ..."
+        string id PK "compute-node, or random"
         string label "Compute node"
         string tag "COMPUTE"
         string spec "server"
@@ -690,7 +690,7 @@ erDiagram
         string side "front or rear of the device"
     }
     VIEW {
-        string id PK "v1, v2, ..."
+        string id PK "v1, or random"
         string name "Default"
         Cluster[] clusters
     }
@@ -714,7 +714,7 @@ erDiagram
         string notes
     }
     CABLE_TYPE {
-        string id PK "cat6a, ct1, ..."
+        string id PK "cat6a, or random"
         string name "QSFP56 DAC"
         string media "cat6a, dac, aoc, om4, os2, sas, ..."
         string connector "plug at end a"
@@ -725,7 +725,7 @@ erDiagram
         number[] lengthsM "stock lengths; empty = made to length"
     }
     TRANSCEIVER {
-        string id PK "qsfp56-200g-sr4, tr1, ..."
+        string id PK "qsfp56-200g-sr4, or random"
         string name "QSFP56 200G SR4"
         string connector "the cage it fits"
         string fiber "lc or mpo"
@@ -822,9 +822,12 @@ a cable type or transceiver that is not in the catalog. Imports drop such
 cables with a warning.
 
 Floors, rows and racks share one id space, so an id names only one of them.
-New ones get the next free `f1`, `row1` or `r1`, new catalog types `t1`,
-`rt1`, `ct1` or `tr1`, new views `v1`. Device, cluster, network and cable ids
-are random. Cluster ids are unique across all views; an import gives a
+A new plan's floor, row and racks are `f1`, `row1` and `r1`, `r2`, … and its
+view `v1`; the standard catalog types have ids such as `compute-node`. Every
+floor, row, rack, view and catalog type added after that gets a random id
+(`r-mvltsu84qbghj`), as devices, clusters, networks and cables do, so an id
+is never given to something else after a delete. Plans saved before keep
+the ids they have (`r4`, `t1`, `ct2`, …), and any id stays valid. Cluster ids are unique across all views; an import gives a
 cluster id used in an earlier view a new one. View and cluster ids starting
 with `__` are reserved for the app and replaced on import.
 
