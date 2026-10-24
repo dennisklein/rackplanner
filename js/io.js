@@ -984,7 +984,7 @@
       if (!name) return null;
       let c = view.clusters.find((x) => lower(x.name) === lower(name));
       if (!c) {
-        c = { id: M.uid('c'), name: name.slice(0, 60), color: M.nextClusterColor(work, view.id) };
+        c = { id: M.uid('c'), name, color: M.nextClusterColor(work, view.id) };
         view.clusters.push(c);
       }
       return c.id;
@@ -992,7 +992,8 @@
     function findGroups(r) {
       const groups = {};
       for (const { view, index } of clusterCols) {
-        const c = findCluster(view, String(r[index] == null ? '' : r[index]).trim());
+        // Cut to the length the plan keeps, so later lines find the cluster an earlier one created.
+        const c = findCluster(view, String(r[index] == null ? '' : r[index]).trim().slice(0, L.name).trim());
         if (c) groups[view.id] = c;
       }
       return groups;

@@ -500,6 +500,15 @@ test('CSV lines with long floor and row names end up on one floor and row', () =
   assert.deepEqual(p.floors[0].rows.map((r) => [r.name, r.racks.map((k) => k.name)]), [[row.slice(0, 60), ['R1', 'R2']]]);
 });
 
+test('CSV lines with one long cluster name end up in one cluster', () => {
+  const project = `Project ${'z'.repeat(70)}`;
+  const csv = ['Rack,Position,Type,Name,Cluster,Cluster: Billing', `R1,U1,48-port switch,a,${project},${project}`, `R1,U2,48-port switch,b,${project},${project}`].join('\n');
+  const { project: p, warnings } = IO.importCSV(csv);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p.views.map((v) => v.clusters.map((c) => c.name)), [[project.slice(0, M.LIMITS.name)], [project.slice(0, M.LIMITS.name)]]);
+  for (const v of p.views) assert.equal(M.clusterIdOf(p, p.devices[0], v.id), M.clusterIdOf(p, p.devices[1], v.id));
+});
+
 test('share links pack and unpack a plan', async () => {
   const ex = M.createExampleProject();
   const code = await IO.encodeShare(ex);
