@@ -288,7 +288,7 @@
         network: network ? networkIds.get(network) : null,
         label,
         lengthM: M.clampNum(c.lengthM, 0.1, 10000, null),
-        notes: typeof c.notes === 'string' ? c.notes.slice(0, 2000) : '',
+        notes: typeof c.notes === 'string' ? c.notes.slice(0, M.NOTES_MAX) : '',
         a,
         b,
       };
@@ -530,14 +530,14 @@
         type: type.id,
         name,
         groups: readDeviceGroups(d, name, views, warnings),
-        notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : '',
+        notes: typeof d.notes === 'string' ? d.notes.slice(0, M.NOTES_MAX) : '',
         powerW: M.clampNum(d.powerW, 0, 100000, null),
         weightKg: M.clampNum(d.weightKg, 0, 5000, null),
         reversed: d.reversed === true,
         slackM: M.clampNum(d.slackM, 0, 10, null),
         loc: nloc,
       });
-      for (const f of M.FIELDS) dev[f.key] = str(d[f.key], 120);
+      for (const f of M.FIELDS) dev[f.key] = str(d[f.key], M.FIELD_MAX);
       if (type.variable) dev.height = height;
       list.push(dev);
       p.devices.push(dev);

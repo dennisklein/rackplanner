@@ -510,6 +510,14 @@ test('names left empty fall back to a default; title block fields are one undo s
   await expect(page.locator('.scene')).toContainText('Hall 2 · Floor 1 · Row A');
 });
 
+test('device notes keep to the length a saved plan keeps', async ({ page }) => {
+  await device(page, 'cn-001').click();
+  await expect(page.locator('#insp-notes')).toHaveAttribute('maxlength', '2000');
+  await page.fill('#insp-notes', 'x'.repeat(2500));
+  const kept = await page.evaluate(() => window.RP.app.project().devices.find((d) => d.name === 'cn-001').notes.length);
+  expect(kept).toBe(2000);
+});
+
 test('a rack can be emptied and a device type copied, with undo', async ({ page }) => {
   await page.locator('.rack-head[data-rack="r1"]').click();
   await page.click('#insp-clear-rack');

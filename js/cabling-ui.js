@@ -2747,7 +2747,7 @@
         `<div class="field span2"><label for="cab-type">Cable type</label><select id="cab-type">${typeOptions(c, c.type)}</select></div>` +
         `<div class="field span2"><label for="cab-length">Length (m)</label><input id="cab-length" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${c.lengthM === null ? '' : c.lengthM}" placeholder="${esc(placeholder)}">` +
         `<small class="field-hint">${esc(hint)}</small></div>` +
-        `<div class="field span2"><label for="cab-notes">Notes</label><textarea id="cab-notes" rows="2" placeholder="Route, purchase order …">${esc(c.notes || '')}</textarea></div>` +
+        `<div class="field span2"><label for="cab-notes">Notes</label><textarea id="cab-notes" rows="2" maxlength="${M.NOTES_MAX}" placeholder="Route, purchase order …">${esc(c.notes || '')}</textarea></div>` +
         `</div></section>`
       );
     }

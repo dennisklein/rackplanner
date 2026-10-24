@@ -186,6 +186,9 @@
     { key: 'ip', label: 'IP address', csv: 'IP address' },
     { key: 'owner', label: 'Owner', csv: 'Owner' },
   ];
+  // The longest text a plan keeps in a field of FIELDS and in the notes of a device or cable.
+  const FIELD_MAX = 120;
+  const NOTES_MAX = 2000;
 
   // Ordered so that the first eight clusters stay apart for the common kinds
   // of color blindness too: distinct hues of distinct lightness.
@@ -2163,6 +2166,11 @@
     );
   }
 
+  /** Sets a device's notes or a field of FIELDS to `value`, cut to the length a plan keeps. */
+  function setDeviceText(d, key, value) {
+    d[key] = String(value == null ? '' : value).slice(0, key === 'notes' ? NOTES_MAX : FIELD_MAX);
+  }
+
   // ----------------------------------------------------------------- cables
 
   /** The set ends of a cable: [{ end, role: 'a'|'b', leg }], `leg` being the index in a breakout's `b` (null otherwise). */
@@ -2695,6 +2703,8 @@
   return {
     SCHEMA_VERSION,
     LIMITS,
+    FIELD_MAX,
+    NOTES_MAX,
     RACK_UNITS,
     SIDE_SLOTS,
     DEFAULT_RACKS,
@@ -2860,6 +2870,7 @@
     removeView,
     moveView,
     newDevice,
+    setDeviceText,
     cableEnds,
     legsOf,
     cleanCableEnd,

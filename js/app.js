@@ -1615,7 +1615,7 @@
 
   /** A field bound to a device property: text as typed, or `parse`d when the field is left. */
   function bindField(input, id, prop, parse) {
-    if (!parse) return bindText(input, `${prop}:${id}`, (p, v) => (M.deviceById(p, id)[prop] = v));
+    if (!parse) return bindText(input, `${prop}:${id}`, (p, v) => M.setDeviceText(M.deviceById(p, id), prop, v));
     bindProp(input, (p) => M.deviceById(p, id), prop, parse);
   }
   /** A field bound to property `prop` of what `get(draft)` finds (a rack, a floor …), `parse`d when the field is left. */
@@ -1670,7 +1670,7 @@
     const fields = M.FIELDS.map(
       (f) =>
         `<div class="field"><label for="insp-f-${f.key}">${esc(f.label)}</label>` +
-        `<input id="insp-f-${f.key}" type="text" value="${esc(d[f.key] || '')}" spellcheck="false" autocomplete="off" maxlength="120"${f.key === 'ip' || f.key === 'serial' || f.key === 'asset' ? ' class="mono"' : ''}></div>`
+        `<input id="insp-f-${f.key}" type="text" value="${esc(d[f.key] || '')}" spellcheck="false" autocomplete="off" maxlength="${M.FIELD_MAX}"${f.key === 'ip' || f.key === 'serial' || f.key === 'asset' ? ' class="mono"' : ''}></div>`
     ).join('');
 
     el.inspector.innerHTML =
@@ -1704,7 +1704,7 @@
       `<div class="field"><label for="insp-weight">Weight (kg)</label><input id="insp-weight" type="number" min="0" step="0.5" inputmode="decimal" value="${d.weightKg == null ? '' : d.weightKg}" placeholder="${type.weightKg} (type)"></div>` +
       `</div></section>` +
       `<section class="insp-sec"><h3><label for="insp-notes">Notes</label></h3>` +
-      `<textarea id="insp-notes" rows="3" placeholder="Cabling, purchase order, plans …">${esc(d.notes || '')}</textarea></section>` +
+      `<textarea id="insp-notes" rows="3" maxlength="${M.NOTES_MAX}" placeholder="Cabling, purchase order, plans …">${esc(d.notes || '')}</textarea></section>` +
       `<div class="insp-actions is-pinned">` +
       `<button type="button" class="btn" id="insp-dup" title="Duplicate (Ctrl+D)">${icon('copy')}Duplicate</button>` +
       `<button type="button" class="btn danger-text" id="insp-del" title="Delete (Del)">${icon('trash')}Delete</button>` +
@@ -1819,7 +1819,7 @@
       `<section class="insp-sec"><h3>Set for all</h3>` +
       (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label', commonPortsSide(mountable.map((d) => M.typeOf(project, d.type)))) : '') +
       `<div class="field-grid">` +
-      `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="120"></div>` +
+      `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="${M.FIELD_MAX}"></div>` +
       `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div>` +
       `<p class="warn-note name-clash" id="multi-rename-dup" role="status" hidden></p></div>` +
       `</div></section>` +

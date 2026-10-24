@@ -339,7 +339,7 @@
       network,
       label: labels ? (given ? labels.take(given) : labels.next(M.labelSeed(project, network), true)) : given || M.nextCableLabel(project, network),
       lengthM: M.clampNum(p.lengthM, 0.1, 10000, null),
-      notes: typeof p.notes === 'string' ? p.notes.slice(0, 2000) : '',
+      notes: typeof p.notes === 'string' ? p.notes.slice(0, M.NOTES_MAX) : '',
       a: M.cleanCableEnd(p.a),
       b: Array.isArray(p.b) ? p.b.map(M.cleanCableEnd) : M.cleanCableEnd(p.b),
     };

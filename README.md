@@ -727,7 +727,9 @@ objects `a` and `b`. Besides the nine lists (`floors`, `rackTypes`,
 `version` (5), the plan's `name`, `info` with the site, author and revision
 for the title block, and `meta`. A plan has 1 to 6 floors, 1 to 8 views,
 1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
-and 20 000 cables. A device type has up to 32 port groups and 1024 ports. A
+and 20 000 cables. A device type has up to 32 port groups and 1024 ports. The
+notes of a device or cable keep up to 2000 characters, the serial number,
+asset tag, IP address and owner of a device up to 120. A
 device's `reversed` and `slackM` are left out of the file while they are
 `false` and `null`.
 

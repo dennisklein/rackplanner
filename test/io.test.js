@@ -930,3 +930,29 @@ test('files and cable schedules keep to the catalog, network and leg limits', ()
   r.cables = [];
   assert.deepEqual(IO.importCablesCSV(r, 'Leg,A device,A port,B device,B port\n1/9,ib-leaf-b02,p1,gpu-srv-01,ib0'), { added: 0, warnings: ['Skipped line 2: a breakout cable has at most 8 legs, not 9.'] });
 });
+
+/** A plan written as a file, read back and written again gives the same text, without warnings. */
+function assertRoundTrip(p, what) {
+  const text = IO.serialize(p);
+  const { project, warnings } = IO.normalizeProject(JSON.parse(text));
+  assert.deepEqual(warnings, [], what);
+  assert.equal(IO.serialize(project), text, what);
+}
+
+test('plans the model makes read back as written, long notes included', () => {
+  assertRoundTrip(M.createEmptyProject(3), 'a new plan');
+  const p = M.createExampleProject();
+  assertRoundTrip(p, 'the example');
+  const d = p.devices[0];
+  M.setDeviceText(d, 'notes', 'x'.repeat(5000));
+  M.setDeviceText(d, 'serial', 'S'.repeat(500));
+  assert.deepEqual([d.notes.length, d.serial.length], [M.NOTES_MAX, M.FIELD_MAX]);
+  assert.equal(C.updateCable(p, p.cables[0].id, { notes: 'n'.repeat(3000) }), null);
+  assert.equal(p.cables[0].notes.length, M.NOTES_MAX);
+  M.duplicateRack(p, M.allRacks(p)[0].rack.id);
+  M.duplicateRow(p, p.floors[0].rows[1].id);
+  M.duplicateFloor(p, p.floors[0].id);
+  M.addView(p, '', p.views[0].id);
+  M.addView(p, 'Power', p.views[0].id);
+  assertRoundTrip(p, 'after copies and long notes');
+});
