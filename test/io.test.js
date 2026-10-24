@@ -730,6 +730,18 @@ test('a hand-made cable schedule adds what it can', () => {
   assert.throws(() => IO.importCablesCSV(p, 'A device,A port,B device,B port'), /no cables/);
 });
 
+test('a cable schedule finds a port by its name as written, else by its one name in another case', () => {
+  const p = M.createExampleProject();
+  p.cables = [];
+  const odd = M.addDeviceType(p, { label: 'Odd box', height: 1, ports: [{ name: 'mgmt', connector: 'rj45', speedGbps: 1, side: 'front' }, { name: 'MGMT', connector: 'rj45', speedGbps: 1, side: 'front' }] });
+  p.devices.push(M.newDevice({ id: 'odd', type: odd.id, name: 'odd-01', loc: { rack: 'r1', kind: 'u', at: 30 } }));
+  const csv = ['A device,A port,B device,B port', 'CN-001,ETH0,SW-MGMT-A01,Swp1', 'odd-01,MGMT,sw-mgmt-a01,swp2', 'odd-01,Mgmt,sw-mgmt-a01,swp3'].join('\n');
+  const { added, warnings } = IO.importCablesCSV(p, csv);
+  assert.equal(added, 2);
+  assert.deepEqual(warnings, ['Skipped line 4: odd-01 has no port Mgmt.']);
+  assert.deepEqual(p.cables.map((c) => [c.a.port, c.b.port]), [['eth0', 'swp1'], ['MGMT', 'swp2']], 'the plan keeps the port’s own name');
+});
+
 test('readMetres reads a length as the cable CSV does, and 0 only when asked', () => {
   assert.equal(IO.readMetres('4.5'), 4.5);
   assert.equal(IO.readMetres(' 5,5 '), 5.5);

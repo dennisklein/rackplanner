@@ -553,7 +553,8 @@ semicolon and tab separators all work.
 **Open** also reads a **cable schedule CSV**, like the export or made by
 hand, and adds its cables to the current plan. It needs A device, A port,
 B device and B port columns; devices are found by name, told apart by the
-floor, row, rack and position given when two share a name. A plain Length
+floor, row, rack and position given when two share a name, and ports by
+name as written, or in another case when the device has one such port. A plain Length
 column holds metres; a length it cannot read is estimated. Networks it
 names are created, and the lines of a breakout cable (with a Leg like `1/2`,
 or a breakout cable type) share its label and A end.

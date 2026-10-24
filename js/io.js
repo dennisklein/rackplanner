@@ -1202,6 +1202,15 @@
       if (exact.length) list = exact;
       return list.length > 1 ? { many: list.length } : { device: list[0] || null, off };
     };
+    // A port by its name as written, else the one port of the device with that name in another case.
+    const portNames = new Map();
+    const portOf = (d, port) => {
+      if (!portNames.has(d.type)) portNames.set(d.type, M.expandPorts(M.typeOf(project, d.type)).map((x) => x.name));
+      const names = portNames.get(d.type);
+      if (names.includes(port)) return port;
+      const other = names.filter((n) => lower(n) === lower(port));
+      return other.length === 1 ? other[0] : port;
+    };
     // By name as written, then by name in any case, then by id: an entry's name wins over another one's id.
     const findIn = (list, v) => {
       for (const same of [(x) => x.name === v, (x) => lower(x.name) === lower(v), (x) => x.id === v, (x) => lower(x.id) === lower(v)]) {
@@ -1257,7 +1266,7 @@
         if (found.many) problem = problem || `${found.many} devices are named ${name}: give their floor, row and rack`;
         else if (!d) problem = problem || `there is no device ${name || 'without a name'}`;
         else if (found.off) notes.push(`${d.name} is not in ${found.off}, so it is the one in rack ${places.rack(d)}`);
-        const e = { device: d ? d.id : '', port };
+        const e = { device: d ? d.id : '', port: d ? portOf(d, port) : port };
         const tr = get(row, `${side}Transceiver`);
         const t = lookup(project.transceivers, tr);
         if (t.item) e.transceiver = t.item.id;
