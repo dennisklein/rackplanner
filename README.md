@@ -510,7 +510,11 @@ closing the tab asks first.
   floor or plan it shows, whatever its filters. Cables without a type or a
   length to buy are not on it, and the export says how many it leaves out.
 - **Plan file (.json)**, which **Open** reads back as a new plan. You can also
-  copy the plan as JSON and paste it into Open on another machine.
+  copy the plan as JSON and paste it into Open on another machine. It is the
+  format that keeps the whole plan: the CSVs leave out the catalogs (a
+  type's ports, for one), the rack types, a device's mount side and slack,
+  a rack's tray and slack, a floor's row pitch and the cluster colors, so
+  keep the plan file to move or back up a plan.
 - **Share link**: the whole plan, compressed into the link itself. Whoever opens
   it gets their own copy in their browser; nothing is uploaded. Opened again,
   the link offers the plan made from it before, or one more copy. Very large
