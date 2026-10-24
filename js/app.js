@@ -225,6 +225,8 @@
     const moved = lib.migrate();
     let id = lib.current() || (lib.list()[0] || {}).id || null;
     let loaded = id ? lib.load(id) : null;
+    // A plan a newer version saved stays as it is, and another plan shows instead.
+    const newer = !loaded && id && lib.newer(id);
     if (!loaded && location.hash.startsWith(SHARE_PREFIX)) {
       // Opened from a share link with no plans yet: the shared plan comes
       // instead of the example. Till it is read an empty plan stands in,
@@ -241,6 +243,7 @@
     openPlan(id, loaded.project, loaded.backup);
     const movedHere = !!moved && moved.id === id;
     reportLoad((movedHere ? moved.warnings : []).concat(loaded.warnings), loaded.backup || (movedHere && moved.backup));
+    if (newer) toast(IO.NEWER, { warn: true });
   }
 
   /**
@@ -336,7 +339,10 @@
   /** Shows the open plan as it is saved; the undo history was of the plan before. */
   function reloadPlan() {
     const loaded = lib.load(planId);
-    if (!loaded) return;
+    if (!loaded) {
+      if (lib.newer(planId)) toast(IO.NEWER, { warn: true });
+      return;
+    }
     clearTimeout(persistTimer);
     persistTimer = null;
     savedJSON = JSON.stringify(loaded.project);
@@ -5046,7 +5052,7 @@
   function switchPlan(id, message) {
     if (id === planId || !flushPersist()) return;
     const loaded = lib.load(id);
-    if (!loaded) return toast('That plan could not be read', { warn: true });
+    if (!loaded) return toast(lib.newer(id) ? IO.NEWER : 'That plan could not be read', { warn: true });
     openPlan(id, loaded.project, loaded.backup);
     render();
     fitWidth();
@@ -5169,7 +5175,7 @@
             loaded.project.name = name;
             if (loaded.backup) lib.backup(id);
             lib.save(id, loaded.project);
-          } else toast('That plan could not be read', { warn: true });
+          } else toast(lib.newer(id) ? IO.NEWER : 'That plan could not be read', { warn: true });
         }
         if (name !== typed) toast(`Named it ${name}: another plan is named ${typed}`);
       }

@@ -874,7 +874,14 @@ types as they were when they were written, so a later change of the standard
 catalog does not change how an old file opens. `test/fixtures` holds the
 example plan of each earlier version, as that version wrote it, and what it
 becomes. A hand-made file without a version reads as version 2, and a flat
-list of racks in place of `floors` becomes one row in a file of any version.
+list of racks in place of `floors` becomes one row in a file of any version;
+a file with `"app": "rackplanner"` but without a whole version number opens
+with a warning.
+
+A plan of a newer version than the app's, such as a plan a newer Rackplanner
+saved while an older one still runs in another tab, does not open, from a
+file, a share link or the plan list: reloading the page brings the newer app.
+Reading it would drop what the older app does not know.
 
 In the browser's `localStorage`, each plan is kept as compact plan JSON
 under `rackplanner.plan.<id>`, and an index under `rackplanner.library.v1`

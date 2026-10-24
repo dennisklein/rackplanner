@@ -94,7 +94,7 @@
 
     /**
      * True when a newer version of the app saved plan `id`, or the index:
-     * this one would drop what it does not know, so it must not save over it.
+     * this one can't read it or must not save over it.
      */
     function newer(id) {
       if (newerIndex()) return true;

@@ -528,13 +528,22 @@
   /**
    * Turns untrusted JSON (an imported file or saved state) into a valid
    * project. Anything that doesn't fit is dropped and reported in `warnings`.
+   * A plan of a newer version is refused: this one would drop what it does
+   * not know, and a save would write the rest back as the current version.
    */
   function normalizeProject(raw) {
     if (!isObj(raw)) throw new Error('This file is not a rack plan.');
-    if (!Array.isArray(raw.devices) && !Array.isArray(raw.racks) && !Array.isArray(raw.floors)) {
-      throw new Error('This file is not a rack plan: it has no racks or devices.');
-    }
+    const isPlan = Array.isArray(raw.devices) || Array.isArray(raw.racks) || Array.isArray(raw.floors);
+    if (Number(raw.version) > M.SCHEMA_VERSION && (isPlan || raw.app === 'rackplanner')) throw new Error(NEWER);
+    if (!isPlan) throw new Error('This file is not a rack plan: it has no racks or devices.');
     const warnings = [];
+    // Rackplanner always writes a whole version number; a file without one reads as it always did.
+    const version = raw.version;
+    if (raw.app === 'rackplanner' && !(Number.isInteger(version) && version >= 1)) {
+      const shown = typeof version === 'string' ? version : JSON.stringify(version);
+      const read = `it was read as version ${startVersion(raw)}`;
+      warnings.push(version === undefined ? `The file has no version; ${read}.` : `The file’s version “${String(shown).slice(0, 40)}” is not valid; ${read}.`);
+    }
     // From here on the file has the current shape.
     raw = migrate(raw);
     const p = M.newProjectShell({ name: str(raw.name, 120) || 'Untitled rack plan' });

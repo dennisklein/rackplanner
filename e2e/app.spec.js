@@ -1282,6 +1282,32 @@ test('while the browser storage is full the plan shows it is not saved, and Plan
   await expect(page.locator('.plan-item .plan-name-l')).toHaveText('Hall 2 expansion, with an even much longer name');
 });
 
+test('a plan a newer version saved is left as it is, and the user is told', async ({ page }) => {
+  const newer = 'This plan is from a newer Rackplanner. Reload the page to update.';
+  // A newer Rackplanner saves the open plan, as one in another tab after an update may.
+  const stored = await page.evaluate(() => {
+    const index = JSON.parse(localStorage.getItem('rackplanner.library.v1'));
+    const entry = index.plans.find((p) => p.id === index.current);
+    entry.version = 6;
+    localStorage.setItem('rackplanner.library.v1', JSON.stringify(index));
+    const key = `rackplanner.plan.${entry.id}`;
+    const text = localStorage.getItem(key).replace('"version":5,', '"version":6,');
+    localStorage.setItem(key, text);
+    return { key, text };
+  });
+  await page.reload();
+  await expect(page.locator('.toast.warn')).toHaveText(newer);
+  await expect(devices(page)).toHaveCount(37);
+  await device(page, 'cn-001').click();
+  await page.keyboard.press('Delete');
+  await page.click('#btn-plans');
+  await expect(page.locator('.plan-item')).toHaveCount(2);
+  await page.click('.plan-item:not(.is-current) [data-plan-act="open"]');
+  await expect(page.locator('.toast.warn').last()).toHaveText(newer);
+  await expect(devices(page)).toHaveCount(36);
+  expect(await page.evaluate((key) => localStorage.getItem(key), stored.key)).toBe(stored.text);
+});
+
 test('a plan changed in another tab shows there, and a tab with changes of its own asks first', async ({ page, context }) => {
   const other = await context.newPage();
   // Lets the test make this tab miss the saves of the other, as a tab that slept may.

@@ -133,6 +133,37 @@ test('a change of the standard catalog does not change how old files read', () =
   }
 });
 
+test('a plan of a newer version is refused, and a missing or broken version is said', async () => {
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
+  for (const version of [6, 99, '6', 5.5]) assert.throws(() => IO.normalizeProject(Object.assign({}, raw, { version })), { message: IO.NEWER }, String(version));
+  assert.equal(IO.NEWER, 'This plan is from a newer Rackplanner. Reload the page to update.');
+  assert.throws(() => IO.normalizeProject({ app: 'rackplanner', version: 6 }), { message: IO.NEWER }, 'whatever shape it has');
+  assert.throws(() => IO.normalizeProject({ version: 6, devices: [] }), { message: IO.NEWER });
+  assert.throws(() => IO.normalizeProject({ version: 6, name: 'not a plan' }), /not a rack plan/);
+  const shared = await IO.decodeShare('j' + Buffer.from(JSON.stringify(Object.assign({}, raw, { version: 6 }))).toString('base64url'));
+  assert.throws(() => IO.normalizeProject(shared), { message: IO.NEWER }, 'a share link too');
+
+  // Rackplanner always writes a whole version number: a file without one reads as it did, with a warning.
+  const plan = IO.normalizeProject(raw).project;
+  for (const [version, warning] of [
+    [undefined, 'The file has no version; it was read as version 2.'],
+    [null, 'The file’s version “null” is not valid; it was read as version 2.'],
+    ['five', 'The file’s version “five” is not valid; it was read as version 2.'],
+    [0, 'The file’s version “0” is not valid; it was read as version 2.'],
+    [-1, 'The file’s version “-1” is not valid; it was read as version 2.'],
+    [4.5, 'The file’s version “4.5” is not valid; it was read as version 4.'],
+    ['5', 'The file’s version “5” is not valid; it was read as version 5.'],
+  ]) {
+    const file = Object.assign({}, raw, { version });
+    if (version === undefined) delete file.version;
+    const read = IO.normalizeProject(file);
+    assert.deepEqual(read.warnings, [warning], String(version));
+    assert.deepEqual(read.project, plan, String(version));
+    delete file.app;
+    assert.deepEqual(IO.normalizeProject(file).warnings, [], 'a hand-made file need not say');
+  }
+});
+
 test('plans keep floors, rows, catalogs, fields, reserved space and cabling', () => {
   const ex = M.createExampleProject();
   M.deviceById(ex, 'ex-9').serial = 'SN-1';

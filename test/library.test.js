@@ -254,7 +254,7 @@ test('each save notes the size of its plan, and usage counts what the app keeps 
   assert.equal(store.get(Library.backupKey(id)), 'x'.repeat(10), 'a backup of a plan that is there stays');
 });
 
-test('a plan a newer version saved is never saved over', () => {
+test('a plan a newer version saved is neither read nor saved over', () => {
   const store = memoryStore();
   const lib = Library.create(store);
   const id = lib.add(M.createEmptyProject());
@@ -267,6 +267,7 @@ test('a plan a newer version saved is never saved over', () => {
   const index = JSON.parse(store.get(Library.INDEX_KEY));
   index.plans[0].version = M.SCHEMA_VERSION + 1;
   store.set(Library.INDEX_KEY, JSON.stringify(index));
+  assert.equal(lib.load(id), null);
   assert.equal(lib.newer(id), true);
   assert.equal(lib.save(id, M.createExampleProject()), false);
   assert.equal(store.get(key), text, 'the newer plan stays as it was');
