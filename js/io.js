@@ -66,6 +66,30 @@
   }
 
   /**
+   * Warns about the connectors this version does not know in a catalog
+   * entry (`raw` as in the file, `t` as read): a port group with one is
+   * dropped, a cable type or transceiver gets another.
+   */
+  function connectorWarnings(kind, raw, t, warnings) {
+    const unknown = (c) => c !== undefined && c !== null && c !== '' && !M.connectorById(c);
+    const shown = (c) => String(c).slice(0, 40);
+    const label = (id) => (M.connectorById(id) || { label: id }).label;
+    if (kind === 'device type') {
+      (Array.isArray(raw.ports) ? raw.ports : []).forEach((g, i) => {
+        const name = isObj(g) && (str(String(g.name == null ? '' : g.name), 32) || `#${i + 1}`);
+        if (name && unknown(g.connector)) warnings.push(`Skipped port group ${name} of ${t.label}: unknown connector “${shown(g.connector)}”.`);
+      });
+      return;
+    }
+    const what = kind === 'cable type' ? 'Cable type' : 'Transceiver';
+    for (const k of kind === 'cable type' ? ['connector', 'connectorB'] : ['connector']) {
+      // Both plugs of one connector are named once.
+      if (k === 'connectorB' && raw.connectorB === raw.connector) continue;
+      if (unknown(raw[k])) warnings.push(`${what} ${t.name} has unknown connector “${shown(raw[k])}” and gets ${label(t[k])}.`);
+    }
+  }
+
+  /**
    * Builds floors, rows and racks. Returns a map from the file's rack ids to
    * the plan's. A file may have a flat list of racks instead of floors, as
    * versions 1 and 2 did, and hand-made files of any version may: it
@@ -479,11 +503,17 @@
     // From here on the file has the current shape.
     raw = migrate(raw);
     const p = M.newProjectShell({ name: str(raw.name, 120) || 'Untitled rack plan' });
-    p.deviceTypes = readTypes(raw.deviceTypes, 'device type', 'label', M.cleanDeviceType, L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
+    // Catalog entries as `clean` reads them, with a warning for each connector this version does not know.
+    const withConnectors = (kind, clean) => (t) => {
+      const out = clean(t);
+      connectorWarnings(kind, t, out, warnings);
+      return out;
+    };
+    p.deviceTypes = readTypes(raw.deviceTypes, 'device type', 'label', withConnectors('device type', M.cleanDeviceType), L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
     const rackTypes = readTypes(raw.rackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
     if (rackTypes && rackTypes.length) p.rackTypes = rackTypes;
-    p.cableTypes = uniqueNames(readTypes(raw.cableTypes, 'cable type', 'name', M.cleanCableType, L.cableTypes, [], warnings) || p.cableTypes, 'cable type', warnings);
-    p.transceivers = uniqueNames(readTypes(raw.transceivers, 'transceiver', 'name', M.cleanTransceiver, L.transceivers, [], warnings) || p.transceivers, 'transceiver', warnings);
+    p.cableTypes = uniqueNames(readTypes(raw.cableTypes, 'cable type', 'name', withConnectors('cable type', M.cleanCableType), L.cableTypes, [], warnings) || p.cableTypes, 'cable type', warnings);
+    p.transceivers = uniqueNames(readTypes(raw.transceivers, 'transceiver', 'name', withConnectors('transceiver', M.cleanTransceiver), L.transceivers, [], warnings) || p.transceivers, 'transceiver', warnings);
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
     const rackIds = readLayout(raw, p, warnings);
 
@@ -521,6 +551,7 @@
       if (!fit.ok) return void warnings.push(`Skipped ${name}: ${fit.reason}.`);
       const fileId = idOf(d.id);
       let id = fileId;
+      if (fileId && planIds.has(fileId)) warnings.push(`${name} has the id “${fileId}” of another device and gets a new one.`);
       if (!id || planIds.has(id)) id = M.uid('d');
       planIds.add(id);
       // Cables find a device by its id in the file; with an id used twice, the first device.

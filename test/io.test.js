@@ -44,6 +44,7 @@ test('normalizeProject drops what does not fit and keeps the rest', () => {
     'Skipped cn-2: Overlaps cn-1 at U10–11.',
     'Skipped t: unknown device type “toaster”.',
     'Skipped sn: Side slots take 1U devices only.',
+    'sw has the id “a” of another device and gets a new one.',
     'sw refers to unknown cluster “nope” and is left unassigned.',
   ]);
   assert.throws(() => IO.normalizeProject([]), /not a rack plan/);
@@ -487,6 +488,7 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, [
     'Skipped network No id: it has no id.',
+    'twin has the id “ex-9” of another device and gets a new one.',
     'Cable K-2 refers to unknown network “gone” and has none.',
     'Skipped cable K-3: cn-001 eth0 already has cable MGT-0001.',
     'Skipped cable K-4: unknown cable type “nope”.',
@@ -929,6 +931,36 @@ test('files and cable schedules keep to the catalog, network and leg limits', ()
   const r = M.createExampleProject();
   r.cables = [];
   assert.deepEqual(IO.importCablesCSV(r, 'Leg,A device,A port,B device,B port\n1/9,ib-leaf-b02,p1,gpu-srv-01,ib0'), { added: 0, warnings: ['Skipped line 2: a breakout cable has at most 8 legs, not 9.'] });
+});
+
+test('connectors this version does not know are named in warnings', () => {
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
+  const osfp = raw.deviceTypes.find((t) => t.id === 'switch-osfp');
+  osfp.ports[0].connector = 'osfp-xd';
+  raw.cableTypes.push({ id: 'ct-xd', name: 'XD DAC', media: 'dac', connector: 'osfp-xd', connectorB: 'qsfp56' });
+  raw.cableTypes.push({ id: 'ct-cx', name: 'CX cable', media: 'dac', connector: 'cxp9', connectorB: 'cxp9' });
+  raw.transceivers.push({ id: 'tr-xd', name: 'XD SR8', connector: 'osfp-xd', fiber: 'mpo', mode: 'mmf' });
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings.slice(0, 4), [
+    `Skipped port group p of ${osfp.label}: unknown connector “osfp-xd”.`,
+    'Cable type XD DAC has unknown connector “osfp-xd” and gets QSFP56.',
+    'Cable type CX cable has unknown connector “cxp9” and gets QSFP56.',
+    'Transceiver XD SR8 has unknown connector “osfp-xd” and gets QSFP56.',
+  ]);
+  assert.deepEqual(M.typeOf(p, 'switch-osfp').ports, []);
+});
+
+test('a device id used before, or the same as another after the cut to 80 characters, is named in a warning', () => {
+  const p = M.createEmptyProject(1);
+  const raw = JSON.parse(IO.serialize(p));
+  const long = 'd'.repeat(80);
+  raw.devices = [
+    { id: `${long}-A`, type: 'compute-node', name: 'a', loc: { rack: 'r1', kind: 'u', at: 1 } },
+    { id: `${long}-B`, type: 'compute-node', name: 'b', loc: { rack: 'r1', kind: 'u', at: 3 } },
+  ];
+  const { project, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, [`b has the id “${long}” of another device and gets a new one.`]);
+  assert.equal(project.devices.length, 2);
 });
 
 /** A plan written as a file, read back and written again gives the same text, without warnings. */
