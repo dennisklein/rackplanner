@@ -1705,6 +1705,9 @@
     const hidden = !!hide && hide(d);
     const canUp = !!M.nudgeTarget(project, d, -1);
     const canDown = !!M.nudgeTarget(project, d, 1);
+    const typeOpts = M.placeableTypes(project)
+      .map((t) => `<option value="${esc(t.id)}"${t.id === d.type ? ' selected' : ''}>${esc(t.label)} · ${t.variable ? 'any height' : `${t.height}U`}</option>`)
+      .join('');
     const fields = M.FIELDS.map(
       (f) =>
         `<div class="field"><label for="insp-f-${f.key}">${esc(f.label)}</label>` +
@@ -1737,7 +1740,8 @@
         : '') +
       `<p class="sec-hint hint-touch">To move it in the drawing, tap it again, then tap a free slot.</p>` +
       `</section>` +
-      `<section class="insp-sec"><h3>Details</h3><div class="field-grid">${fields}` +
+      `<section class="insp-sec"><h3>Details</h3><div class="field-grid">` +
+      `<div class="field span2"><label for="insp-type">Type</label><select id="insp-type">${typeOpts}</select></div>${fields}` +
       `<div class="field"><label for="insp-power">Power (W)</label><input id="insp-power" type="number" min="0" step="10" inputmode="decimal" value="${d.powerW == null ? '' : d.powerW}" placeholder="${type.powerW} (type)"></div>` +
       `<div class="field"><label for="insp-weight">Weight (kg)</label><input id="insp-weight" type="number" min="0" step="0.5" inputmode="decimal" value="${d.weightKg == null ? '' : d.weightKg}" placeholder="${type.weightKg} (type)"></div>` +
       `</div><div class="warn-note" id="insp-repeats" role="status" hidden></div></section>` +
@@ -1803,6 +1807,7 @@
         commit((p) => void (M.deviceById(p, id).height = h), { label: `Made ${d.name} ${h}U high` });
       });
     }
+    $('#insp-type').addEventListener('change', (e) => changeDeviceType(id, e.target.value));
     const up = $('#insp-up');
     const down = $('#insp-down');
     if (up) up.addEventListener('click', () => nudge(id, -1));
@@ -1823,6 +1828,35 @@
     $('#insp-dup').addEventListener('click', () => duplicateDevice(id));
     $('#insp-del').addEventListener('click', () => deleteDevices([id]));
     if (hidden) $('#insp-show-cluster').addEventListener('click', () => showCluster(clusterIdOf(d) || '__none'));
+  }
+
+  /**
+   * Gives device `id` the type `typeId` where it is, in one undo step.
+   * Asks first when cables would be unplugged; says why when the type
+   * does not fit there.
+   */
+  async function changeDeviceType(id, typeId) {
+    const d = M.deviceById(project, id);
+    const to = M.typeOf(project, typeId);
+    if (!d || !to) return;
+    const lost = C.typeChangeImpact(project, id, typeId);
+    if (lost.length) {
+      const shown = lost.slice(0, 6).map((c) => c.label || 'one without a label');
+      const ok = await confirmDialog({
+        title: `Unplug ${plural(lost.length, 'cable')}?`,
+        body:
+          `${to.label} has no port in the place of the ${lost.length === 1 ? 'port' : 'ports'} of ${d.name} that ${lost.length === 1 ? 'this cable is' : 'these cables are'} plugged into: ` +
+          `${shown.join(', ')}${lost.length > shown.length ? ` and ${lost.length - shown.length} more` : ''}. Undo plugs them back in.`,
+        ok: lost.length === 1 ? 'Unplug the cable' : `Unplug ${lost.length} cables`,
+      });
+      if (!ok) return renderInspector();
+    }
+    const err = commitOrError((p) => M.setDeviceType(p, id, typeId), `Changed the type of ${d.name}`);
+    if (err) {
+      toast(`Can’t change the type: ${err}`, { warn: true });
+      return renderInspector();
+    }
+    toast(`Changed ${d.name} to ${to.label}${lost.length ? `; unplugged ${plural(lost.length, 'cable')}` : ''}`, { action: 'Undo', onAction: undo });
   }
 
   /** Buttons that select devices `devs`: "cn-002, cn-003 and 4 more". */

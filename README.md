@@ -137,10 +137,13 @@ Rear**); otherwise they ask how it is **Mounted**.
 - **Edit a device**: select it to rename it, change its cluster, move it to any
   rack in the plan, turn its ports to the front or the rear, and fill in
   its serial number, asset tag, IP address, owner and notes. Power and
-  weight come from its type unless you enter its own values. A serial
-  number, asset tag or IP address that another device has too is flagged
-  there, with a button for each device that has it; the plan overview
-  counts them and selects their devices.
+  weight come from its type unless you enter its own values. **Type**
+  swaps the model of that one device where it is, keeping its name,
+  clusters, fields and the cables on ports the new type has in the same
+  place; it asks before it unplugs the others. A serial number, asset tag
+  or IP address that another device has too is flagged there, with a
+  button for each device that has it; the plan overview counts them and
+  selects their devices.
 - **Unique names**: a name that another device has already is flagged where
   you type it (placement dialog, device name, rename in series), with a
   button for the next free series (`Use cn-021 … cn-023`). Placing or

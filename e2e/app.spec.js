@@ -931,6 +931,40 @@ test('a copy gets no serial number, asset tag or IP address, and one on two devi
   await expect(page.locator('.contents .nm')).toHaveText(['cn-007', 'cn-013']);
 });
 
+test('the inspector changes the type of one device, and undo changes it back', async ({ page }) => {
+  const cables = () => page.evaluate(() => window.RP.app.project().cables.length);
+  const kicker = page.locator('.insp-head .kicker');
+  // Same port names: every cable stays, without a question.
+  await device(page, 'ib-leaf-a01').click();
+  await page.selectOption('#insp-type', 'switch-osfp');
+  await expect(kicker).toHaveText('32-port 400G switch · 1U');
+  await expect(page.locator('.toast').last()).toContainText('Changed ib-leaf-a01 to 32-port 400G switch');
+  expect(await cables()).toBe(147);
+  expect(await page.evaluate(() => window.RP.app.project().devices.filter((d) => d.type === 'switch-qsfp').length)).toBe(4);
+
+  // A type that does not fit where the device is: why, and the select goes back.
+  await device(page, 'cn-001').click();
+  await page.selectOption('#insp-type', 'storage-node');
+  await expect(page.locator('.toast').last()).toContainText('Can’t change the type: Overlaps cn-002 at U6–7');
+  await expect(page.locator('#insp-type')).toHaveValue('compute-node');
+
+  // A type without its ports asks before it unplugs the cables.
+  await page.selectOption('#insp-type', 'reserved');
+  await expect(page.locator('#confirm-title')).toHaveText('Unplug 3 cables?');
+  await page.click('#dlg-confirm button[value="cancel"]');
+  await expect(page.locator('#insp-type')).toHaveValue('compute-node');
+  expect(await cables()).toBe(147);
+  await page.selectOption('#insp-type', 'reserved');
+  await page.click('#confirm-ok');
+  await expect(kicker).toHaveText('Reserved space · 2U');
+  await expect(page.locator('#insp-name')).toHaveValue('cn-001');
+  expect(await cables()).toBe(144);
+  await page.locator('#scene').focus();
+  await page.keyboard.press('Control+z');
+  await expect(kicker).toHaveText('Compute node · 2U');
+  expect(await cables()).toBe(147);
+});
+
 test('asks before deleting many devices, or several that take cables', async ({ page }) => {
   await device(page, 'cn-005').click();
   await page.keyboard.press('Control+a');
