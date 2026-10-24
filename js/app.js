@@ -5280,7 +5280,9 @@
     const sub = `${plural(result.warnings.length, 'row')} or detail${result.warnings.length === 1 ? '' : 's'} needed attention:`;
     if (merge) {
       // A merge that adds nothing records no step: an Undo here would undo the step before it.
-      if (replaceProject(result.project)) toast(`Added ${plural(result.added, 'device')} from the CSV`, { action: 'Undo', onAction: undo });
+      // Lines with the Device ID of a device of the plan change that device.
+      const did = `Added ${plural(result.added, 'device')}${result.updated ? ` and updated ${plural(result.updated, 'device')}` : ''} from the CSV`;
+      if (replaceProject(result.project)) toast(did, { action: 'Undo', onAction: undo });
       else toast('No devices added from the CSV');
       reportWarnings(`Imported ${plural(result.added, 'device')}`, sub, result.warnings);
     } else {

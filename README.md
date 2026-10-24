@@ -513,13 +513,14 @@ closing the tab asks first.
   floor and row, author, revision, date and sheet number; fill these in on the
   plan overview (click the empty sheet to see it).
 - **CSV inventory** of every device with floor, row, rack, position, type,
-  cluster, serial number, asset tag, IP address, owner, power, weight and notes.
-  A plan with more than one view has a column per view (`Cluster: Lustre`,
-  `Cluster: InfiniBand`).
+  cluster, serial number, asset tag, IP address, owner, power, weight, notes
+  and, last, the device's ID. A plan with more than one view has a column per
+  view (`Cluster: Lustre`, `Cluster: InfiniBand`).
 - **Cable schedule (CSV)**: one line per cable of the plan, and per leg of a
   breakout cable, with label, network, type, length and whether it is
   estimated, both ends with floor, row, rack, position, device, port and
-  transceiver, speed, checks and notes.
+  transceiver, speed, checks and notes, and, last, the device IDs of both
+  ends.
 - **Cable order list (CSV)**: the plan's cables by type and length, with
   counts and totals, and the transceivers. The schedule's **Order list
   (CSV)** and **Cable schedule (CSV)** buttons give the same for the row,
@@ -546,16 +547,20 @@ closing the tab asks first.
 **Open** also imports a **CSV inventory**, into a new plan or added to the
 current one. It needs Rack, Position (`U12`, `U12-13` or `Side V1`) and Name or
 Type columns; Floor, Row, Height, Cluster and the other columns of the export
-are used when present. A `Cluster` column fills the view shown, a
+are used when present. A line whose Device ID is a device of the plan it
+is added to changes that device instead: its place (where it fits), name,
+clusters and the other columns the CSV has; a device keeps its type. Into a
+new plan, devices keep the IDs the CSV gives. A `Cluster` column fills the view shown, a
 `Cluster: <view>` column the view of that name. A new plan from a CSV with
 only `Cluster: <view>` columns has just those views and shows the first. Missing floors, rows, racks,
-views and clusters are created by name (a cluster only for a device placed, a view only when a device is), and unknown types become generic types of the given height. Comma,
+views and clusters are created by name (a cluster only for a device placed or changed, a view only when one is), and unknown types become generic types of the given height. Comma,
 semicolon and tab separators all work.
 
 **Open** also reads a **cable schedule CSV**, like the export or made by
 hand, and adds its cables to the current plan. It needs A device, A port,
-B device and B port columns; devices are found by name, told apart by the
-floor, row, rack and position given when two share a name, and ports by
+B device and B port columns; devices are found by their A or B device ID,
+else by name, told apart by the floor, row, rack and position given when
+two share a name, and ports by
 name as written, or in another case when the device has one such port. A plain Length
 column holds metres; a length it cannot read is estimated. Networks it
 names are created, and the lines of a breakout cable (with a Leg like `1/2`,

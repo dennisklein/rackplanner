@@ -281,8 +281,11 @@ test('toCSV lists devices by floor, row and rack, top to bottom, and neutralises
   add('switch-rj45', 'u', 47, 'sw, "core"');
   add('switch-qsfp', 'side', 0, 'leaf');
   add('reserved', 'u', 10, 'later', { height: 3 });
-  const lines = IO.toCSV(p).trim().split('\r\n');
-  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes');
+  const csv = IO.toCSV(p).trim().split('\r\n');
+  assert.equal(csv[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
+  // The device's id comes last.
+  assert.deepEqual(csv.slice(1).map((l) => l.slice(l.lastIndexOf(',') + 1)), M.sortedDevices(p).map((d) => d.id));
+  const lines = csv.map((l) => l.slice(0, l.lastIndexOf(',')));
   assert.equal(lines[1], "Floor 1,Row A,Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,S1,,,,999,25,");
   assert.equal(lines[2], 'Floor 1,Row A,Rack A01,U10-12,3,Reserved space,later,,,,,,0,0,');
   assert.equal(lines[3], 'Floor 1,Row A,Rack A01,U47,1,48-port switch,"sw, ""core""",,,,,,150,6,');
@@ -407,7 +410,7 @@ test('CSVs have a cluster column per view, and read them back into the views of 
   p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
   p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-2', groups: { [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 3 } }));
   const lines = IO.toCSV(p).trim().split('\r\n');
-  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes');
+  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
   assert.match(lines[1], /,cn-1,Alpha,HDR,/);
   assert.match(lines[2], /,cn-2,,HDR,/);
 
@@ -466,6 +469,55 @@ test('a CSV export imports back into an equal plan', () => {
       return [pos.floor.name, pos.row.name, pos.rack.name, d.loc.kind, d.loc.at, d.name, M.typeOf(proj, d.type).label, (M.clusterOf(proj, d) || {}).name, d.owner, M.powerOf(proj, d), M.deviceHeight(proj, d)];
     });
   assert.deepEqual(pick(p), pick(ex));
+});
+
+test('a CSV line with the Device ID of a device of the plan changes that device', () => {
+  const ex = M.createExampleProject();
+  const csv = IO.toCSV(ex);
+  // Read back into its own plan, it changes nothing.
+  const same = IO.importCSV(csv, ex);
+  assert.deepEqual([same.added, same.updated, same.warnings], [0, 0, []]);
+  assert.equal(IO.serialize(same.project), IO.serialize(ex));
+
+  const lines = csv.trim().split('\r\n');
+  const line = (id) => lines.find((l) => l.endsWith(`,${id}`));
+  const edited = [
+    lines[0],
+    // cn-001 renamed, moved down, out of its cluster, with a serial number.
+    line('ex-9').replace('U4-5', 'U40-41').replace(',cn-001,Kestrel HPC,,', ',cn-101,,SN-1,'),
+    // Another type is refused, and so is a place another device has.
+    line('ex-10').replace('Compute node', 'Storage node'),
+    line('ex-11').replace('U8-9', 'U1'),
+    line('ex-11'),
+    // A new device keeps the id the line gives it.
+    'Ground floor,Row A,Rack A01,U44,1,48-port switch,sw-new,,,,,,,,,new-1',
+  ].join('\r\n');
+  const { project: p, warnings, added, updated } = IO.importCSV(edited, ex);
+  assert.deepEqual([added, updated], [1, 1]);
+  assert.deepEqual(warnings, [
+    'Skipped cn-002: device ID “ex-10” is cn-002, a Compute node, not Storage node; a device keeps its type.',
+    'Kept cn-003 as it was: Overlaps sw-mgmt-a01 at U1.',
+    'Skipped cn-003: device ID “ex-11” is on an earlier line too.',
+  ]);
+  const cn = M.deviceById(p, 'ex-9');
+  assert.deepEqual([cn.name, cn.loc.at, M.clusterOf(p, cn), cn.serial], ['cn-101', 40, null, 'SN-1']);
+  assert.equal(p.cables.filter((c) => M.cableEnds(c).some((x) => x.end.device === 'ex-9')).length, 3, 'it keeps its cables');
+  assert.equal(M.deviceById(p, 'new-1').name, 'sw-new');
+  assert.deepEqual(M.deviceById(p, 'ex-10'), M.deviceById(ex, 'ex-10'));
+  // Columns the CSV does not have leave the device's values alone.
+  ex.devices.find((d) => d.id === 'ex-12').serial = 'KEEP';
+  const narrow = IO.importCSV('Rack,Position,Name,Device ID\nRack A01,U10-11,renamed,ex-12', ex).project;
+  assert.deepEqual([M.deviceById(narrow, 'ex-12').name, M.deviceById(narrow, 'ex-12').serial], ['renamed', 'KEEP']);
+  // A view a line puts a changed device in stays, though no device was added.
+  const moved = IO.importCSV('Rack,Position,Name,Cluster: Power,Device ID\nRack A01,U10-11,renamed,Feed A,ex-12', ex);
+  assert.deepEqual([moved.added, moved.updated], [0, 1]);
+  const power = moved.project.views.find((v) => v.name === 'Power');
+  assert.deepEqual(power.clusters.map((c) => c.name), ['Feed A']);
+  assert.equal(M.clusterOf(moved.project, M.deviceById(moved.project, 'ex-12'), power.id).name, 'Feed A');
+
+  // Into a new plan, devices keep the ids of the CSV.
+  const fresh = IO.importCSV(csv).project;
+  assert.deepEqual(fresh.devices.map((d) => d.id).sort(), ex.devices.map((d) => d.id).sort());
 });
 
 test('a CSV adds devices to a plan and creates what is missing', () => {
@@ -699,13 +751,13 @@ test('a cable schedule exports one line per cable and leg and reads back into a 
   const csv = IO.exportCablesCSV(ex);
   const lines = csv.trim().split('\r\n');
   assert.equal(lines[0], IO.CABLE_CSV_COLUMNS.join(','));
-  assert.equal(lines[0], 'Label,Network,Cable type,Length (m),Length,Leg,A floor,A row,A rack,A position,A device,A port,A transceiver,B floor,B row,B rack,B position,B device,B port,B transceiver,Speed,Checks,Notes');
+  assert.equal(lines[0], 'Label,Network,Cable type,Length (m),Length,Leg,A floor,A row,A rack,A position,A device,A port,A transceiver,B floor,B row,B rack,B position,B device,B port,B transceiver,Speed,Checks,Notes,A device ID,B device ID');
   assert.equal(lines.length, 1 + 147 + 16, 'a line for every leg of the sixteen breakouts');
-  assert.equal(lines[1], 'MGT-0001,Management,Cat6a patch cord (auto),1,estimated,,Ground floor,Row A,Rack A01,U4-5,cn-001,eth0,,Ground floor,Row A,Rack A01,U1,sw-mgmt-a01,swp1,,1 Gb/s,,');
+  assert.equal(lines[1], 'MGT-0001,Management,Cat6a patch cord (auto),1,estimated,,Ground floor,Row A,Rack A01,U4-5,cn-001,eth0,,Ground floor,Row A,Rack A01,U1,sw-mgmt-a01,swp1,,1 Gb/s,,,ex-9,ex-1');
   const leg = lines.filter((l) => l.startsWith('IB-0043,'));
   assert.deepEqual(leg.map((l) => l.split(',').slice(5, 6).concat(l.split(',').slice(17, 19))), [['1/2', 'gpu-srv-01', 'ib0'], ['2/2', 'gpu-srv-01', 'ib1']]);
   assert.ok(lines.some((l) => l.startsWith('IB-0026,InfiniBand,QSFP56 DAC,,estimated,') && l.includes(',Too long,')));
-  assert.ok(lines.some((l) => l.startsWith('MGT-0041,Management,LC duplex OM4,30,set,') && l.includes('SFP+ 10G SR (auto)') && l.endsWith(',Riser to the ground floor')));
+  assert.ok(lines.some((l) => l.startsWith('MGT-0041,Management,LC duplex OM4,30,set,') && l.includes('SFP+ 10G SR (auto)') && l.includes(',Riser to the ground floor,')));
   assert.ok(IO.isCablesCSV(csv));
   assert.ok(!IO.isCablesCSV(IO.toCSV(ex)));
 
@@ -727,6 +779,22 @@ test('a cable schedule exports one line per cable and leg and reads back into a 
   const again = IO.importCablesCSV(p, csv);
   assert.equal(again.added, 0);
   assert.equal(again.warnings[0], 'Skipped cable MGT-0001: cn-001 eth0 already has cable MGT-0001.');
+});
+
+test('a cable schedule finds a device by its device ID first, then by name', () => {
+  const ex = M.createExampleProject();
+  const csv = IO.exportCablesCSV(ex, ex.cables.filter((c) => c.label === 'MGT-0001'));
+  const p = M.copyLayout(ex);
+  p.devices = M.clone(ex.devices);
+  // Renamed since the export: the ID still finds it, and the note says so.
+  M.deviceById(p, 'ex-9').name = 'cn-901';
+  assert.deepEqual(IO.importCablesCSV(p, csv), { added: 1, warnings: ['Cable MGT-0001: cn-001 is taken to be cn-901, the device with its device ID.'] });
+  assert.deepEqual([p.cables[0].a.device, p.cables[0].b.device], ['ex-9', 'ex-1']);
+  // An ID the plan doesn't have leaves the name to find the device.
+  const q = M.copyLayout(ex);
+  q.devices = M.clone(ex.devices).map((d) => Object.assign(d, { id: `q-${d.id}` }));
+  assert.deepEqual(IO.importCablesCSV(q, csv), { added: 1, warnings: [] });
+  assert.deepEqual([q.cables[0].a.device, q.cables[0].b.device], ['q-ex-9', 'q-ex-1']);
 });
 
 test('a hand-made cable schedule adds what it can', () => {

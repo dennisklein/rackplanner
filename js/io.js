@@ -772,7 +772,7 @@
     ['Floor', 'Row', 'Rack', 'Position', 'Height (U)', 'Type', 'Name']
       .concat(clusterColumns(project))
       .concat(M.FIELDS.map((f) => f.csv))
-      .concat(['Power (W)', 'Weight (kg)', 'Notes']);
+      .concat(['Power (W)', 'Weight (kg)', 'Notes', 'Device ID']);
 
   function csvCell(value) {
     let s = String(value == null ? '' : value);
@@ -799,7 +799,7 @@
         [pos.floor.name, pos.row.name, pos.rack.name, positionText(project, d), M.deviceHeight(project, d), type.label, d.name]
           .concat(project.views.map((v) => (M.clusterOf(project, d, v.id) || { name: '' }).name))
           .concat(M.FIELDS.map((f) => d[f.key] || ''))
-          .concat([M.powerOf(project, d), M.weightOf(project, d), d.notes || ''])
+          .concat([M.powerOf(project, d), M.weightOf(project, d), d.notes || '', d.id])
       );
     }
     return csvText(rows);
@@ -861,6 +861,7 @@
     powerW: ['powerw', 'power', 'watts'],
     weightKg: ['weightkg', 'weight', 'kg'],
     notes: ['notes', 'note', 'comment', 'comments', 'description'],
+    id: ['device id'],
   };
   const headerKey = (h) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -876,10 +877,10 @@
 
   /**
    * Takes the clusters a CSV import made that no device is in out of
-   * `project`, and the views it made when it placed no device; those of
-   * `base`, the plan imported into, stay.
+   * `project`, and the views it made when it placed or changed no device
+   * (`placed` counts them); those of `base`, the plan imported into, stay.
    */
-  function dropUnplaced(project, base, added) {
+  function dropUnplaced(project, base, placed) {
     const views = new Set();
     const clusters = new Set();
     for (const v of base ? base.views : []) {
@@ -889,18 +890,21 @@
     for (const d of project.devices) for (const c of Object.values(d.groups)) clusters.add(c);
     for (const v of project.views) v.clusters = v.clusters.filter((c) => clusters.has(c.id));
     const kept = project.views.filter((v) => views.has(v.id));
-    if (!added && kept.length) project.views = kept;
+    if (!placed && kept.length) project.views = kept;
   }
 
   /**
    * Reads a CSV inventory (the columns of toCSV; only Rack, Position and
    * Name or Type are required). Devices are added to `base` when given,
-   * otherwise to a new plan. Floors, rows, racks, views, clusters and device
+   * otherwise to a new plan. A line whose Device ID is a device of `base`
+   * changes that device instead: its place, name, clusters and the other
+   * cells the CSV has. Floors, rows, racks, views, clusters and device
    * types that don't exist yet are created by name. A "Cluster" column
    * fills view `viewId`, a "Cluster: <view>" column the view of that name;
    * a new plan with only such columns has only their views. Clusters are
-   * made only for the lines placed, and views only when a line is.
-   * Returns { project, warnings, added }.
+   * made only for the lines placed or changed, and views only when a line is.
+   * Returns { project, warnings, added, updated } (updated: the devices
+   * the CSV changed).
    */
   function importCSV(text, base, viewId) {
     const rows = parseCSV(text);
@@ -988,17 +992,55 @@
       }
       return c.id;
     }
+    // The cluster of a line in each cluster column: [{ view, cluster }], cluster null for an empty cell.
+    function clustersIn(r) {
+      // Cut to the length the plan keeps, so later lines find the cluster an earlier one created.
+      return clusterCols.map(({ view, index }) => ({ view, cluster: findCluster(view, String(r[index] == null ? '' : r[index]).trim().slice(0, L.name).trim()) }));
+    }
     function findGroups(r) {
       const groups = {};
-      for (const { view, index } of clusterCols) {
-        // Cut to the length the plan keeps, so later lines find the cluster an earlier one created.
-        const c = findCluster(view, String(r[index] == null ? '' : r[index]).trim().slice(0, L.name).trim());
-        if (c) groups[view.id] = c;
-      }
+      for (const x of clustersIn(r)) if (x.cluster) groups[x.view.id] = x.cluster;
       return groups;
     }
 
     const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
+    // A line with the ID of a device of the plan changes that device, as far as the CSV's columns go.
+    const planDevices = new Map(work.devices.map((d) => [d.id, d]));
+    const lineIds = new Set();
+    let updated = 0;
+    // What a line can change of a device, as the plan keeps it.
+    const fields = ['notes'].concat(M.FIELDS.map((f) => f.key));
+    const state = (d) => JSON.stringify([d.loc, d.height, d.name, Object.entries(d.groups || {}).sort(), fields.map((k) => d[k] || ''), d.powerW == null ? null : d.powerW, d.weightKg == null ? null : d.weightKg]);
+    function updateDevice(r, d, what, pos, height) {
+      const type = M.typeOf(work, d.type);
+      const label = get(r, 'type');
+      if (label && lower(label) !== lower(type.label) && lower(label) !== lower(type.id)) {
+        return void warnings.push(`Skipped ${what}: device ID “${d.id}” is ${d.name}, a ${type.label}, not ${label}; a device keeps its type.`);
+      }
+      if (!type.variable && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
+      const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
+      if (!rack) return;
+      const loc = { rack: rack.id, kind: pos.kind, at: pos.at };
+      const h = type.variable ? height || M.deviceHeight(work, d) : undefined;
+      const fit = M.canPlace(work, d.type, loc, d.id, h);
+      if (!fit.ok) return void warnings.push(`Kept ${d.name} as it was: ${fit.reason}.`);
+      const before = state(d);
+      d.loc = loc;
+      if (type.variable) d.height = h;
+      if (get(r, 'name')) d.name = get(r, 'name');
+      d.groups = Object.assign({}, d.groups);
+      for (const x of clustersIn(r)) {
+        if (x.cluster) d.groups[x.view.id] = x.cluster;
+        else delete d.groups[x.view.id];
+      }
+      for (const k of fields) if (col[k] !== undefined) d[k] = get(r, k);
+      const power = get(r, 'powerW');
+      const weight = get(r, 'weightKg');
+      if (power !== '') d.powerW = Number(power) !== type.powerW ? Number(power) : null;
+      if (weight !== '') d.weightKg = Number(weight) !== type.weightKg ? Number(weight) : null;
+      if (state(d) !== before) updated++;
+    }
+
     const devices = [];
     rows.slice(1).forEach((r, i) => {
       const line = i + 2;
@@ -1010,13 +1052,17 @@
       const what = name || `line ${line}`;
       if (!get(r, 'rack')) return void warnings.push(`Skipped ${what}: it has no rack.`);
       if (!pos) return void warnings.push(`Skipped ${what}: position “${get(r, 'position')}” is not like U12 or Side V1.`);
+      const id = get(r, 'id').slice(0, 80);
+      if (lineIds.has(id)) return void warnings.push(`Skipped ${what}: device ID “${id}” is on an earlier line too.`);
+      if (id) lineIds.add(id);
+      if (planDevices.has(id)) return void updateDevice(r, planDevices.get(id), what, pos, height);
       const type = findType(label, height);
       if (!type) return void warnings.push(`Skipped ${what}: unknown device type “${label}” and no height to create it.`);
       if (!type.variable && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
       // Names are cut to the length the plan keeps, so later lines find what earlier ones created.
       const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
       if (!rack) return;
-      const d = { id: M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: work.devices.concat(devices) }, type.defaultName, 1, true), groups: findGroups(r), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
+      const d = { id: id || M.uid('d'), type: type.id, name: name || M.nextInSeries({ devices: work.devices.concat(devices) }, type.defaultName, 1, true), groups: findGroups(r), notes: get(r, 'notes'), loc: { rack: rack.id, kind: pos.kind, at: pos.at } };
       for (const f of M.FIELDS) d[f.key] = get(r, f.key);
       const power = get(r, 'powerW');
       const weight = get(r, 'weightKg');
@@ -1029,15 +1075,15 @@
     if (!work.floors.length) throw new Error('The CSV has no devices that could be placed.');
     const result = normalizeProject(work);
     const added = result.project.devices.length - (base ? base.devices.length : 0);
-    dropUnplaced(result.project, base, added);
-    return { project: result.project, warnings: warnings.concat(result.warnings), added };
+    dropUnplaced(result.project, base, added + updated);
+    return { project: result.project, warnings: warnings.concat(result.warnings), added, updated };
   }
 
   // --------------------------------------------------------- cable CSVs
 
   const CABLE_CSV_COLUMNS = ['Label', 'Network', 'Cable type', 'Length (m)', 'Length', 'Leg']
     .concat(['A', 'B'].reduce((out, s) => out.concat(['floor', 'row', 'rack', 'position', 'device', 'port', 'transceiver'].map((k) => `${s} ${k}`)), []))
-    .concat(['Speed', 'Checks', 'Notes']);
+    .concat(['Speed', 'Checks', 'Notes', 'A device ID', 'B device ID']);
   // Picked types and transceivers are marked, so that reading the schedule back picks them again.
   const AUTO = ' (auto)';
 
@@ -1071,6 +1117,7 @@
             .concat(place(c.a), [optics(c.a, head && head.transceiver)])
             .concat(place(leg), [far ? optics(leg, far.transceiver) : ''])
             .concat([C.fmtSpeed(d.legSpeedsGbps[i]), d.issues.map((x) => x.short).join('; '), c.notes || ''])
+            .concat([c.a ? c.a.device : '', leg ? leg.device : ''])
         );
       });
     }
@@ -1101,6 +1148,8 @@
     bPosition: ['b position', 'to position'],
     bTransceiver: ['b transceiver', 'to transceiver'],
     notes: ['notes', 'note', 'comment', 'comments'],
+    aDeviceId: ['a device id', 'from device id'],
+    bDeviceId: ['b device id', 'to device id'],
   };
 
   /** "4.5", "4,5" (a decimal comma), "4.5 m" → 4.5; null when it is no length above 0 (with `zero`, no length of 0 or more). */
@@ -1143,7 +1192,7 @@
   /**
    * Adds the cables of a cable schedule (the columns of exportCablesCSV;
    * A and B device and port are required) to `project`, finding devices by
-   * name. Lines with the same label and A end form one breakout cable when
+   * their A or B device ID, else by name. Lines with the same label and A end form one breakout cable when
    * they have a Leg like "1/2" or name a breakout type; legs without a Leg
    * take the free legs in line order. A breakout takes its type, network,
    * length and notes from its first line. Networks are created by name for
@@ -1165,6 +1214,7 @@
       col.lengthM = col.lengthKind;
       delete col.lengthKind;
     }
+    const byId = new Map(project.devices.map((d) => [d.id, d]));
     const byName = new Map();
     for (const d of M.sortedDevices(project)) {
       const k = lower(d.name);
@@ -1180,14 +1230,16 @@
     };
     const samePlace = (x, y) => lower(x).replace(/\s+/g, '').replace(/–/g, '-') === lower(y).replace(/\s+/g, '').replace(/–/g, '-');
     /**
-     * The device a line's end names: { device } when one device has the
-     * name in the place the line gives (its floor, row, rack and position,
-     * where given; the name as written before another case), with `off` the
-     * part of the place no such device is in; { many } when that leaves
-     * more than one.
+     * The device a line's end names: { device, byId } for the device with
+     * its device ID; else { device } when one device has the name in the
+     * place the line gives (its floor, row, rack and position, where given;
+     * the name as written before another case), with `off` the part of the
+     * place no such device is in; { many } when that leaves more than one.
      */
     const findDevice = (row, side) => {
       const name = get(row, `${side}Device`);
+      const id = byId.get(get(row, `${side}DeviceId`));
+      if (id) return { device: id, byId: true };
       let list = byName.get(lower(name)) || [];
       let off = null;
       for (const [k, at] of Object.entries(places)) {
@@ -1265,6 +1317,7 @@
         if (found.many) problem = problem || `${found.many} devices are named ${name}: give their floor, row and rack`;
         else if (!d) problem = problem || `there is no device ${name || 'without a name'}`;
         else if (found.off) notes.push(`${d.name} is not in ${found.off}, so it is the one in rack ${places.rack(d)}`);
+        else if (found.byId && name && lower(name) !== lower(d.name)) notes.push(`${name} is taken to be ${d.name}, the device with its device ID`);
         const e = { device: d ? d.id : '', port: d ? portOf(d, port) : port };
         const tr = get(row, `${side}Transceiver`);
         const t = lookup(project.transceivers, tr);
