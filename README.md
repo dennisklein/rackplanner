@@ -505,7 +505,8 @@ closing the tab asks first.
 - **Cable order list (CSV)**: the plan's cables by type and length, with
   counts and totals, and the transceivers. The schedule's **Order list
   (CSV)** and **Cable schedule (CSV)** buttons give the same for the row,
-  floor or plan it shows, whatever its filters.
+  floor or plan it shows, whatever its filters. Cables without a type or a
+  length to buy are not on it, and the export says how many it leaves out.
 - **Plan file (.json)**, which **Open** reads back as a new plan. You can also
   copy the plan as JSON and paste it into Open on another machine.
 - **Share link**: the whole plan, compressed into the link itself. Whoever opens

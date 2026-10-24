@@ -2203,7 +2203,9 @@
         const parts = shared.size ? [{ name: `Within ${scope.name}`, cables: scope.cables.filter((c) => !shared.has(c.id)) }, { name: `Shared with other ${scope.others}`, cables: scope.shared }] : null;
         const text = what === 'order' ? IO.exportOrderCSV(project(), scope.cables, parts) : IO.exportCablesCSV(project(), scope.cables);
         ctx.download(name, new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
-        toast(`Exported ${name}`);
+        const left = what === 'order' ? C.billOfMaterials(project(), scope.cables, fresh().ctx).unresolved : 0;
+        if (left) toast(`Exported ${name}. It leaves out ${plural(left, 'cable')} without a type or a length to buy.`, { warn: true });
+        else toast(`Exported ${name}`);
       } catch (err) {
         toast(`Export failed: ${err.message}`, { warn: true });
       }

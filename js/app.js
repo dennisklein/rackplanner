@@ -5397,6 +5397,11 @@
     );
   }
 
+  /** The toast of an order list that leaves out `n` cables, which have no type or no length to buy. */
+  function orderLeftOut(name, n) {
+    return `Exported ${name}. It leaves out ${plural(n, 'cable')} without a type or a length to buy.`;
+  }
+
   async function doExport(kind) {
     try {
       if (kind === 'copy') return copyJSON();
@@ -5406,8 +5411,11 @@
       if (kind === 'json') download((name = `${fileBase()}.json`), new Blob([IO.serialize(project)], { type: 'application/json' }));
       else if (kind === 'csv') download((name = `${fileBase()}.csv`), new Blob(['﻿' + IO.toCSV(project)], { type: 'text/csv;charset=utf-8' }));
       else if (kind === 'cables-csv') download((name = `${fileBase()}-cables.csv`), new Blob(['﻿' + IO.exportCablesCSV(project)], { type: 'text/csv;charset=utf-8' }));
-      else if (kind === 'order-csv') download((name = `${fileBase()}-cable-order.csv`), new Blob(['﻿' + IO.exportOrderCSV(project)], { type: 'text/csv;charset=utf-8' }));
-      else if (kind === 'svg') {
+      else if (kind === 'order-csv') {
+        download((name = `${fileBase()}-cable-order.csv`), new Blob(['﻿' + IO.exportOrderCSV(project)], { type: 'text/csv;charset=utf-8' }));
+        const left = C.billOfMaterials(project).unresolved;
+        if (left) return toast(orderLeftOut(name, left), { warn: true });
+      } else if (kind === 'svg') {
         const d = exportDrawing();
         download((name = `${d.file}.svg`), new Blob([d.svg], { type: 'image/svg+xml' }));
       } else if (kind === 'png') {

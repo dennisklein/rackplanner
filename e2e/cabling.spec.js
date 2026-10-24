@@ -516,6 +516,8 @@ test('the cable schedule and the order list download as CSV, for the plan and fo
   expect(order.text).toContain('Item,Kind,Length (m),Count,Total (m)');
   expect(order.text).toContain('Cable, made to length');
   expect(order.text).toContain('Transceiver');
+  // The example has a cable without a length to buy, which the toast names.
+  await expect(page.locator('.toast.warn', { hasText: 'hall-2-expansion-cable-order.csv' })).toContainText('1 cable without a type or a length to buy');
 
   // The strip's buttons export the schedule's scope.
   const rowCsv = await read(() => page.click('#sc-cables-csv'));
