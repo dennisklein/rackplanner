@@ -990,13 +990,16 @@
    * cables by stock length (a length set between two is bought at the
    * longer), cables made to length with each length and the total, and
    * transceivers. `unresolved` counts cables without a type or length, or
-   * longer than their type's longest stock length. `ctx` is optional.
+   * longer than their type's longest stock length, and `toDecide` counts
+   * them by type ({ type, count }; type null for those without one).
+   * `ctx` is optional.
    */
   function billOfMaterials(project, cables, ctx) {
     const stock = new Map();
     const made = new Map();
     const optics = new Map();
     let unresolved = 0;
+    const open = new Map();
     const bump = (map, key, sub) => {
       let m = map.get(key);
       if (!m) map.set(key, (m = new Map()));
@@ -1006,8 +1009,11 @@
       for (const e of d.ends) if (e.transceiver) optics.set(e.transceiver.id, (optics.get(e.transceiver.id) || 0) + 1);
       // A length set between stock lengths is bought at the next one; past the longest it cannot be.
       const buy = d.type && d.lengthM !== null && d.type.lengthsM.length ? stockLength(d.type, d.lengthM) : d.lengthM;
-      if (!d.type || buy === null) unresolved++;
-      else bump(d.type.lengthsM.length ? stock : made, d.type.id, buy);
+      if (!d.type || buy === null) {
+        unresolved++;
+        const key = d.type ? d.type.id : '';
+        open.set(key, (open.get(key) || 0) + 1);
+      } else bump(d.type.lengthsM.length ? stock : made, d.type.id, buy);
     }
     const byLength = (m) => [...m].sort((x, y) => x[0] - y[0]);
     return {
@@ -1020,6 +1026,10 @@
         }),
       transceivers: project.transceivers.filter((t) => optics.has(t.id)).map((transceiver) => ({ transceiver, count: optics.get(transceiver.id) })),
       unresolved,
+      toDecide: project.cableTypes
+        .filter((t) => open.has(t.id))
+        .map((type) => ({ type, count: open.get(type.id) }))
+        .concat(open.has('') ? [{ type: null, count: open.get('') }] : []),
     };
   }
 

@@ -1346,7 +1346,8 @@
 
   /**
    * The order list of `cables` (default: all) as CSV: stock cables by
-   * length, cables made to length, then transceivers. With `parts` ([{
+   * length, cables made to length, transceivers, then the cables without a
+   * type or a length to buy, by type, with no length. With `parts` ([{
    * name, cables }]) instead, a list for each part, its lines in a first
    * column Part: "Within Row A", "Shared with other rows".
    */
@@ -1358,6 +1359,7 @@
       for (const x of bom.cables) out.push([x.type.name, 'Cable', x.lengthM, x.count, total(x.lengthM, x.count)]);
       for (const x of bom.madeToLength) for (const l of x.lengths) out.push([x.type.name, 'Cable, made to length', l.lengthM, l.count, total(l.lengthM, l.count)]);
       for (const x of bom.transceivers) out.push([x.transceiver.name, 'Transceiver', '', x.count, '']);
+      for (const x of bom.toDecide) out.push(x.type ? [x.type.name, 'Length to decide', '', x.count, ''] : ['No cable type', 'Type to decide', '', x.count, '']);
       return part === undefined ? out : out.map((r) => [part].concat(r));
     };
     const head = ['Item', 'Kind', 'Length (m)', 'Count', 'Total (m)'];

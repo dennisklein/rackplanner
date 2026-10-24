@@ -985,13 +985,27 @@ test('the order list exports as CSV', () => {
   assert.equal(lines[0], 'Item,Kind,Length (m),Count,Total (m)');
   assert.equal(lines[1], 'Cat6a patch cord,Cable,1,12,12');
   assert.ok(lines.includes('MPO-12 OM4,"Cable, made to length",4.9,4,19.6'));
-  assert.deepEqual(lines.slice(-2), ['SFP+ 10G SR,Transceiver,,8,', 'QSFP56 200G SR4,Transceiver,,24,']);
+  // A cable too long for its type's longest stock length comes last, with no length.
+  assert.deepEqual(lines.slice(-3), ['SFP+ 10G SR,Transceiver,,8,', 'QSFP56 200G SR4,Transceiver,,24,', 'QSFP56 DAC,Length to decide,,1,']);
   const sas = IO.exportOrderCSV(ex, ex.cables.filter((c) => c.network === 'n-sas')).trim().split('\r\n');
   assert.deepEqual(sas, ['Item,Kind,Length (m),Count,Total (m)', 'Mini-SAS HD cable,Cable,2,12,24']);
   // In parts: each line names its part.
   const sasParts = IO.exportOrderCSV(ex, null, [{ name: 'Within Row A', cables: ex.cables.filter((c) => c.network === 'n-sas') }, { name: 'Shared with other rows', cables: [] }]).trim().split('\r\n');
   assert.deepEqual(sasParts, ['Part,Item,Kind,Length (m),Count,Total (m)', 'Within Row A,Mini-SAS HD cable,Cable,2,12,24']);
   assert.equal(C.billOfMaterials(ex).unresolved, 1);
+
+  // A cable between floors has no length until one is typed; one with no type that fits has no type.
+  const first = M.addFloor(ex, { racks: 1 });
+  const sw = M.newDevice({ id: 'up', type: 'switch-rj45', name: 'sw-up', loc: { rack: first.rows[0].racks[0].id, kind: 'u', at: 1 } });
+  const odd = M.addDeviceType(ex, { label: 'Odd box', height: 1, ports: [{ name: 'x', connector: 'sfp28', speedGbps: 25, side: 'front' }] });
+  const box = M.newDevice({ id: 'odd', type: odd.id, name: 'odd-01', loc: { rack: first.rows[0].racks[0].id, kind: 'u', at: 3 } });
+  ex.devices.push(sw, box);
+  assert.ok(C.connect(ex, { a: { device: 'up', port: 'swp1' }, b: { device: 'ex-1', port: 'swp40' } }).cable);
+  assert.ok(C.connect(ex, { a: { device: 'odd', port: 'x' }, b: { device: 'up', port: 'swp2' } }).cable);
+  const more = IO.exportOrderCSV(ex).trim().split('\r\n');
+  assert.deepEqual(more.slice(-3), ['Cat6a patch cord,Length to decide,,1,', 'QSFP56 DAC,Length to decide,,1,', 'No cable type,Type to decide,,1,']);
+  assert.equal(more.length, lines.length + 2, 'the lines before stay as they were');
+  assert.deepEqual(more.slice(0, lines.length - 1), lines.slice(0, -1));
 });
 
 test('a device CSV import into a plan keeps its cables', () => {

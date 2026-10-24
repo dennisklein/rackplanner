@@ -5514,9 +5514,9 @@
     );
   }
 
-  /** The toast of an order list that leaves out `n` cables, which have no type or no length to buy. */
+  /** The toast of an order list with `n` cables that have no type or no length to buy yet. */
   function orderLeftOut(name, n) {
-    return `Exported ${name}. It leaves out ${plural(n, 'cable')} without a type or a length to buy.`;
+    return `Exported ${name}. ${plural(n, 'cable')} on it still ${n === 1 ? 'needs' : 'need'} a type or a length to buy.`;
   }
 
   async function doExport(kind) {

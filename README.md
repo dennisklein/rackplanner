@@ -524,7 +524,9 @@ closing the tab asks first.
   counts and totals, and the transceivers. The schedule's **Order list
   (CSV)** and **Cable schedule (CSV)** buttons give the same for the row,
   floor or plan it shows, whatever its filters. Cables without a type or a
-  length to buy are not on it, and the export says how many it leaves out.
+  length to buy come last, by type, as **Length to decide** (or **Type to
+  decide**, under **No cable type**) without a length, and the export says
+  how many there are.
 - **Plan file (.json)**, which **Open** reads back as a new plan. You can also
   copy the plan as JSON and paste it into Open on another machine. It is the
   format that keeps the whole plan: the CSVs leave out the catalogs (a
