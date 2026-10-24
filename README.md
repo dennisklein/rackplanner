@@ -835,7 +835,7 @@ What a change does to the rest of the plan:
 | Deleting a network | Its cables stay, without a network. |
 | Moving or reversing a device | Its cables stay plugged in; estimated lengths follow. |
 | Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series. |
-| Changing a type's ports | Ports keep their cables by group and place in the group; the catalog names the cables a change would unplug before it applies. |
+| Changing a type's ports | Ports keep their cables by group and place in the group; a group that takes the place of another takes its cables only when their plugs fit it. The catalog names the cables a change would unplug before it applies. |
 | A new plan from this layout | No devices, so no clusters, cables or networks; the catalogs and the views (empty) stay. |
 
 **Open** reads plan files of every version. Version 1 counted units from the

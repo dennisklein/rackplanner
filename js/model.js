@@ -2515,7 +2515,9 @@
    * Where each port of the groups `oldPorts` goes in the groups `newPorts`:
    * a Map from old to new port name. Groups are matched first by their
    * pattern (swp[1-48]), then by name, then the groups left over are paired
-   * in order when as many are left on both sides (groups renamed in place).
+   * in order when as many are left on both sides (groups renamed in place)
+   * and a plug of the old group fits the new one: an InfiniBand cable does
+   * not move to an RJ45 port that took the place of its port.
    * A port keeps its place in its matched group; a port without one keeps
    * its name when that port still exists and no other port moves to it.
    */
@@ -2537,7 +2539,7 @@
     pair((g, h) => g.name === h.name);
     const leftOld = olds.map((g, i) => i).filter((i) => !match.has(i));
     const leftNew = news.map((h, j) => j).filter((j) => !taken.has(j));
-    if (leftOld.length === leftNew.length) leftOld.forEach((i, k) => match.set(i, leftNew[k]));
+    if (leftOld.length === leftNew.length) leftOld.forEach((i, k) => plugFits(olds[i].connector, news[leftNew[k]].connector) && match.set(i, leftNew[k]));
     const names = news.map((h) => groupNames(h));
     const out = new Map();
     const targets = new Set();

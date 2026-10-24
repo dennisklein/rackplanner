@@ -945,6 +945,14 @@ test('adding or removing a port group leaves the other groups’ cables on their
   assert.deepEqual([...M.portMoves(ports, [ports[2], { name: 'mgmt', connector: 'rj45' }, ports[0]])], [['bmc', 'bmc'], ['eth0', 'mgmt'], ['ib0', 'ib0']]);
   const two = [{ name: 'eth', first: 0, count: 2, connector: 'rj45' }, { name: 'eth2', connector: 'rj45' }];
   assert.deepEqual([...M.portMoves(two, [{ name: 'eth', first: 0, count: 3, connector: 'rj45' }])], [['eth0', 'eth0'], ['eth1', 'eth1'], ['eth2', 'eth2']]);
+  // A group left over takes the place of another only when the plug fits.
+  const ib = [ports[0], ports[1], { name: 'mgmt', connector: 'rj45', speedGbps: 1, side: 'rear' }];
+  assert.deepEqual([...M.portMoves(ports, ib)], [['bmc', 'bmc'], ['eth0', 'eth0']], 'no InfiniBand cable in an RJ45 port');
+  const dd = [ports[0], ports[1], { name: 'hdr0', connector: 'qsfp-dd', speedGbps: 400, side: 'rear' }];
+  assert.deepEqual([...M.portMoves(ports, dd)].pop(), ['ib0', 'hdr0'], 'a QSFP plug fits a QSFP-DD cage');
+  const s = M.createExampleProject();
+  assert.equal(C.portChangeImpact(s, 'compute-node', ib).length, 20, 'the IB cables are named as unplugged');
+  assert.deepEqual(C.portChangeMoves(s, 'compute-node', ib), [], 'not as moved');
   // Two groups of one name are told apart by their pattern.
   const sw = M.typeOf(q, 'switch-rj45').ports;
   assert.deepEqual([...M.portMoves(sw, [sw[0], Object.assign({}, sw[1], { count: 2 })])].slice(-3), [['swp48', 'swp48'], ['swp49', 'swp49'], ['swp50', 'swp50']]);
