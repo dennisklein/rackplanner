@@ -181,11 +181,14 @@
   ];
   const FALLBACK_RACK_TYPE = DEFAULT_RACK_TYPES[0];
 
-  /** Structured device fields, besides name, cluster and notes. */
+  /**
+   * Structured device fields, besides name, cluster and notes. Those of
+   * one device only (`instance`) are left empty on copies.
+   */
   const FIELDS = [
-    { key: 'serial', label: 'Serial number', csv: 'Serial number' },
-    { key: 'asset', label: 'Asset tag', csv: 'Asset tag' },
-    { key: 'ip', label: 'IP address', csv: 'IP address' },
+    { key: 'serial', label: 'Serial number', csv: 'Serial number', instance: true },
+    { key: 'asset', label: 'Asset tag', csv: 'Asset tag', instance: true },
+    { key: 'ip', label: 'IP address', csv: 'IP address', instance: true },
     { key: 'owner', label: 'Owner', csv: 'Owner' },
   ];
   // The longest text a plan keeps in a field of FIELDS and in the notes of a device or cable.
@@ -1837,7 +1840,9 @@
 
   /**
    * Copies of devices for new places (`moves`: [{ id, loc }]), with new ids
-   * and names that continue each series. The plan itself is not changed.
+   * and names that continue each series, and without the serial number,
+   * asset tag and IP address of the original. The plan itself is not
+   * changed.
    */
   function copiesAt(project, moves) {
     const named = { devices: project.devices.slice() };
@@ -1846,6 +1851,7 @@
       // A name with the code of its rack takes the code of the copy's (see nameInRack).
       const name = rackCodeIn(project, d.name, d.loc.rack) ? nameInRack(Object.assign({}, project, named), d.name, d.loc.rack, m.loc.rack, 1) : nextFreeName(named, d.name);
       const c = Object.assign(clone(d), { id: uid('d'), name, loc: { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at } });
+      for (const f of FIELDS) if (f.instance) c[f.key] = '';
       named.devices.push(c);
       return c;
     });

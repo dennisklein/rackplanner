@@ -387,6 +387,22 @@ test('racks, rows and floors can be duplicated with their devices', () => {
   assert.equal(M.duplicateRack(small, 'r1'), null, 'a full row takes no copy');
 });
 
+test('copies leave out the serial number, asset tag and IP address of the original', () => {
+  const fields = { serial: 'SN-123', asset: 'AT-9', ip: '10.0.0.5', owner: 'HPC team', notes: 'spare PSU' };
+  const p = project([['compute-node', 'r1', 'u', 1, 'cn-001', fields]]);
+  const [c] = M.copiesAt(p, [{ id: 'd1', loc: { rack: 'r1', kind: 'u', at: 3 } }]);
+  assert.deepEqual([c.serial, c.asset, c.ip], ['', '', '']);
+  assert.deepEqual([c.owner, c.notes], ['HPC team', 'spare PSU'], 'what the model shares is kept');
+  assert.equal(p.devices[0].serial, 'SN-123', 'the original keeps its own');
+  p.devices.push(c);
+  // Every duplicate goes through copiesAt: a rack, a row and a floor too.
+  M.duplicateRack(p, 'r1');
+  M.duplicateRow(p, 'row1');
+  M.duplicateFloor(p, 'f1');
+  assert.equal(p.devices.length, 16);
+  assert.deepEqual(p.devices.filter((d) => d.serial || d.asset || d.ip).map((d) => d.id), ['d1']);
+});
+
 test('names count up in series', () => {
   assert.deepEqual(M.nameSequence('cn-008', 3), ['cn-008', 'cn-009', 'cn-010']);
   assert.deepEqual(M.nameSequence('node', 2), ['node-01', 'node-02']);

@@ -156,7 +156,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   `cn-014`) and take the code of the copy's rack. A device in a side slot is
   copied into a free side slot only: in its rack, then in the nearest racks.
   A rack, row or floor is copied with all its devices and
-  inserted right after the original.
+  inserted right after the original. Copies leave the serial number, asset
+  tag and IP address empty, as those belong to one device only.
 - **Clusters**: click one in the left panel to highlight its devices. Point
   at it for the buttons that select its devices and, with the pencil icon,
   rename or recolor it; on a touch screen they are always shown (beside the
@@ -834,7 +835,7 @@ What a change does to the rest of the plan:
 | Deleting a view | Its clusters go with it; devices, cables and networks stay. A plan keeps at least one view. |
 | Deleting a network | Its cables stay, without a network. |
 | Moving or reversing a device | Its cables stay plugged in; estimated lengths follow. |
-| Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series. |
+| Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series. The copies have no serial number, asset tag or IP address. |
 | Changing a type's ports | Ports keep their cables by group and place in the group; a group that takes the place of another takes its cables only when their plugs fit it. The catalog names the cables a change would unplug before it applies. |
 | A new plan from this layout | No devices, so no clusters, cables or networks; the catalogs and the views (empty) stay. |
 
