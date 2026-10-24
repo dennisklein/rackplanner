@@ -106,6 +106,48 @@ test('the ports of a device type are edited as patterns; unplugging cables asks 
   expect(made.ports.map((g) => g.name)).toEqual(['bmc', 'eth0', 'ib0']);
 });
 
+test('a connector this version does not know is kept, in the catalog and in the cabling views', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  const M = require('../js/model.js');
+  const IO = require('../js/io.js');
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
+  raw.name = 'Newer connectors';
+  raw.deviceTypes.find((t) => t.id === 'switch-osfp').ports[0].connector = 'osfp-xd';
+  raw.deviceTypes.find((t) => t.id === 'compute-node').ports[1].connector = 'rj99';
+  raw.cableTypes.push({ id: 'ct-xd', name: 'XD DAC', media: 'dac', connector: 'osfp-xd' });
+  await page.click('#btn-open');
+  await page.setInputFiles('#file-input', { name: 'plan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(raw)) });
+  await expect(page.locator('#report-list li')).toHaveCount(3);
+  await expect(page.locator('#report-list')).toContainText('Port group p of 32-port 400G switch has unknown connector “osfp-xd”: no cable fits it.');
+  await page.click('#dlg-report button[value="ok"]');
+  expect(await cableCount(page)).toBe(147);
+
+  await page.click('.ws-switch [data-workspace="cabling"]');
+  for (const view of ['elevation', 'ports', 'schedule', 'fabric']) {
+    await page.click(`#cab-toggle [data-cab-view="${view}"]`);
+    await expect(page.locator(`#cab-toggle [data-cab-view="${view}"]`)).toHaveAttribute('aria-pressed', 'true');
+  }
+  await page.click('#cab-toggle [data-cab-view="schedule"]');
+  await page.click('[data-sc-scope="plan"]');
+  await page.fill('#sc-filter', 'ib-leaf-b02');
+  await page.locator('#sc-body tr[data-cable]').filter({ hasText: 'ib-leaf-b02' }).first().locator('td').nth(1).click();
+  await expect(page.locator('#inspector')).toContainText('does not plug into ib-leaf-b02');
+
+  // The catalog shows the connector as it is and keeps it while other fields change.
+  await page.click('.ws-switch [data-workspace="racks"]');
+  await page.click('#btn-catalog');
+  await page.click('.cat-item[data-id="switch-osfp"]');
+  await page.click('#cat-sub-ports');
+  await expect(page.locator('#cat-pg-0-connector option:checked')).toHaveText('osfp-xd (unknown)');
+  await page.selectOption('#cat-pg-0-side', 'rear');
+  expect(await plan(page, (p) => p.deviceTypes.find((t) => t.id === 'switch-osfp').ports[0])).toMatchObject({ connector: 'osfp-xd', side: 'rear' });
+  await page.click('#cat-tab-cables');
+  await page.click('.cat-item[data-id="ct-xd"]');
+  await expect(page.locator('#cat-c-conn option:checked')).toHaveText('osfp-xd (unknown)');
+  expect(errors).toEqual([]);
+});
+
 test('rack types and racks set their cable lengths, floors their row pitch', async ({ page }) => {
   await page.click('#btn-catalog');
   await page.click('#cat-tab-racks');

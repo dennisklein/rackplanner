@@ -4226,6 +4226,8 @@
   }
 
   const options = (list, cur) => list.map(([v, label]) => `<option value="${esc(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${esc(label)}</option>`).join('');
+  /** Connector choices, with `cur` at the end when this version does not know it, so that it is kept until another is picked. */
+  const connectorOptions = (list, cur) => options(M.connectorById(cur) || !cur ? list : list.concat([[cur, `${cur} (unknown)`]]), cur);
   const svgArt = (w, h, body) => `<svg class="cat-art" viewBox="0 0 ${w} ${h}" aria-hidden="true">${body}</svg>`;
   const previewSVG = (pv) => `<svg viewBox="0 0 ${pv.width} ${pv.height}" aria-hidden="true">${pv.body}</svg>`;
   const connName = (id) => (M.connectorById(id) || { label: id }).label;
@@ -4277,7 +4279,7 @@
         const id = (k) => `cat-pg-${i}-${k}`;
         return (
           `<tr><td><input id="${id('names')}" class="mono" type="text" data-pg="${i}" data-pg-prop="names" value="${esc(pattern)}" maxlength="48" autocomplete="off" spellcheck="false" aria-label="Names of port group ${i + 1}"></td>` +
-          `<td><select id="${id('connector')}" data-pg="${i}" data-pg-prop="connector" aria-label="Connector of ${esc(pattern)}">${options(conns, g.connector)}</select></td>` +
+          `<td><select id="${id('connector')}" data-pg="${i}" data-pg-prop="connector" aria-label="Connector of ${esc(pattern)}">${connectorOptions(conns, g.connector)}</select></td>` +
           `<td><select id="${id('speed')}" data-pg="${i}" data-pg-prop="speedGbps" aria-label="Speed of ${esc(pattern)}">${options(speeds, g.speedGbps)}</select></td>` +
           `<td><select id="${id('side')}" data-pg="${i}" data-pg-prop="side" aria-label="Side of ${esc(pattern)}">${options(SIDES, g.side)}</select></td>` +
           `<td class="pt-count mono">${M.groupNames(g).length}</td>` +
@@ -4518,8 +4520,8 @@
       `<div class="field"><label for="cat-c-media">Media</label><select id="cat-c-media" data-prop="media">${options(media, t.media)}</select></div>` +
       `<div class="field"><label for="cat-c-legs">Legs</label><input id="cat-c-legs" data-prop="legs" data-num type="number" min="1" max="${M.LIMITS.legs}" step="1" value="${t.legs}">` +
       `<small class="field-hint">2 to ${M.LIMITS.legs}: a breakout</small></div>` +
-      `<div class="field"><label for="cat-c-conn">Plug at end A</label><select id="cat-c-conn" data-prop="connector">${options(plugs, t.connector)}</select></div>` +
-      `<div class="field"><label for="cat-c-connb">Plug at the other ends</label><select id="cat-c-connb" data-prop="connectorB">${options(plugs, t.connectorB)}</select></div>` +
+      `<div class="field"><label for="cat-c-conn">Plug at end A</label><select id="cat-c-conn" data-prop="connector">${connectorOptions(plugs, t.connector)}</select></div>` +
+      `<div class="field"><label for="cat-c-connb">Plug at the other ends</label><select id="cat-c-connb" data-prop="connectorB">${connectorOptions(plugs, t.connectorB)}</select></div>` +
       `<div class="field"><label for="cat-c-speed">Speed rating (Gb/s)</label><input id="cat-c-speed" data-prop="speedGbps" data-num type="number" min="0" max="1600" step="1" value="${t.speedGbps}">` +
       `<small class="field-hint">0: not rated</small></div>` +
       `<div class="field"><label for="cat-c-reach">Reach (m)</label><input id="cat-c-reach" data-prop="maxM" data-num type="number" min="0" step="1" value="${t.maxM}">` +
@@ -4568,7 +4570,7 @@
     return (
       `<div class="field-grid cat-fields">` +
       `<div class="field span2"><label for="cat-x-name">Name</label><input id="cat-x-name" data-prop="name" type="text" value="${esc(t.name)}" maxlength="60" autocomplete="off"></div>` +
-      `<div class="field"><label for="cat-x-conn">Fits</label><select id="cat-x-conn" data-prop="connector">${options(cages, t.connector)}</select></div>` +
+      `<div class="field"><label for="cat-x-conn">Fits</label><select id="cat-x-conn" data-prop="connector">${connectorOptions(cages, t.connector)}</select></div>` +
       `<div class="field"><label for="cat-x-fiber">Fiber plug</label><select id="cat-x-fiber" data-prop="fiber">${options(FIBERS, t.fiber)}</select></div>` +
       `<div class="field"><label for="cat-x-mode">Mode</label><select id="cat-x-mode" data-prop="mode">${options(MODES, t.mode)}</select></div>` +
       `<div class="field"><label for="cat-x-speed">Speed (Gb/s)</label><input id="cat-x-speed" data-prop="speedGbps" data-num type="number" min="0" max="1600" step="1" value="${t.speedGbps}"></div>` +

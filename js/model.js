@@ -625,6 +625,18 @@
   function connectorById(id) {
     return CONNECTOR_MAP.get(id) || null;
   }
+  // What an id of a connector this version does not know may look like: one from a newer version, say.
+  const OTHER_CONNECTOR = /^[a-z0-9][a-z0-9+._-]{0,31}$/i;
+  /**
+   * The connector id `v` names, in any case: the id in CONNECTORS, or an id
+   * this version does not know as it is (nothing fits it); '' for no id.
+   */
+  function connectorId(v) {
+    if (typeof v !== 'string') return '';
+    const c = CONNECTOR_MAP.get(v.toLowerCase());
+    return c ? c.id : OTHER_CONNECTOR.test(v) ? v : '';
+  }
+  const connectorLabel = (id) => (connectorById(id) || { label: id }).label;
   /** True when a plug of connector `plugId` fits a port of connector `portId` (same family, or a QSFP plug in a QSFP-DD cage). */
   function plugFits(plugId, portId) {
     const plug = connectorById(plugId);
@@ -643,7 +655,7 @@
    */
   function cleanPortGroup(raw) {
     if (!isObj(raw)) return null;
-    const conn = connectorById(raw.connector);
+    const conn = connectorId(raw.connector);
     const name = portName(raw.name);
     const series = given(raw.first) || given(raw.count);
     if (!conn || (!series && !name)) return null;
@@ -652,8 +664,8 @@
       g.first = clampInt(raw.first, 0, 9999, 1);
       g.count = clampInt(raw.count, 1, LIMITS.ports, 1);
     }
-    g.connector = conn.id;
-    g.speedGbps = clampNum(raw.speedGbps, 0, 1600, conn.speedGbps);
+    g.connector = conn;
+    g.speedGbps = clampNum(raw.speedGbps, 0, 1600, (connectorById(conn) || { speedGbps: 0 }).speedGbps);
     g.side = raw.side === 'front' ? 'front' : 'rear';
     return g;
   }
@@ -827,15 +839,23 @@
    */
   const catalogName = (v) => str(v, 60).replace(/(\s*\(auto\))+$/i, '').trim();
 
-  /** A valid cable type from untrusted input (the id is left to the caller). Plugs that don't suit the media fall back to its usual one. */
+  /**
+   * A valid cable type from untrusted input (the id is left to the caller).
+   * Plugs that don't suit the media fall back to its usual one; a plug this
+   * version does not know is kept, and fits no port.
+   */
   function cleanCableType(raw) {
     const r = isObj(raw) ? raw : {};
-    const media = MEDIA[r.media] ? r.media : guessMedia(r.connector);
+    const media = MEDIA[r.media] ? r.media : guessMedia(connectorId(r.connector));
     const allowed = mediaConnectors(media);
-    const connector = allowed.includes(r.connector) ? r.connector : MEDIA[media].plug;
-    const connectorB = allowed.includes(r.connectorB) ? r.connectorB : connector;
+    const plug = (v, dflt) => {
+      const id = connectorId(v);
+      return allowed.includes(id) || (id && !connectorById(id)) ? id : dflt;
+    };
+    const connector = plug(r.connector, MEDIA[media].plug);
+    const connectorB = plug(r.connectorB, connector);
     const legs = clampInt(r.legs, 1, LIMITS.legs, 1);
-    const plugs = legs > 1 ? `${connectorById(connector).label} to ${legs} × ${connectorById(connectorB).label}` : connectorById(connector).label;
+    const plugs = legs > 1 ? `${connectorLabel(connector)} to ${legs} × ${connectorLabel(connectorB)}` : connectorLabel(connector);
     const lengths = (Array.isArray(r.lengthsM) ? r.lengthsM : []).map((v) => clampNum(v, 0.1, 10000, null)).filter((v) => v !== null);
     return {
       id: str(String(r.id == null ? '' : r.id), 40),
@@ -850,17 +870,18 @@
     };
   }
 
-  /** A valid transceiver from untrusted input (the id is left to the caller). */
+  /** A valid transceiver from untrusted input (the id is left to the caller). A connector this version does not know is kept, and fits no port. */
   function cleanTransceiver(raw) {
     const r = isObj(raw) ? raw : {};
-    const conn = connectorById(r.connector);
-    const connector = conn && conn.cage ? conn.id : 'qsfp56';
+    const id = connectorId(r.connector);
+    const conn = connectorById(id);
+    const connector = conn ? (conn.cage ? conn.id : 'qsfp56') : id || 'qsfp56';
     const fiber = r.fiber === 'mpo' ? 'mpo' : 'lc';
     const mode = r.mode === 'smf' ? 'smf' : 'mmf';
-    const speedGbps = clampNum(r.speedGbps, 0, 1600, connectorById(connector).speedGbps);
+    const speedGbps = clampNum(r.speedGbps, 0, 1600, (connectorById(connector) || { speedGbps: 0 }).speedGbps);
     return {
       id: str(String(r.id == null ? '' : r.id), 40),
-      name: catalogName(r.name) || `${connectorById(connector).label} ${speedGbps}G ${mode === 'smf' ? 'LR' : 'SR'}`,
+      name: catalogName(r.name) || `${connectorLabel(connector)} ${speedGbps}G ${mode === 'smf' ? 'LR' : 'SR'}`,
       connector,
       fiber,
       mode,
@@ -2962,6 +2983,7 @@
     transceiverById,
     networkById,
     connectorById,
+    connectorId,
     plugFits,
     cleanPortGroup,
     cleanPorts,

@@ -227,7 +227,9 @@
    * The cable ends that name transceiver `id`: `used` where the choice can
    * apply (a cable of a fiber type, or one that picks its type, at a cage),
    * `stale` where it cannot, such as the ends of a cable changed to a DAC
-   * in a plan saved before such a change dropped the choice.
+   * in a plan saved before such a change dropped the choice. A port whose
+   * connector this version does not know counts as a cage, so that the
+   * choice a newer version made there stays.
    */
   function transceiverEnds(project, id) {
     const out = { used: [], stale: [] };
@@ -240,7 +242,8 @@
       const fiber = !type || mediaOf(type).kind === 'fiber';
       for (const x of ends) {
         const port = endPort(ctx, x.end);
-        out[fiber && (!port || M.connectorById(port.connector).cage) ? 'used' : 'stale'].push(x.end);
+        const conn = port && M.connectorById(port.connector);
+        out[fiber && (!port || !conn || conn.cage) ? 'used' : 'stale'].push(x.end);
       }
     }
     return out;
@@ -728,7 +731,10 @@
   function endFit(ctx, type, plug, port, metres, chosen) {
     if (!port) return { ok: false, exact: false, transceiver: null, reaches: true, code: 'plug' };
     const media = mediaOf(type);
-    const cage = M.connectorById(port.connector).cage;
+    const conn = M.connectorById(port.connector);
+    // Nothing fits a connector this version does not know.
+    if (!conn) return { ok: false, exact: false, transceiver: null, reaches: true, code: 'plug' };
+    const cage = conn.cage;
     if (media.kind !== 'fiber' || !cage) {
       const ok = media.kind === 'fiber' ? plug === port.connector : M.plugFits(plug, port.connector);
       return { ok, exact: ok && plug === port.connector, transceiver: null, reaches: true, code: ok ? null : 'plug' };

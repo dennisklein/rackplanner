@@ -799,6 +799,11 @@ the device, so a reversed device has its front ports at the rack's rear.
 ]
 ```
 
+Connector ids are read in any letter case. A port group, cable type or
+transceiver whose connector this version does not know, such as one a newer
+version added, keeps it as it is: nothing plugs into it, its cables stay, and
+opening the plan warns about it.
+
 A cable's `a` end is one port. Its `b` end is one port too, or for a
 breakout cable (a type with 2 to 8 `legs`) a list of one end per leg, with
 `null` for a leg not plugged in; `a` is then the head. An end's

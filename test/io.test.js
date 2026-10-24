@@ -1067,21 +1067,39 @@ test('clusters without a name or color get those the model gives next, and a lon
   assert.deepEqual([many[19999].name, new Set(many.map((c) => c.name)).size], ['Cluster 20000', 20000]);
 });
 
-test('connectors this version does not know are named in warnings', () => {
+test('connectors this version does not know are kept, fit nothing and are named in warnings', () => {
   const raw = JSON.parse(IO.serialize(M.createExampleProject()));
   const osfp = raw.deviceTypes.find((t) => t.id === 'switch-osfp');
   osfp.ports[0].connector = 'osfp-xd';
-  raw.cableTypes.push({ id: 'ct-xd', name: 'XD DAC', media: 'dac', connector: 'osfp-xd', connectorB: 'qsfp56' });
+  raw.deviceTypes.find((t) => t.id === 'switch-qsfp').ports[0].connector = 'QSFP56';
+  const pdu = raw.deviceTypes.find((t) => t.id === 'pdu');
+  pdu.ports.push({ name: 'outlet', first: 1, count: 12, connector: 'c13', side: 'rear' }, { name: 'odd', connector: 'not one!', side: 'rear' });
+  raw.cableTypes.push({ id: 'ct-xd', name: 'XD DAC', media: 'dac', connector: 'osfp-xd', connectorB: 'QSFP56' });
+  raw.cableTypes.push({ id: 'ct-odd', name: 'Odd DAC', media: 'dac', connector: '<odd>' });
   raw.cableTypes.push({ id: 'ct-cx', name: 'CX cable', media: 'dac', connector: 'cxp9', connectorB: 'cxp9' });
   raw.transceivers.push({ id: 'tr-xd', name: 'XD SR8', connector: 'osfp-xd', fiber: 'mpo', mode: 'mmf' });
   const { project: p, warnings } = IO.normalizeProject(raw);
-  assert.deepEqual(warnings.slice(0, 4), [
-    `Skipped port group p of ${osfp.label}: unknown connector “osfp-xd”.`,
-    'Cable type XD DAC has unknown connector “osfp-xd” and gets QSFP56.',
-    'Cable type CX cable has unknown connector “cxp9” and gets QSFP56.',
-    'Transceiver XD SR8 has unknown connector “osfp-xd” and gets QSFP56.',
+  assert.deepEqual(warnings, [
+    `Port group p of ${osfp.label} has unknown connector “osfp-xd”: no cable fits it.`,
+    `Port group outlet of ${pdu.label} has unknown connector “c13”: no cable fits it.`,
+    `Skipped port group odd of ${pdu.label}: unknown connector “not one!”.`,
+    'Cable type XD DAC has unknown connector “osfp-xd”: it fits no port.',
+    'Cable type Odd DAC has unknown connector “<odd>” and gets QSFP56.',
+    'Cable type CX cable has unknown connector “cxp9”: it fits no port.',
+    'Transceiver XD SR8 has unknown connector “osfp-xd”: it fits no port.',
   ]);
-  assert.deepEqual(M.typeOf(p, 'switch-osfp').ports, []);
+  assert.deepEqual(M.typeOf(p, 'switch-osfp').ports[0], { name: 'p', first: 1, count: 32, connector: 'osfp-xd', speedGbps: 400, side: 'front' });
+  assert.equal(M.typeOf(p, 'switch-qsfp').ports[0].connector, 'qsfp56', 'ids in another case are the ones of the list');
+  assert.equal(M.typeOf(p, 'pdu').ports[1].speedGbps, 0);
+  assert.deepEqual(['connector', 'connectorB'].map((k) => M.cableTypeById(p, 'ct-xd')[k]), ['osfp-xd', 'qsfp56']);
+  assert.equal(M.transceiverById(p, 'tr-xd').connector, 'osfp-xd');
+  assert.equal(p.cables.length, 147, 'the cables on the switches stay');
+  assert.ok(!M.plugFits('osfp-xd', 'osfp-xd') && !M.plugFits('osfp', 'osfp-xd') && !M.plugFits('osfp-xd', 'osfp'), 'nothing fits');
+  const issues = p.cables.filter((c) => M.deviceById(p, c.a.device).type === 'switch-osfp').map((c) => C.describe(p, c).issues.map((x) => x.code));
+  assert.ok(issues.length && issues.every((codes) => codes.includes('plug')), 'cables there warn that the plug does not fit');
+  // Read again, the plan is written as it was.
+  const text = IO.serialize(p);
+  assert.equal(IO.serialize(IO.normalizeProject(JSON.parse(text)).project), text);
 });
 
 test('a device id used before, or the same as another after the cut to 80 characters, is named in a warning', () => {

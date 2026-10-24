@@ -727,7 +727,10 @@ test('port groups are written as patterns and read back', () => {
   assert.deepEqual(groups[3], { name: 'bmc', connector: 'rj45', speedGbps: 1, side: 'rear' }, 'a single port has no first or count');
   assert.deepEqual(groups[4], { name: 'eth', first: 7, count: 1, connector: 'sfp+', speedGbps: 10, side: 'rear' }, 'speed defaults to the connector’s');
   assert.deepEqual(M.groupNames({ name: 'p', count: 3 }), ['p1', 'p2', 'p3'], 'count without first counts from 1');
-  assert.equal(M.cleanPortGroup({ name: 'x', connector: 'toslink' }), null, 'unknown connector');
+  assert.deepEqual(M.cleanPortGroup({ name: 'x', connector: 'toslink' }), { name: 'x', connector: 'toslink', speedGbps: 0, side: 'rear' }, 'a connector this version does not know is kept');
+  assert.equal(M.cleanPortGroup({ name: 'x', connector: 'RJ45' }).connector, 'rj45', 'in any case');
+  assert.equal(M.cleanPortGroup({ name: 'x', connector: 'toslink <b>' }), null, 'no connector id');
+  assert.equal(M.cleanPortGroup({ name: 'x' }), null, 'no connector');
   assert.equal(M.cleanPortGroup({ name: '', connector: 'rj45' }), null, 'a single port needs a name');
   assert.equal(M.cleanPortGroup({ name: 'a|b[1]', connector: 'rj45', side: 'front' }).name, 'ab1', 'characters used by keys and patterns are dropped');
 });
@@ -738,7 +741,7 @@ test('portsProblem names what cleanPorts would drop', () => {
   assert.equal(M.portsProblem([]), null);
   assert.equal(M.portsProblem([sw('swp', 1, 4), sw('swp', 4, 2)]), 'Port swp4 is named twice');
   assert.equal(M.portsProblem([sw('swp', 1, 4), { name: 'swp2', connector: 'sfp+' }]), 'Port swp2 is named twice');
-  assert.match(M.portsProblem([{ name: 'x', connector: 'toslink' }]), /needs a name/);
+  assert.match(M.portsProblem([{ name: 'x', connector: '' }]), /needs a name/);
   assert.equal(M.portsProblem([sw('a', 1, 1000), sw('b', 1, 25)]), 'A device type has at most 1024 ports');
   assert.equal(M.portsProblem(Array.from({ length: 33 }, (_, i) => ({ name: `p${i}`, connector: 'rj45' }))), 'A device type has at most 32 port groups');
 });

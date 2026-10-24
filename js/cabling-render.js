@@ -150,7 +150,7 @@
   /** True for a copper cable (its first end is an RJ45 port), which runs down the left cable manager; the others run down the right. */
   const isCopper = (project, ctx, c) => {
     const p = C.portOf(project, c.a, ctx);
-    return !!p && M.connectorById(p.connector).family === 'rj45';
+    return !!p && (M.connectorById(p.connector) || {}).family === 'rj45';
   };
 
   /** Ids of the cables a selection picks: { kind: 'device', id|deviceId } | { kind: 'port', deviceId, port } | { kind: 'cable', id } | { kind: 'cables', ids }. */

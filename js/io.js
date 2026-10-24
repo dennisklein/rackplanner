@@ -67,17 +67,20 @@
 
   /**
    * Warns about the connectors this version does not know in a catalog
-   * entry (`raw` as in the file, `t` as read): a port group with one is
-   * dropped, a cable type or transceiver gets another.
+   * entry (`raw` as in the file, `t` as read). One with an id like those of
+   * CONNECTORS is kept, and nothing fits it; with another id, a port group
+   * is dropped, and a cable type or transceiver gets another connector.
    */
   function connectorWarnings(kind, raw, t, warnings) {
-    const unknown = (c) => c !== undefined && c !== null && c !== '' && !M.connectorById(c);
+    const unknown = (c) => c !== undefined && c !== null && c !== '' && !M.connectorById(M.connectorId(c));
     const shown = (c) => String(c).slice(0, 40);
     const label = (id) => (M.connectorById(id) || { label: id }).label;
     if (kind === 'device type') {
       (Array.isArray(raw.ports) ? raw.ports : []).forEach((g, i) => {
         const name = isObj(g) && (str(String(g.name == null ? '' : g.name), 32) || `#${i + 1}`);
-        if (name && unknown(g.connector)) warnings.push(`Skipped port group ${name} of ${t.label}: unknown connector “${shown(g.connector)}”.`);
+        if (!name || !unknown(g.connector)) return;
+        if (M.connectorId(g.connector)) warnings.push(`Port group ${name} of ${t.label} has unknown connector “${shown(g.connector)}”: no cable fits it.`);
+        else warnings.push(`Skipped port group ${name} of ${t.label}: unknown connector “${shown(g.connector)}”.`);
       });
       return;
     }
@@ -85,7 +88,9 @@
     for (const k of kind === 'cable type' ? ['connector', 'connectorB'] : ['connector']) {
       // Both plugs of one connector are named once.
       if (k === 'connectorB' && raw.connectorB === raw.connector) continue;
-      if (unknown(raw[k])) warnings.push(`${what} ${t.name} has unknown connector “${shown(raw[k])}” and gets ${label(t[k])}.`);
+      if (!unknown(raw[k])) continue;
+      if (M.connectorId(raw[k])) warnings.push(`${what} ${t.name} has unknown connector “${shown(raw[k])}”: it fits no port.`);
+      else warnings.push(`${what} ${t.name} has unknown connector “${shown(raw[k])}” and gets ${label(t[k])}.`);
     }
   }
 

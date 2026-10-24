@@ -118,6 +118,33 @@ test('the elevation draws every row from both sides in both themes', () => {
   }
 });
 
+test('ports and cable types with a connector this version does not know are drawn', () => {
+  const p = M.createExampleProject();
+  M.typeOf(p, 'switch-osfp').ports[0].connector = 'osfp-xd';
+  M.typeOf(p, 'compute-node').ports[1].connector = 'rj99';
+  p.cableTypes.push(M.cleanCableType({ id: 'ct-xd', name: 'XD DAC', media: 'dac', connector: 'osfp-xd' }));
+  for (const { row } of M.allRows(p)) {
+    for (const side of ['front', 'rear']) {
+      const out = CR.elevation(p, { rowId: row.id, side, theme: 'light', interactive: true });
+      assert.ok(!/NaN|undefined|Infinity/.test(out.body), `${row.id} ${side}`);
+      assertWellFormed(wrap(out), `${row.id} ${side}`);
+    }
+  }
+  const sw = byName(p, 'ib-leaf-b02');
+  const drawn = (side) => count(CR.elevation(p, { rowId: M.locateRack(p, sw.loc.rack).row.id, side, theme: 'dark', interactive: true }).body, `data-port="${sw.id}|p`);
+  assert.equal(drawn('front') + drawn('rear'), 32);
+  assert.ok(p.cables.every((c) => C.describe(p, c)), 'every cable is described');
+  C.billOfMaterials(p);
+  C.fabric(p);
+  // A transceiver named at such a port stays named: a newer version may know the connector for a cage.
+  const c = p.cables.find((x) => x.a.device === sw.id);
+  c.type = null;
+  c.a.transceiver = 'qsfp56-200g-sr4';
+  assert.equal(C.transceiverUse(p, 'qsfp56-200g-sr4'), 1);
+  assert.equal(C.deleteTransceiver(p, 'qsfp56-200g-sr4'), '1 cable end uses this transceiver');
+  assert.equal(c.a.transceiver, 'qsfp56-200g-sr4');
+});
+
 test('reversed switches show their ports at the rear of the rack', () => {
   const p = M.createExampleProject();
   const sw = byName(p, 'sw-mgmt-a01');
