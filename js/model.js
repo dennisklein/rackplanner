@@ -22,7 +22,8 @@
  *                  height (reserved space only), loc: { rack, kind: 'u'|'side', at } }],
  *     cables:   [{ id, type: id|null, network: id|null, label, lengthM: null|m, notes,
  *                  a: { device, port, transceiver? }, b: end | [end|null, …] }],
- *     meta: {}
+ *     meta: { example?: true, … },                    // kept as is, up to 64 KB
+ *     extra?: { … }        // top-level fields of the file this version does not read, kept as is
  *   }
  *
  * A plan has 1 to 6 floors, a floor 1 to 8 rows and a row 1 to 16 racks. Rack

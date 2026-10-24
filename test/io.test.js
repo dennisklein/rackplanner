@@ -164,6 +164,36 @@ test('a plan of a newer version is refused, and a missing or broken version is s
   }
 });
 
+test('meta and top-level fields this version does not read survive a round trip', () => {
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
+  raw.meta = { customer: 'ACME', tags: ['a', { b: 1 }], example: 'yes', note: '\u0000devices' };
+  raw.pdus = [{ id: 'pdu1', rack: 'r1' }];
+  raw.sites = { main: true };
+  raw.clusters = [{ id: 'old' }];
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p.meta, { customer: 'ACME', tags: ['a', { b: 1 }], note: '\u0000devices' }, '`example` only when it is true');
+  assert.deepEqual(p.extra, { pdus: [{ id: 'pdu1', rack: 'r1' }], sites: { main: true } }, 'keys older versions had are not kept');
+  const json = IO.serialize(p);
+  const again = JSON.parse(json);
+  assert.deepEqual(Object.keys(again).slice(-3), ['meta', 'pdus', 'sites']);
+  assert.equal(json.split('\n').filter((l) => l.startsWith('    {"id":"ex-')).length, 65, 'devices still take a line each');
+  assert.deepEqual(JSON.parse(IO.serialize(p, { compact: true })), again);
+  assert.deepEqual(IO.normalizeProject(again).project, p, 'a second round trip changes nothing');
+
+  // Up to 64 KB of it.
+  const big = Object.assign({}, raw, { huge: 'x'.repeat(70000), meta: { a: 'y'.repeat(70000), b: 1 } });
+  const read = IO.normalizeProject(big);
+  assert.deepEqual(read.project.meta, { b: 1 });
+  assert.deepEqual(Object.keys(read.project.extra), ['pdus', 'sites']);
+  assert.deepEqual(read.warnings, [
+    'Dropped the meta field “a”: a plan keeps up to 65536 characters of data it does not read.',
+    'Dropped the field “huge”: a plan keeps up to 65536 characters of data it does not read.',
+  ]);
+  const odd = IO.normalizeProject(JSON.parse('{"version":5,"devices":[],"__proto__":{"polluted":true},"meta":{"__proto__":{"polluted":true}}}')).project;
+  assert.deepEqual([odd.extra, odd.meta, {}.polluted], [undefined, {}, undefined]);
+});
+
 test('plans keep floors, rows, catalogs, fields, reserved space and cabling', () => {
   const ex = M.createExampleProject();
   M.deviceById(ex, 'ex-9').serial = 'SN-1';

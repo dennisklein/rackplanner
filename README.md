@@ -748,7 +748,11 @@ objects `a` and `b`. Besides the nine lists (`floors`, `rackTypes`,
 `deviceTypes`, `cableTypes`, `transceivers`, `views`, `networks`,
 `devices`, `cables`), the top level holds `app` (`"rackplanner"`),
 `version` (5), the plan's `name`, `info` with the site, author and revision
-for the title block, and `meta`. A plan has 1 to 6 floors, 1 to 8 views,
+for the title block, and `meta`. `meta` is an object for other tools and
+later versions: it is kept as it is (`"example": true` marks the example
+plan), and so are top-level keys the app does not read: up to 64 KB for
+`meta` and as much for those keys.
+A plan has 1 to 6 floors, 1 to 8 views,
 1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
 and 20 000 cables. A device type has up to 32 port groups and 1024 ports. The
 notes of a device or cable keep up to 2000 characters, the serial number,

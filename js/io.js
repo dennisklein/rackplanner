@@ -513,6 +513,32 @@
     return out;
   }
 
+  // Top-level keys of the plan file, in any version; the file's others are kept in `extra`.
+  const FILE_KEYS = new Set(['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'racks', 'floors', 'clusters', 'views', 'networks', 'devices', 'cables', 'meta']);
+  const AS_IS_CHARS = 65536;
+
+  /**
+   * The keys of `obj` that `keep(key, value)` accepts, with their values as
+   * plain JSON, up to AS_IS_CHARS characters in all; a key past that is
+   * dropped with a warning that names it as a `what`.
+   */
+  function keepAsIs(obj, keep, what, warnings) {
+    const out = {};
+    let left = AS_IS_CHARS;
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === '__proto__' || !keep(k, v)) continue;
+      const text = JSON.stringify(v);
+      if (text === undefined) continue;
+      if (k.length + text.length > left) {
+        warnings.push(`Dropped the ${what} “${k.slice(0, 40)}”: a plan keeps up to ${AS_IS_CHARS} characters of data it does not read.`);
+        continue;
+      }
+      left -= k.length + text.length;
+      out[k] = JSON.parse(text);
+    }
+    return out;
+  }
+
   // What the app says of a plan that a newer version of it saved.
   const NEWER = 'This plan is from a newer Rackplanner. Reload the page to update.';
 
@@ -609,7 +635,10 @@
       p.devices.push(dev);
     });
     readCables(raw.cables, p, deviceIds, networkIds, warnings);
-    if (isObj(raw.meta) && raw.meta.example === true) p.meta.example = true;
+    // Data for tools and later versions survives a round trip; `example` marks the example plan.
+    if (isObj(raw.meta)) p.meta = keepAsIs(raw.meta, (k, v) => k !== 'example' || v === true, 'meta field', warnings);
+    const extra = keepAsIs(raw, (k) => !FILE_KEYS.has(k), 'field', warnings);
+    if (Object.keys(extra).length) p.extra = extra;
     warnSameNames(p.deviceTypes, 'device types', 'label', warnings);
     warnSameNames(p.rackTypes, 'rack types', 'name', warnings);
     warnSameNames(p.cableTypes, 'cable types', 'name', warnings);
@@ -627,18 +656,15 @@
 
   /** JSON with two-space indentation, except that the items of the lists `flat` names take one line each. */
   function prettyJSON(obj, flat) {
-    const shell = Object.assign({}, obj);
-    for (const k of flat) shell[k] = `\u0000${k}`;
-    let text = JSON.stringify(shell, null, 2);
-    for (const k of flat) {
-      // The marker is the last string of its kind: only meta follows the lists.
-      const mark = JSON.stringify(shell[k]);
-      const at = text.lastIndexOf(mark);
-      const list = obj[k];
-      const body = list.length ? `[\n${list.map((x) => `    ${JSON.stringify(x)}`).join(',\n')}\n  ]` : '[]';
-      text = text.slice(0, at) + body + text.slice(at + mark.length);
+    const lines = [];
+    for (const [k, v] of Object.entries(obj)) {
+      let text;
+      if (flat.includes(k)) text = v.length ? `[\n${v.map((x) => `    ${JSON.stringify(x)}`).join(',\n')}\n  ]` : '[]';
+      // One level in, as JSON.stringify indents it (strings in JSON hold no line breaks).
+      else if (v !== undefined) text = JSON.stringify(v, null, 2).replace(/\n/g, '\n  ');
+      if (text !== undefined) lines.push(`  ${JSON.stringify(k)}: ${text}`);
     }
-    return text;
+    return lines.length ? `{\n${lines.join(',\n')}\n}` : '{}';
   }
 
   /** The plan as JSON; devices and cables take a line each. Empty optional device fields are left out. */
@@ -676,6 +702,8 @@
       cables: project.cables || [],
       meta: project.meta || {},
     };
+    // Top-level fields of the file that this version does not read go back as they came.
+    for (const [k, v] of Object.entries(project.extra || {})) if (!FILE_KEYS.has(k) && k !== '__proto__') plan[k] = v;
     return opts && opts.compact ? JSON.stringify(plan) : prettyJSON(plan, ['devices', 'cables']);
   }
 
