@@ -428,6 +428,19 @@ test('CSVs have a cluster column per view, and read them back into the views of 
   assert.equal(M.clusterOf(merged, x, power.id).name, 'Feed A');
 });
 
+test('a plan whose one view has another name than Default names it in the CSV, and keeps it', () => {
+  const p = M.createEmptyProject();
+  M.renameView(p, 'v1', 'Lustre');
+  p.views[0].clusters.push({ id: 'c1', name: 'MDS', color: '#2f6fdb' });
+  p.devices.push(M.newDevice({ type: 'compute-node', name: 'mds-1', groups: { v1: 'c1' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
+  const csv = IO.toCSV(p);
+  assert.equal(csv.split('\r\n')[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Lustre,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
+  const back = IO.importCSV(csv).project;
+  assert.deepEqual(back.views.map((v) => [v.name, v.clusters.map((c) => c.name)]), [['Lustre', ['MDS']]]);
+  M.renameView(p, 'v1', 'Default');
+  assert.match(IO.toCSV(p), /^Floor,Row,Rack,Position,Height \(U\),Type,Name,Cluster,/);
+});
+
 test('a new plan from view columns only has those views, without an empty Default', () => {
   const csv = ['Rack,Position,Name,Type,Cluster: InfiniBand,Cluster: Lustre', 'Rack A01,U1,cn-1,Compute node,HDR-21,Hebe', 'Rack A01,U3,cn-2,Compute node,HDR-2D,'].join('\n');
   const p = IO.importCSV(csv).project;

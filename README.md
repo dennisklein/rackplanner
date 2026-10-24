@@ -514,8 +514,9 @@ closing the tab asks first.
   plan overview (click the empty sheet to see it).
 - **CSV inventory** of every device with floor, row, rack, position, type,
   cluster, serial number, asset tag, IP address, owner, power, weight, notes
-  and, last, the device's ID. A plan with more than one view has a column per
-  view (`Cluster: Lustre`, `Cluster: InfiniBand`).
+  and, last, the device's ID. A plan with more than one view, or with one
+  view not named Default, has a column per view (`Cluster: Lustre`,
+  `Cluster: InfiniBand`).
 - **Cable schedule (CSV)**: one line per cable of the plan, and per leg of a
   breakout cable, with label, network, type, length and whether it is
   estimated, both ends with floor, row, rack, position, device, port and

@@ -764,9 +764,13 @@
 
   // ------------------------------------------------------------------- CSV
 
-  /** "Cluster" for a plan with one view; "Cluster: <view>" for each view of a plan with more. */
+  /**
+   * "Cluster" for a plan with one view named Default; "Cluster: <view>" for
+   * each view of a plan with more, or with one of another name, which
+   * reading the CSV back into a new plan keeps.
+   */
   function clusterColumns(project) {
-    return project.views.length === 1 ? ['Cluster'] : project.views.map((v) => `Cluster: ${v.name}`);
+    return project.views.length === 1 && project.views[0].name === M.DEFAULT_VIEW_NAME ? ['Cluster'] : project.views.map((v) => `Cluster: ${v.name}`);
   }
   const csvColumns = (project) =>
     ['Floor', 'Row', 'Rack', 'Position', 'Height (U)', 'Type', 'Name']
