@@ -206,14 +206,31 @@
     const usedClusters = new Set();
     const readView = (v, id, name) => {
       const view = { id, name, clusters: [] };
-      const clusters = readGroups(v.clusters, 'cluster', Infinity, view.clusters, (c, cid) => ({ id: cid, name: str(c.name, 60) || M.nextClusterName({ views: [view] }), color: M.normalizeHex(c.color) || M.nextClusterColor({ views: [view] }) }), warnings);
+      // A cluster without a name or color gets the one M.nextClusterName or
+      // M.nextClusterColor gives after the clusters before it, kept track of
+      // here so that a long list reads in one pass.
+      const names = new Set();
+      const colors = new Set();
+      const make = (c, cid) => {
+        const n = view.clusters.length;
+        let name = str(c.name, 60);
+        for (let i = n + 1; !name; i++) if (!names.has(`Cluster ${i}`)) name = `Cluster ${i}`;
+        const color = M.normalizeHex(c.color) || M.CLUSTER_COLORS.find((x) => !colors.has(x)) || M.CLUSTER_COLORS[n % M.CLUSTER_COLORS.length];
+        const out = { id: cid, name, color };
+        names.add(out.name);
+        colors.add(out.color);
+        return out;
+      };
+      const clusters = readGroups(v.clusters, 'cluster', Infinity, view.clusters, make, warnings);
+      // The map lists the clusters in the order of view.clusters.
+      let k = 0;
       for (const [fileId, cid] of clusters) {
+        const c = view.clusters[k++];
         if (usedClusters.has(cid)) {
-          const c = view.clusters.find((x) => x.id === cid);
           c.id = M.uid('c');
           clusters.set(fileId, c.id);
         }
-        usedClusters.add(clusters.get(fileId));
+        usedClusters.add(c.id);
       }
       p.views.push(view);
       return clusters;

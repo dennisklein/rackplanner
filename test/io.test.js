@@ -933,6 +933,26 @@ test('files and cable schedules keep to the catalog, network and leg limits', ()
   assert.deepEqual(IO.importCablesCSV(r, 'Leg,A device,A port,B device,B port\n1/9,ib-leaf-b02,p1,gpu-srv-01,ib0'), { added: 0, warnings: ['Skipped line 2: a breakout cable has at most 8 legs, not 9.'] });
 });
 
+test('clusters without a name or color get those the model gives next, and a long list reads in one pass', () => {
+  const raw = JSON.parse(IO.serialize(M.createEmptyProject(1)));
+  const given = [{ id: 'a' }, { id: 'b', name: 'Cluster 3' }, { id: 'c', color: M.CLUSTER_COLORS[2] }, { id: 'd' }, { id: 'e', name: 'Cluster 2' }, { id: 'f' }];
+  raw.views[0].clusters = given;
+  const { project, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  const view = { id: 'v1', clusters: [] };
+  for (const c of given) {
+    const plan = { views: [view] };
+    view.clusters.push({ id: c.id, name: c.name || M.nextClusterName(plan), color: c.color || M.nextClusterColor(plan) });
+  }
+  assert.deepEqual(project.views[0].clusters, view.clusters);
+
+  raw.views[0].clusters = Array.from({ length: 20000 }, (_, i) => ({ id: `c${i}` }));
+  const t0 = Date.now();
+  const many = IO.normalizeProject(raw).project.views[0].clusters;
+  assert.ok(Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
+  assert.deepEqual([many[19999].name, new Set(many.map((c) => c.name)).size], ['Cluster 20000', 20000]);
+});
+
 test('connectors this version does not know are named in warnings', () => {
   const raw = JSON.parse(IO.serialize(M.createExampleProject()));
   const osfp = raw.deviceTypes.find((t) => t.id === 'switch-osfp');
