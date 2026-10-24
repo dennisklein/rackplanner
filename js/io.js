@@ -463,6 +463,9 @@
     return out;
   }
 
+  // What the app says of a plan that a newer version of it saved.
+  const NEWER = 'This plan is from a newer Rackplanner. Reload the page to update.';
+
   /**
    * Turns untrusted JSON (an imported file or saved state) into a valid
    * project. Anything that doesn't fit is dropped and reported in `warnings`.
@@ -1214,6 +1217,7 @@
   }
 
   return {
+    NEWER,
     normalizeProject,
     serialize,
     csvColumns,

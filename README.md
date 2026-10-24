@@ -466,7 +466,9 @@ save over it keeps the plan as it was saved as a backup (see
 [Data model](#data-model)). A plan open in two tabs shows in each what
 the other saves. When both changed it, the tab that would save over the
 newer copy asks first: **Reload** takes the other tab's plan, **Keep mine
-as a copy** saves its own as a new plan.
+as a copy** saves its own as a new plan. A plan that a newer Rackplanner
+saved, in a tab opened after an update, is never saved over by an older
+one: reloading the page opens it.
 
 All plans share the browser's storage for the site, which usually holds
 about 5 MB; **Plans** shows how much they use and the size of each plan.
@@ -836,7 +838,8 @@ under `rackplanner.plan.<id>`, and an index under `rackplanner.library.v1`
 lists them for **Plans**: `{ "version": 1, "current": "<id>", "plans": [...] }`,
 with an entry per plan (`id`, `name`, `floors`, `racks`, `devices`,
 `created`, `updated`, `rev`, the counted saves, `size`, the characters of the
-plan at its last save, and `source` for a plan from a share link). An index without a `version` is version 1. An index that is
+plan at its last save, `version`, the plan file version it was saved in, and
+`source` for a plan from a share link). An index without a `version` is version 1. An index that is
 missing or cannot be read is made again from the plan keys, with the names
 in the plans; their edit times are lost. An index of a later version is
 never written over, so this version saves no plan there.

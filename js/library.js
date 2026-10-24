@@ -5,10 +5,12 @@
  * Map in the tests): an index with one entry per plan, and each plan under
  * its own key. The plan in use is the index's `current`. Each entry counts
  * the saves of its plan in `rev`, so that a browser tab can tell when
- * another one saved the plan it has open. An index that is lost or cannot
- * be read is made again from the plans in the store. A plan that reading
- * changed, or that an earlier version saved, keeps the text it had under a
- * backup key when it is first saved over.
+ * another one saved the plan it has open, and keeps the schema `version`
+ * it was saved in, so that an older app never saves over a newer plan.
+ * An index that is lost or cannot be read is made again from the plans
+ * in the store. A plan that reading changed, or that an earlier version
+ * saved, keeps the text it had under a backup key when it is first saved
+ * over.
  */
 (function (root, factory) {
   'use strict';
@@ -91,6 +93,19 @@
     }
 
     /**
+     * True when a newer version of the app saved plan `id`, or the index:
+     * this one would drop what it does not know, so it must not save over it.
+     */
+    function newer(id) {
+      if (newerIndex()) return true;
+      const entry = readIndex().plans.find((p) => p.id === id);
+      if (entry && entry.version !== undefined) return Number(entry.version) > M.SCHEMA_VERSION;
+      // An entry from before entries kept the version: the plan has it near its start.
+      const head = /"version"\s*:\s*(-?[\d.]+)/.exec((store.get(planKey(id)) || '').slice(0, 200));
+      return !!head && Number(head[1]) > M.SCHEMA_VERSION;
+    }
+
+    /**
      * Reads plan `id`: { project, warnings, backup }, or null when it cannot
      * be read. `backup` is true when reading changed the plan or it has
      * another version than this one writes: saving over it may lose what it
@@ -119,18 +134,19 @@
 
     /**
      * Saves a plan and updates its index entry, counting up its revision
-     * and noting its `size` in characters. `opts.source` marks where it
-     * came from (a share link). False when the store is full.
+     * and noting its `size` in characters and the schema `version`.
+     * `opts.source` marks where it came from (a share link). False when the
+     * store is full, or when a newer version of the app saved the plan.
      */
     function save(id, project, opts) {
-      if (newerIndex()) return false;
+      if (newer(id)) return false;
       // Re-read the index so edits from another tab aren't lost. Read before the plan is written, so a lost index made again does not list it yet.
       const index = readIndex();
       const text = IO.serialize(project, { compact: true });
       if (!store.set(planKey(id), text)) return false;
       const old = index.plans.find((p) => p.id === id);
       const o = opts || {};
-      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { size: text.length, updated: o.at || Date.now(), rev: ((old && old.rev) || 0) + 1 }, o.source ? { source: o.source } : null);
+      const entry = Object.assign({ id, created: Date.now() }, old, summary(project), { size: text.length, updated: o.at || Date.now(), rev: ((old && old.rev) || 0) + 1, version: M.SCHEMA_VERSION }, o.source ? { source: o.source } : null);
       index.plans = index.plans.filter((p) => p.id !== id).concat([entry]);
       return writeIndex(index);
     }
@@ -227,7 +243,7 @@
       return { id, warnings: loaded.warnings, backup };
     }
 
-    return { list, load, backup, save, usage, rev, uniqueName, add, remove, current, setCurrent, migrate };
+    return { list, load, backup, save, usage, rev, newer, uniqueName, add, remove, current, setCurrent, migrate };
   }
 
   return { create, summary, INDEX_KEY, INDEX_VERSION, LEGACY_KEY, planKey, backupKey };

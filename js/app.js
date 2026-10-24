@@ -281,7 +281,8 @@
     }
     if (!ok && !storageWarned) {
       storageWarned = true;
-      toast('This browser did not save the plan: its storage is full or blocked. Delete plans you no longer need, or export the plan file to keep your work.', { warn: true });
+      // A newer version of the app saved the plan meanwhile: it is not saved over.
+      toast(lib.newer(planId) ? IO.NEWER : 'This browser did not save the plan: its storage is full or blocked. Delete plans you no longer need, or export the plan file to keep your work.', { warn: true });
     } else if (ok) storageWarned = false;
     setUnsaved(!ok);
     return true;
@@ -4929,7 +4930,9 @@
       : `<li class="empty-note">No saved plans. Storage may be blocked in this browser.</li>`;
     const note = $('#plan-unsaved');
     note.hidden = !unsaved;
-    note.textContent = `The latest changes to ${project.name} are not saved: the browser storage is full or blocked. Delete plans you no longer need, or export this plan to keep your work.`;
+    note.textContent = lib.newer(planId)
+      ? `The latest changes to ${project.name} are not saved: a newer version of Rackplanner saved this plan. Export this plan to keep your work, then reload the page.`
+      : `The latest changes to ${project.name} are not saved: the browser storage is full or blocked. Delete plans you no longer need, or export this plan to keep your work.`;
     const full = use.total > STORAGE_CHARS * 0.8;
     const usage = $('#plan-usage');
     usage.textContent = `Rackplanner uses ${sizeText(use.total)} of the browser storage, which holds about 5 MB.` + (full ? ' Delete or export plans before it is full.' : '');
@@ -5058,9 +5061,11 @@
         if (id === planId) commit((p) => void (p.name = name), { label: 'Renamed the plan' });
         else {
           const loaded = lib.load(id);
-          loaded.project.name = name;
-          if (loaded.backup) lib.backup(id);
-          lib.save(id, loaded.project);
+          if (loaded) {
+            loaded.project.name = name;
+            if (loaded.backup) lib.backup(id);
+            lib.save(id, loaded.project);
+          } else toast('That plan could not be read', { warn: true });
         }
         if (name !== typed) toast(`Named it ${name}: another plan is named ${typed}`);
       }

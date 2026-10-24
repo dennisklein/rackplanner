@@ -242,3 +242,33 @@ test('each save notes the size of its plan, and usage counts what the app keeps 
   assert.equal(store.get(Library.backupKey('p-gone')), null);
   assert.equal(store.get(Library.backupKey(id)), 'x'.repeat(10), 'a backup of a plan that is there stays');
 });
+
+test('a plan a newer version saved is never saved over', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const id = lib.add(M.createEmptyProject());
+  assert.equal(lib.list()[0].version, M.SCHEMA_VERSION, 'each entry keeps the version its plan was saved in');
+  assert.equal(lib.newer(id), false);
+  // A newer Rackplanner saves the plan, in another tab.
+  const key = Library.planKey(id);
+  const text = store.get(key).replace(`"version":${M.SCHEMA_VERSION},`, `"version":${M.SCHEMA_VERSION + 1},"pdus":[],`);
+  store.set(key, text);
+  const index = JSON.parse(store.get(Library.INDEX_KEY));
+  index.plans[0].version = M.SCHEMA_VERSION + 1;
+  store.set(Library.INDEX_KEY, JSON.stringify(index));
+  assert.equal(lib.newer(id), true);
+  assert.equal(lib.save(id, M.createExampleProject()), false);
+  assert.equal(store.get(key), text, 'the newer plan stays as it was');
+  // An entry from before entries kept the version: the plan says it.
+  delete index.plans[0].version;
+  store.set(Library.INDEX_KEY, JSON.stringify(index));
+  assert.equal(lib.newer(id), true);
+  assert.equal(lib.save(id, M.createExampleProject()), false);
+  assert.equal(store.get(key), text);
+  // An index a newer version wrote refuses every save, and says so.
+  const other = lib.add(M.createEmptyProject());
+  assert.equal(lib.newer(other), false);
+  store.set(Library.INDEX_KEY, JSON.stringify(Object.assign(JSON.parse(store.get(Library.INDEX_KEY)), { version: Library.INDEX_VERSION + 1 })));
+  assert.equal(lib.newer(other), true);
+  assert.equal(lib.save(other, M.createExampleProject()), false);
+});
