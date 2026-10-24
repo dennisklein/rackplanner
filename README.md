@@ -860,8 +860,8 @@ floor names, row names within their floor and rack names within their row.
 Something new whose name is taken gets a number (`Spare 2`), a copy
 `(copy)`, and so does a row or rack moved to a floor or row where its name
 is taken; a rename to a taken name is refused. Opening a plan file gives
-a view, cable type or transceiver whose name an earlier one has, as
-written, a number; any other name used twice stays as it is, with a warning
+a view, cable type or transceiver whose name an earlier one has, in any
+case, a number; any other name used twice stays as it is, with a warning
 that names it.
 
 What a change does to the rest of the plan:

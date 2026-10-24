@@ -45,22 +45,24 @@
   }
 
   /**
-   * Names tell cable types and transceivers apart in cable schedules: a
-   * name used before gets a number no other entry has.
+   * Names tell cable types, transceivers and views apart in CSV files, in
+   * any case: a name used before, in any case, gets a number no other
+   * entry has.
    */
   function uniqueNames(list, kind, warnings) {
-    const used = new Set(list.map((t) => t.name));
+    const key = (name) => name.toLowerCase();
+    const used = new Set(list.map((t) => key(t.name)));
     const seen = new Set();
     for (const t of list) {
-      if (seen.has(t.name)) {
+      if (seen.has(key(t.name))) {
         const base = t.name.slice(0, 56);
         let i = 2;
-        while (used.has(`${base} ${i}`)) i++;
+        while (used.has(key(`${base} ${i}`))) i++;
         warnings.push(`Renamed the ${kind} ${t.name} to ${base} ${i}: the name is used twice.`);
         t.name = `${base} ${i}`;
-        used.add(t.name);
+        used.add(key(t.name));
       }
-      seen.add(t.name);
+      seen.add(key(t.name));
     }
     return list;
   }
@@ -95,9 +97,9 @@
   }
 
   /**
-   * CSV files find floors, rows, racks, views, clusters, networks and
-   * catalog types by name, in any case. The app keeps these names apart;
-   * a plan that has one twice keeps it, with a warning.
+   * CSV files find floors, rows, racks, clusters, networks and device and
+   * rack types by name, in any case. The app keeps these names apart; a
+   * plan that has one twice keeps it, with a warning.
    */
   function warnSameNames(list, what, key, warnings) {
     const seen = new Set();
@@ -697,14 +699,11 @@
     if (Object.keys(extra).length) p.extra = extra;
     warnSameNames(p.deviceTypes, 'device types', 'label', warnings);
     warnSameNames(p.rackTypes, 'rack types', 'name', warnings);
-    warnSameNames(p.cableTypes, 'cable types', 'name', warnings);
-    warnSameNames(p.transceivers, 'transceivers', 'name', warnings);
     warnSameNames(p.floors, 'floors', 'name', warnings);
     for (const f of p.floors) {
       warnSameNames(f.rows, `rows on ${f.name}`, 'name', warnings);
       for (const r of f.rows) warnSameNames(r.racks, `racks in ${f.name} · ${r.name}`, 'name', warnings);
     }
-    warnSameNames(p.views, 'views', 'name', warnings);
     for (const v of p.views) warnSameNames(v.clusters, `clusters in the view ${v.name}`, 'name', warnings);
     warnSameNames(p.networks, 'networks', 'name', warnings);
     return { project: p, warnings };

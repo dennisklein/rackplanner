@@ -314,7 +314,7 @@ test('version 5 files keep their views; ids and names that clash are made unique
       { id: 'n2', type: 'compute-node', name: 'cn-2', groups: 'junk', loc: { rack: 'r1', kind: 'u', at: 3 } },
     ],
   });
-  assert.deepEqual(p.views.map((v) => [v.id, v.name]), [['a', 'Lustre'], ['b', 'lustre'], ['v1', 'Odd']]);
+  assert.deepEqual(p.views.map((v) => [v.id, v.name]), [['a', 'Lustre'], ['b', 'lustre 2'], ['v1', 'Odd']], 'a name in another case is the same name');
   const [mds, hdr] = [p.views[0].clusters[0], p.views[1].clusters[0]];
   assert.equal(mds.id, 'c1');
   assert.notEqual(hdr.id, 'c1', 'a cluster id used in an earlier view gets a new one');
@@ -323,9 +323,9 @@ test('version 5 files keep their views; ids and names that clash are made unique
   assert.deepEqual(warnings, [
     'Skipped view Again: its id “a” is used twice.',
     'Skipped view No id: it has no id.',
+    'Renamed the view lustre to lustre 2: the name is used twice.',
     'cn-1 refers to unknown view “zz”; its cluster there is dropped.',
     'cn-1 refers to unknown cluster “nope” and is left unassigned in that view.',
-    'Two views are named lustre: rename one, as CSV files tell them apart by name.',
   ]);
 
   const many = IO.normalizeProject({ version: 5, views: Array.from({ length: 10 }, (_, i) => ({ id: `w${i}`, name: 'Same' })), devices: [] });
@@ -904,6 +904,11 @@ test('a name used twice in a file numbers the second copy past every name the fi
   const { project, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(project.cableTypes.map((t) => [t.id, t.name]), [['a', 'X'], ['b', 'X 3'], ['c', 'X 2']]);
   assert.deepEqual(warnings, ['Renamed the cable type X to X 3: the name is used twice.']);
+  // In any case, as cable schedules find them.
+  raw.transceivers = [{ id: 'a', name: 'SR4' }, { id: 'b', name: 'sr4' }];
+  const again = IO.normalizeProject(raw);
+  assert.deepEqual(again.project.transceivers.map((t) => t.name), ['SR4', 'sr4 2']);
+  assert.ok(again.warnings.includes('Renamed the transceiver sr4 to sr4 2: the name is used twice.'));
 });
 
 test('catalog names given twice keep within 60 characters and read back unchanged', () => {
