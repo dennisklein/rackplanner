@@ -833,7 +833,8 @@ What a change does to the rest of the plan:
 | Deleting a device type | Deletes its devices and their cables. |
 | Deleting a device | Deletes its cables. A breakout cable only loses its legs there, unless it has none left or loses its head. |
 | Deleting a rack type | Refused while a rack uses it. The last rack type always stays. |
-| Deleting a cable type or transceiver | Refused while a cable names it. |
+| Deleting a cable type or transceiver | Refused while a cable names it. A transceiver named at an end where it cannot apply (on a cable of a type that is not fiber, or at a port that is not a cage) does not count, and the end forgets it. |
+| Changing a cable to a type that is not fiber | The transceivers chosen at its ends go. |
 | Deleting a cluster | Its devices stay where they are, without a cluster in its view. |
 | Deleting a view | Its clusters go with it; devices, cables and networks stay. A plan keeps at least one view. |
 | Deleting a network | Its cables stay, without a network. |

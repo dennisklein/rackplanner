@@ -818,6 +818,32 @@ test('the fabric checks that every leaf reaches every core switch, said for one 
   assert.equal(C.rangeName(['ceph-01']), 'ceph-01');
 });
 
+test('a transceiver chosen at an end goes when the cable changes to a type that is not fiber', () => {
+  const p = M.createExampleProject();
+  const [c1, c2, c3] = p.cables.filter((c) => c.type === 'mpo-om4');
+  const sr4 = (e) => Object.assign({}, e, { transceiver: 'qsfp56-200g-sr4' });
+  const optics = (c) => M.cableEnds(C.cableById(p, c.id)).map((x) => x.end.transceiver || null);
+  for (const c of [c1, c2, c3]) assert.equal(C.updateCable(p, c.id, { a: sr4(c.a), b: sr4(c.b) }), null);
+  assert.equal(C.transceiverUse(p, 'qsfp56-200g-sr4'), 6);
+  assert.equal(C.updateCable(p, c1.id, { type: 'aoc-qsfp56' }), null);
+  assert.deepEqual(optics(c1), [null, null], 'an AOC has its optics built in');
+  assert.equal(C.updateCable(p, c1.id, { type: 'mpo-om4' }), null);
+  assert.deepEqual(optics(c1), [null, null], 'and the choice does not come back with fiber');
+  assert.deepEqual(C.updateCables(p, [c2.id], { type: 'dac-qsfp56' }), []);
+  assert.deepEqual(optics(c2), [null, null], 'updateCables does the same');
+  assert.equal(C.updateCable(p, c3.id, { notes: 'spare' }), null);
+  assert.deepEqual(optics(c3), ['qsfp56-200g-sr4', 'qsfp56-200g-sr4'], 'a fiber cable keeps its choice');
+  assert.equal(C.deleteTransceiver(p, 'qsfp56-200g-sr4'), '2 cable ends use this transceiver');
+
+  // A plan saved before keeps such a choice where it no longer applies: it does not block the delete, which clears it.
+  const stale = C.cableById(p, c3.id);
+  stale.type = 'aoc-qsfp56';
+  assert.equal(C.transceiverUse(p, 'qsfp56-200g-sr4'), 0);
+  assert.equal(C.deleteTransceiver(p, 'qsfp56-200g-sr4'), null);
+  assert.deepEqual(optics(c3), [null, null]);
+  assert.equal(M.cableProblem(p, stale), null, 'no end names a transceiver the catalog lost');
+});
+
 test('cable types, transceivers and networks are kept in catalogs', () => {
   const p = M.createExampleProject();
   const t = C.addCableType(p, { name: 'QSFP56 DAC', media: 'dac', connector: 'qsfp56', maxM: 2, lengthsM: [2, 1, 1, 'x', -3] });

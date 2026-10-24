@@ -223,11 +223,32 @@
     return moveIn(project.cableTypes, id, toIndex);
   }
 
-  /** Cable ends that name transceiver `id`. */
+  /**
+   * The cable ends that name transceiver `id`: `used` where the choice can
+   * apply (a cable of a fiber type, or one that picks its type, at a cage),
+   * `stale` where it cannot, such as the ends of a cable changed to a DAC
+   * in a plan saved before such a change dropped the choice.
+   */
+  function transceiverEnds(project, id) {
+    const out = { used: [], stale: [] };
+    let ctx = null;
+    for (const c of project.cables) {
+      const ends = M.cableEnds(c).filter((x) => x.end.transceiver === id);
+      if (!ends.length) continue;
+      ctx = ctx || context(project);
+      const type = c.type ? ctx.cableTypes.get(c.type) : null;
+      const fiber = !type || mediaOf(type).kind === 'fiber';
+      for (const x of ends) {
+        const port = endPort(ctx, x.end);
+        out[fiber && (!port || M.connectorById(port.connector).cage) ? 'used' : 'stale'].push(x.end);
+      }
+    }
+    return out;
+  }
+
+  /** Cable ends that name transceiver `id` where it applies (see transceiverEnds). */
   function transceiverUse(project, id) {
-    let n = 0;
-    for (const c of project.cables) for (const x of M.cableEnds(c)) if (x.end.transceiver === id) n++;
-    return n;
+    return transceiverEnds(project, id).used.length;
   }
 
   function addTransceiver(project, template) {
@@ -249,10 +270,15 @@
     return null;
   }
 
-  /** Removes a transceiver no cable end names; returns an error message otherwise. */
+  /**
+   * Removes a transceiver no cable end uses; returns an error message
+   * otherwise. Ends that name it where it does not apply forget it.
+   */
   function deleteTransceiver(project, id) {
-    const n = transceiverUse(project, id);
+    const ends = transceiverEnds(project, id);
+    const n = ends.used.length;
     if (n) return `${n} cable end${n === 1 ? ' uses' : 's use'} this transceiver`;
+    for (const e of ends.stale) delete e.transceiver;
     project.transceivers = project.transceivers.filter((t) => t.id !== id);
     return null;
   }
@@ -417,11 +443,32 @@
     return { check, add };
   }
 
-  /** Changes a cable's ends, type, network, label, length or notes; refuses (with a message) what connect would. */
+  /**
+   * A change of cable `props` without the transceivers chosen at its ends
+   * when it names a cable type that is not fiber: they no longer apply,
+   * and would come back with a fiber type.
+   */
+  function dropOptics(project, props) {
+    const type = M.cableTypeById(project, props.type);
+    if (!type || mediaOf(type).kind === 'fiber') return props;
+    const bare = (e) => {
+      if (!e || !e.transceiver) return e;
+      const out = Object.assign({}, e);
+      delete out.transceiver;
+      return out;
+    };
+    return Object.assign({}, props, { a: bare(props.a), b: Array.isArray(props.b) ? props.b.map(bare) : bare(props.b) });
+  }
+
+  /**
+   * Changes a cable's ends, type, network, label, length or notes; refuses
+   * (with a message) what connect would. A type that is not fiber drops the
+   * transceivers chosen at its ends.
+   */
   function updateCable(project, id, changes) {
     const i = project.cables.findIndex((c) => c.id === id);
     if (i < 0) return 'Unknown cable';
-    const merged = Object.assign({}, project.cables[i], changes);
+    const merged = dropOptics(project, Object.assign({}, project.cables[i], changes));
     const error = checkConnect(project, merged, id);
     if (error) return error;
     project.cables[i] = finishCable(project, merged, id);
@@ -431,9 +478,10 @@
   /**
    * updateCable for many cables, reading the plan's ports once: cable `id`
    * of `ids` gets `changes` (an object, or a function of the cable and its
-   * place in `ids` that returns one). Each change is checked as updateCable
-   * checks it; a refused one leaves its cable as it was and the others go
-   * on. Returns [{ id, error }] for the cables refused ([] when all changed).
+   * place in `ids` that returns one). Each change is checked and made as
+   * updateCable does it; a refused one leaves its cable as it was and the
+   * others go on. Returns [{ id, error }] for the cables refused ([] when
+   * all changed).
    */
   function updateCables(project, ids, changes) {
     const ctx = M.cableContext(project);
@@ -443,7 +491,7 @@
       const i = at.get(id);
       if (i === undefined) return void refused.push({ id, error: 'Unknown cable' });
       const cur = project.cables[i];
-      const merged = Object.assign({}, cur, typeof changes === 'function' ? changes(cur, k) : changes);
+      const merged = dropOptics(project, Object.assign({}, cur, typeof changes === 'function' ? changes(cur, k) : changes));
       const error = M.cableProblem(project, draftCable(merged, id), ctx);
       if (error) return void refused.push({ id, error });
       const next = finishCable(project, merged, id);
