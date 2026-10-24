@@ -90,6 +90,24 @@
   }
 
   /**
+   * CSV files find floors, rows, racks, views, clusters, networks and
+   * catalog types by name, in any case. The app keeps these names apart;
+   * a plan that has one twice keeps it, with a warning.
+   */
+  function warnSameNames(list, what, key, warnings) {
+    const seen = new Set();
+    const told = new Set();
+    for (const x of list) {
+      const k = String(x[key]).toLowerCase();
+      if (seen.has(k) && !told.has(k)) {
+        warnings.push(`Two ${what} are named ${x[key]}: rename one, as CSV files tell them apart by name.`);
+        told.add(k);
+      }
+      seen.add(k);
+    }
+  }
+
+  /**
    * Builds floors, rows and racks. Returns a map from the file's rack ids to
    * the plan's. A file may have a flat list of racks instead of floors, as
    * versions 1 and 2 did, and hand-made files of any version may: it
@@ -592,6 +610,18 @@
     });
     readCables(raw.cables, p, deviceIds, networkIds, warnings);
     if (isObj(raw.meta) && raw.meta.example === true) p.meta.example = true;
+    warnSameNames(p.deviceTypes, 'device types', 'label', warnings);
+    warnSameNames(p.rackTypes, 'rack types', 'name', warnings);
+    warnSameNames(p.cableTypes, 'cable types', 'name', warnings);
+    warnSameNames(p.transceivers, 'transceivers', 'name', warnings);
+    warnSameNames(p.floors, 'floors', 'name', warnings);
+    for (const f of p.floors) {
+      warnSameNames(f.rows, `rows on ${f.name}`, 'name', warnings);
+      for (const r of f.rows) warnSameNames(r.racks, `racks in ${f.name} · ${r.name}`, 'name', warnings);
+    }
+    warnSameNames(p.views, 'views', 'name', warnings);
+    for (const v of p.views) warnSameNames(v.clusters, `clusters in the view ${v.name}`, 'name', warnings);
+    warnSameNames(p.networks, 'networks', 'name', warnings);
     return { project: p, warnings };
   }
 

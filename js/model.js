@@ -77,6 +77,7 @@
     views: 8,
     cables: 20000,
     legs: 8, // of a breakout cable
+    name: 60, // characters of a floor, row, rack, view, cluster, network or catalog name
   };
   const DEFAULT_VIEW_NAME = 'Default';
   const RACK_UNITS = 47; // height of the default rack type
@@ -333,6 +334,34 @@
   /** Smallest `${prefix}${k}` not in `used`. */
   function nextId(prefix, used) {
     return firstFree(used, 1, (k) => prefix + k);
+  }
+
+  // The CSVs find floors, rows, racks, views, clusters, networks and catalog
+  // types by name in any case, so within its list each keeps a name of its own.
+  const nameKey = (name) => String(name == null ? '' : name).trim().toLowerCase();
+  /** True when an item of `list` other than the one with id `ignoreId` has `name` in any case; `key` is the name's property (default name). */
+  function nameTaken(list, name, ignoreId, key) {
+    const k = nameKey(name);
+    return list.some((x) => (ignoreId === undefined || x.id !== ignoreId) && nameKey(x[key || 'name']) === k);
+  }
+  /** The first of make(start), make(start + 1), … that no item of `list` has as its name, in any case. */
+  function firstFreeName(list, start, make, key) {
+    const used = new Set(list.map((x) => nameKey(x[key || 'name'])));
+    return firstFree({ has: (n) => used.has(nameKey(n)) }, start, make);
+  }
+  /** `base`, or with a number when an item of `list` has it in any case: "Compute node 2". The base is cut so that the name keeps within LIMITS.name. */
+  function uniqueLabel(list, key, base) {
+    if (!nameTaken(list, base, undefined, key)) return base;
+    const head = base.slice(0, LIMITS.name - 4).trim();
+    return firstFreeName(list, 2, (i) => `${head} ${i}`, key);
+  }
+  /** Name for a copy of `name` in `list`: "Lustre (copy)", then "Lustre (copy 2)"; no item of `list` has it, in any case. */
+  function copyName(list, name) {
+    const base = name.replace(/ \(copy(?: \d+)?\)$/, '');
+    return firstFreeName(list, 1, (i) => {
+      const tail = ` (copy${i > 1 ? ' ' + i : ''})`;
+      return base.slice(0, LIMITS.name - tail.length).trim() + tail;
+    });
   }
 
   // Color vision deficiencies (Machado et al. 2009, full severity), on linear RGB.
@@ -851,24 +880,27 @@
     return type.spec ? `${type.height}U · ${type.spec}` : `${type.height}U`;
   }
 
-  function uniqueLabel(list, key, base) {
-    const used = new Set(list.map((x) => x[key]));
-    return used.has(base) ? firstFree(used, 2, (i) => `${base} ${i}`) : base;
-  }
-
   /** Adds a device type from `template`; null when the catalog is full. */
   function addDeviceType(project, template) {
     if (project.deviceTypes.length >= LIMITS.deviceTypes) return null;
     const t = cleanDeviceType(template);
     t.id = nextId('t', new Set(project.deviceTypes.map((x) => x.id)));
-    t.label = uniqueLabel(project.deviceTypes, 'label', t.label);
+    // Numbered past a label in the same case only, as a CSV import has
+    // always named the generic types it adds; updateDeviceType refuses a
+    // label another type has in any case.
+    const used = new Set(project.deviceTypes.map((x) => x.label));
+    if (used.has(t.label)) {
+      const head = t.label.slice(0, LIMITS.name - 4).trim();
+      t.label = firstFree(used, 2, (i) => `${head} ${i}`);
+    }
     project.deviceTypes.push(t);
     return t;
   }
 
   /**
    * Changes a device type. Returns an error message and leaves the plan
-   * unchanged when placed devices would no longer fit. When its ports
+   * unchanged when placed devices would no longer fit, or when another
+   * type has its label. When its ports
    * change, cables keep their place in each port group (see remapPorts).
    */
   function updateDeviceType(project, id, changes) {
@@ -877,6 +909,7 @@
     const before = project.deviceTypes[i];
     const next = cleanDeviceType(Object.assign({}, before, changes));
     next.id = id;
+    if (next.label !== before.label && nameTaken(project.deviceTypes, next.label, id, 'label')) return `Another device type is named ${next.label}`;
     project.deviceTypes[i] = next;
     if (next.height !== before.height) {
       const racks = new Set(project.devices.filter((d) => d.type === id).map((d) => d.loc.rack));
@@ -931,13 +964,14 @@
     return t;
   }
 
-  /** Changes a rack type; refuses (with a message) when devices would not fit. */
+  /** Changes a rack type; refuses (with a message) when devices would not fit, or when another type has its name. */
   function updateRackType(project, id, changes) {
     const i = project.rackTypes.findIndex((t) => t.id === id);
     if (i < 0) return 'Unknown rack type';
     const before = project.rackTypes[i];
     const next = cleanRackType(Object.assign({}, before, changes));
     next.id = id;
+    if (next.name !== before.name && nameTaken(project.rackTypes, next.name, id)) return `Another rack type is named ${next.name}`;
     project.rackTypes[i] = next;
     const racks = new Set(allRacks(project).filter((r) => r.rack.type === id).map((r) => r.rack.id));
     const problem = layoutProblem(project, racks);
@@ -1048,11 +1082,12 @@
 
   /**
    * Inserts a floor without rows at `index` (default: the end), named `name`
-   * or Floor N. Null when the plan has six floors.
+   * or Floor N, with a number when another floor has that name. Null when
+   * the plan has six floors.
    */
   function insertFloor(project, name, index) {
     if (project.floors.length >= LIMITS.floors) return null;
-    const floor = { id: nextId('f', structureIds(project)), name: str(name, 60) || nextFloorName(project), rowPitchM: DEFAULT_ROW_PITCH_M, rows: [] };
+    const floor = { id: nextId('f', structureIds(project)), name: uniqueLabel(project.floors, 'name', str(name, LIMITS.name) || nextFloorName(project)), rowPitchM: DEFAULT_ROW_PITCH_M, rows: [] };
     project.floors.splice(index == null ? project.floors.length : index, 0, floor);
     return floor;
   }
@@ -1060,7 +1095,7 @@
   /** Inserts a row without racks into `floor`, like insertFloor. Null when the floor has eight rows. */
   function insertRow(project, floor, name, index) {
     if (floor.rows.length >= LIMITS.rows) return null;
-    const row = { id: nextId('row', structureIds(project)), name: str(name, 60) || nextRowName(floor), racks: [] };
+    const row = { id: nextId('row', structureIds(project)), name: uniqueLabel(floor.rows, 'name', str(name, LIMITS.name) || nextRowName(floor)), racks: [] };
     floor.rows.splice(index == null ? floor.rows.length : index, 0, row);
     return row;
   }
@@ -1085,9 +1120,10 @@
   }
 
   /**
-   * Adds an empty rack to a row at `opts.index` (default: the end). It gets
-   * `opts.type`, else the type of its neighbour, else the first rack type of
-   * the catalog. Null when the row already has sixteen racks.
+   * Adds an empty rack to a row at `opts.index` (default: the end), named
+   * `opts.name` like insertFloor or by its place. It gets `opts.type`, else
+   * the type of its neighbour, else the first rack type of the catalog.
+   * Null when the row already has sixteen racks.
    */
   function addRack(project, rowId, opts) {
     const o = opts || {};
@@ -1099,7 +1135,7 @@
       (o.type && rackTypeById(project, o.type) && o.type) ||
       (neighbour && rackTypeById(project, neighbour.type) && neighbour.type) ||
       project.rackTypes[0].id;
-    const rack = { id: nextId('r', structureIds(project)), name: str(o.name, 60) || nextRackName(project, rowId), type, trayM: null, slackM: null };
+    const rack = { id: nextId('r', structureIds(project)), name: uniqueLabel(row.racks, 'name', str(o.name, LIMITS.name) || nextRackName(project, rowId)), type, trayM: null, slackM: null };
     row.racks.splice(index, 0, rack);
     return rack;
   }
@@ -1121,12 +1157,18 @@
 
   /**
    * Moves a rack, with its devices, to position `toIndex` of row `toRowId`
-   * (the same row reorders it). A row keeps between 1 and 16 racks.
+   * (the same row reorders it). A row keeps between 1 and 16 racks. In
+   * another row, a rack whose name a rack there has, in any case, gets a
+   * number.
    */
   function moveRack(project, rackId, toRowId, toIndex) {
     const pos = locateRack(project, rackId);
     const target = rowById(project, toRowId);
-    return !!pos && !!target && moveItem(pos.row.racks, pos.index, target.racks, toIndex, LIMITS.racks);
+    if (!pos || !target) return false;
+    const name = target === pos.row ? pos.rack.name : uniqueLabel(target.racks, 'name', pos.rack.name);
+    if (!moveItem(pos.row.racks, pos.index, target.racks, toIndex, LIMITS.racks)) return false;
+    pos.rack.name = name;
+    return true;
   }
 
   /** Renames the racks of a row by position: Rack A01, Rack A02, … */
@@ -1162,11 +1204,19 @@
     return true;
   }
 
-  /** Moves a row to position `toIndex` on floor `toFloorId`. A floor keeps between 1 and 8 rows. */
+  /**
+   * Moves a row to position `toIndex` on floor `toFloorId`. A floor keeps
+   * between 1 and 8 rows. On another floor, a row whose name a row there
+   * has, in any case, gets a number.
+   */
   function moveRow(project, rowId, toFloorId, toIndex) {
     const pos = locateRow(project, rowId);
     const target = floorById(project, toFloorId);
-    return !!pos && !!target && moveItem(pos.floor.rows, pos.rowIndex, target.rows, toIndex, LIMITS.rows);
+    if (!pos || !target) return false;
+    const name = target === pos.floor ? pos.row.name : uniqueLabel(target.rows, 'name', pos.row.name);
+    if (!moveItem(pos.floor.rows, pos.rowIndex, target.rows, toIndex, LIMITS.rows)) return false;
+    pos.row.name = name;
+    return true;
   }
 
   /** Removes a floor with everything on it. A plan keeps at least one floor. */
@@ -1181,6 +1231,28 @@
 
   function moveFloor(project, floorId, toIndex) {
     return moveItem(project.floors, project.floors.findIndex((f) => f.id === floorId), project.floors, toIndex);
+  }
+
+  /** Gives `item` of `list` the name `name`; false (and no change) for an empty name or one another item has. */
+  function renameIn(list, item, name) {
+    const n = str(name, LIMITS.name);
+    if (!item || !n || (n !== item.name && nameTaken(list, n, item.id))) return false;
+    item.name = n;
+    return true;
+  }
+  /** Renames a floor; false for an empty name or one another floor has, in any case. */
+  function renameFloor(project, id, name) {
+    return renameIn(project.floors, floorById(project, id), name);
+  }
+  /** Renames a row; false for an empty name or one another row of its floor has. */
+  function renameRow(project, id, name) {
+    const pos = locateRow(project, id);
+    return !!pos && renameIn(pos.floor.rows, pos.row, name);
+  }
+  /** Renames a rack; false for an empty name or one another rack of its row has. */
+  function renameRack(project, id, name) {
+    const pos = locateRack(project, id);
+    return !!pos && renameIn(pos.row.racks, pos.rack, name);
   }
 
   /** Rack ids in a rack, row or floor (whichever id matches). */
@@ -1826,7 +1898,7 @@
     const i = project.floors.findIndex((f) => f.id === floorId);
     if (i < 0) return null;
     const source = project.floors[i];
-    const floor = insertFloor(project, `${source.name} (copy)`, i + 1);
+    const floor = insertFloor(project, copyName(project.floors, source.name), i + 1);
     if (!floor) return null;
     if (source.rowPitchM) floor.rowPitchM = source.rowPitchM;
     // Rows keep their names on the copied floor, and racks are named after them.
@@ -2079,6 +2151,32 @@
     return firstFree(namesOf(list), list.length + 1, (i) => `Cluster ${i}`);
   }
 
+  /**
+   * Adds a cluster to view `viewId`: `props.id` or a new one, `props.name`
+   * or Cluster N (with a number when another cluster of the view has that
+   * name), `props.color` or a free one.
+   */
+  function addCluster(project, viewId, props) {
+    const o = props || {};
+    const list = clustersOf(project, viewId);
+    const c = { id: o.id || uid('c'), name: uniqueLabel(list, 'name', str(o.name, LIMITS.name) || nextClusterName(project, viewId)), color: normalizeHex(o.color) || nextClusterColor(project, viewId) };
+    list.push(c);
+    return c;
+  }
+
+  /** Changes a cluster's name or color; an error message, and no change, when another cluster of its view has the name. */
+  function updateCluster(project, id, changes) {
+    const v = viewOfCluster(project, id);
+    if (!v) return 'Unknown cluster';
+    const c = v.clusters.find((x) => x.id === id);
+    const name = changes.name === undefined ? c.name : str(changes.name, LIMITS.name);
+    if (!name) return 'A cluster needs a name';
+    if (name !== c.name && nameTaken(v.clusters, name, id)) return `Another cluster in ${v.name} is named ${name}`;
+    c.name = name;
+    if (changes.color !== undefined) c.color = normalizeHex(changes.color) || c.color;
+    return null;
+  }
+
   /** Removes a cluster from its view; its devices are unassigned there. */
   function removeCluster(project, id) {
     const v = viewOfCluster(project, id);
@@ -2096,25 +2194,18 @@
 
   /** Name for a copy of view `id`: "Lustre (copy)", then "Lustre (copy 2)"; no other view has it, in any case. */
   function copyViewName(project, id) {
-    const base = viewOf(project, id).name.replace(/ \(copy(?: \d+)?\)$/, '');
-    const used = new Set(project.views.map((v) => v.name.toLowerCase()));
-    const name = (i) => {
-      const tail = ` (copy${i > 1 ? ' ' + i : ''})`;
-      return base.slice(0, 60 - tail.length).trim() + tail;
-    };
-    let i = 1;
-    while (used.has(name(i).toLowerCase())) i++;
-    return name(i);
+    return copyName(project.views, viewOf(project, id).name);
   }
 
   /**
-   * Adds a view at the end, named `name` or View N. With `fromViewId`, the
+   * Adds a view at the end, named `name` or View N, with a number when
+   * another view has that name in any case. With `fromViewId`, the
    * new view starts as a copy of that view: its clusters (with new ids) and
    * every device's cluster in it. Null when the plan has eight views.
    */
   function addView(project, name, fromViewId) {
     if (project.views.length >= LIMITS.views) return null;
-    const view = { id: nextId('v', new Set(project.views.map((v) => v.id))), name: str(name, 60) || nextViewName(project), clusters: [] };
+    const view = { id: nextId('v', new Set(project.views.map((v) => v.id))), name: uniqueLabel(project.views, 'name', str(name, LIMITS.name) || nextViewName(project)), clusters: [] };
     const from = fromViewId ? viewById(project, fromViewId) : null;
     if (from) {
       const ids = new Map();
@@ -2132,12 +2223,9 @@
     return view;
   }
 
-  /** Renames a view; an empty name keeps the old one. */
+  /** Renames a view; false, and the old name kept, for an empty name or one another view has, in any case. */
   function renameView(project, id, name) {
-    const v = viewById(project, id);
-    const n = str(name, 60);
-    if (v && n) v.name = n;
-    return !!(v && n);
+    return renameIn(project.views, viewById(project, id), name);
   }
 
   /** Removes a view with its clusters. A plan keeps at least one view. */
@@ -2732,6 +2820,8 @@
     letters,
     uid,
     nextId,
+    nameTaken,
+    uniqueLabel,
     structureIds,
     normalizeHex,
     colorDistance,
@@ -2810,6 +2900,9 @@
     copyLayout,
     isPristineExample,
     insertFloor,
+    renameFloor,
+    renameRow,
+    renameRack,
     insertRow,
     addFloor,
     addRow,
@@ -2862,6 +2955,8 @@
     nextFreeName,
     nextClusterColor,
     nextClusterName,
+    addCluster,
+    updateCluster,
     removeCluster,
     nextViewName,
     copyViewName,

@@ -518,6 +518,49 @@ test('device notes keep to the length a saved plan keeps', async ({ page }) => {
   expect(kept).toBe(2000);
 });
 
+test('a name another rack, row, floor or cluster has is refused, in any case', async ({ page }) => {
+  // A rack keeps its name; the toast says why.
+  await page.locator('.rack-head[data-rack="r2"]').click();
+  await page.fill('#insp-rack-name', 'rack a01');
+  await page.press('#insp-rack-name', 'Enter');
+  await expect(page.locator('.toast.warn')).toContainText('Another rack in Row A is named rack a01.');
+  await expect(page.locator('#insp-rack-name')).toHaveValue('Rack A02');
+  expect(await page.evaluate(() => window.RP.model.rackById(window.RP.app.project(), 'r2').name)).toBe('Rack A02');
+  // Its own name in another case is no clash.
+  await page.fill('#insp-rack-name', 'RACK A02');
+  await page.press('#insp-rack-name', 'Enter');
+  await expect(page.locator('#insp-rack-name')).toHaveValue('RACK A02');
+  await page.locator('.ftab[aria-pressed="true"]').click();
+  const other = await page.evaluate(() => window.RP.app.project().floors[1].name);
+  await page.fill('#insp-floor-name', other);
+  await page.press('#insp-floor-name', 'Enter');
+  await expect(page.locator('#insp-floor-name')).toHaveValue('Ground floor');
+  // A row moved to a floor with a row of its name gets a number.
+  await page.click('#btn-row');
+  await page.click('[data-row-action="settings"]');
+  await page.selectOption('#insp-row-floor', 'f2');
+  await expect(page.locator('.toast').last()).toContainText('Moved Row A to First floor as Row A 2, as a row there has its name');
+  expect(await page.evaluate(() => window.RP.model.rowById(window.RP.app.project(), 'row1').name)).toBe('Row A 2');
+
+  // A cluster's name is its own in its view.
+  const row = page.locator('#clusters .cl-row[data-cluster="c-ceph"]');
+  await row.hover();
+  await row.locator('.cl-edit').click();
+  await page.fill('#cluster-name', 'kestrel hpc');
+  await page.click('#cluster-submit');
+  await expect(page.locator('#cluster-error')).toHaveText('Another cluster in Default is named kestrel hpc.');
+  await expect(page.locator('#dlg-cluster')).toBeVisible();
+  await page.click('#dlg-cluster [data-close]');
+  await page.click('#btn-add-cluster');
+  await page.fill('#cluster-name', 'Core NETWORK');
+  await page.click('#cluster-submit');
+  await expect(page.locator('#cluster-error')).toHaveText('Another cluster in Default is named Core NETWORK.');
+  await page.fill('#cluster-name', 'Spare pool');
+  await page.click('#cluster-submit');
+  await expect(page.locator('#dlg-cluster')).toBeHidden();
+  await expect(page.locator('#clusters .cl-name', { hasText: 'Spare pool' })).toHaveCount(1);
+});
+
 test('a rack can be emptied and a device type copied, with undo', async ({ page }) => {
   await page.locator('.rack-head[data-rack="r1"]').click();
   await page.click('#insp-clear-rack');
@@ -1082,6 +1125,36 @@ test('a saved plan that needed fixing says what was fixed and keeps a backup', a
   await page.click('.plan-item:has-text("Hall 2, fixed") [data-plan-act="del"]');
   await page.click('#confirm-ok');
   expect(await backup()).toBeNull();
+});
+
+test('a saved plan with a warning that changes nothing says so once and keeps no backup', async ({ page }) => {
+  // Two plans; the one not open gets two rows of one name, which reading keeps as they are.
+  await page.click('#btn-new');
+  await page.click('[data-new="empty"]');
+  const id = await page.evaluate(() => {
+    const index = JSON.parse(localStorage.getItem('rackplanner.library.v1'));
+    const id = index.plans.find((p) => p.name === 'Hall 2 expansion').id;
+    const raw = JSON.parse(localStorage.getItem(`rackplanner.plan.${id}`));
+    raw.floors[0].rows[1].name = 'row a';
+    localStorage.setItem(`rackplanner.plan.${id}`, JSON.stringify(raw));
+    return id;
+  });
+  const report = page.locator('#dlg-report');
+  await page.click('#btn-plans');
+  await page.click('.plan-item:has-text("Hall 2 expansion") [data-plan-act="open"]');
+  await expect(report).toBeVisible();
+  await expect(report.locator('#report-sub')).toHaveText('1 thing in the saved plan to look at. Opening it changed nothing.');
+  await expect(report.locator('#report-list li')).toHaveText(['Two rows on Ground floor are named row a: rename one, as CSV files tell them apart by name.']);
+  await report.locator('button[value="ok"]').click();
+
+  // Not again at the next open, and a save keeps no backup.
+  await page.reload();
+  await expect(devices(page)).toHaveCount(37);
+  await expect(report).toBeHidden();
+  await page.fill('#plan-name', 'Hall 2, renamed');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate((id) => JSON.parse(localStorage.getItem('rackplanner.library.v1')).plans.find((p) => p.id === id).name, id)).toBe('Hall 2, renamed');
+  expect(await page.evaluate((id) => localStorage.getItem(`rackplanner.backup.${id}`), id)).toBeNull();
 });
 
 test('while the browser storage is full the plan shows it is not saved, and Plans shows the space used', async ({ page }) => {

@@ -3948,6 +3948,9 @@
       e.preventDefault();
       const name = $('#network-name').value.trim();
       if (!name) return ctx.showError('#network-error', 'Give the network a name.');
+      // Cable schedules find a network by its name.
+      const old = netDlg.id ? M.networkById(project(), netDlg.id).name : null;
+      if (name !== old && M.nameTaken(project().networks, name, netDlg.id || undefined)) return ctx.showError('#network-error', `Another network is named ${name}.`);
       const props = { name, color: netDlg.color, firstLabel: $('#network-label').value.trim() || M.defaultFirstLabel(name) };
       if (netDlg.id) {
         const id = netDlg.id;

@@ -853,6 +853,8 @@ test('cable types, transceivers and networks are kept in catalogs', () => {
   assert.equal(M.transceiverById(p, tr.id).reachM, 10000);
   assert.equal(C.updateTransceiver(p, tr.id, { name: 'SFP+ 10G SR' }), null);
   assert.equal(M.transceiverById(p, tr.id).name, 'SFP+ 10G SR 2', 'transceiver names stay unique too');
+  assert.equal(C.updateTransceiver(p, tr.id, { name: 'sfp+ 10g sr' }), null);
+  assert.equal(M.transceiverById(p, tr.id).name, 'sfp+ 10g sr 2', 'in any case');
   assert.ok(C.moveTransceiver(p, tr.id, 0));
   assert.equal(C.deleteTransceiver(p, tr.id), null);
   while (p.transceivers.length < M.LIMITS.transceivers) assert.ok(C.addTransceiver(p, {}));
@@ -865,6 +867,13 @@ test('cable types, transceivers and networks are kept in catalogs', () => {
   assert.equal(C.addNetwork(p).name, 'Network 7');
   assert.equal(C.updateNetwork(p, n.id, { name: 'Ceph', color: 'nope' }), null);
   assert.deepEqual([M.networkById(p, n.id).name, M.networkById(p, n.id).color, M.networkById(p, n.id).firstLabel], ['Ceph', n.color, 'STO-0001']);
+  // Cable schedules find networks by name in any case, so names stay apart.
+  assert.equal(C.updateNetwork(p, n.id, { name: 'infiniband' }), 'Another network is named infiniband');
+  assert.equal(M.networkById(p, n.id).name, 'Ceph');
+  assert.equal(C.updateNetwork(p, n.id, { name: 'CEPH' }), null, 'its own name in another case');
+  assert.equal(C.addNetwork(p, { name: 'ceph' }).name, 'ceph 2');
+  assert.equal(C.addNetwork(p, { name: 'Network 8' }).name, 'Network 8');
+  assert.equal(C.addNetwork(p).name, 'Network 10', 'a free name, past the ones taken');
   assert.equal(C.deleteNetwork(p, 'n-sas'), 12);
   assert.ok(p.cables.every((c) => c.network !== 'n-sas'));
   assert.equal(M.pruneCables(p), 0);

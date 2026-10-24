@@ -165,14 +165,9 @@
 
   // --------------------------------------------------------------- catalogs
 
-  /** `name`, or with a number when `list` has it: "QSFP56 DAC 2". The base is cut so that the name keeps within 60 characters. */
+  /** `name`, or with a number when `list` has it in any case: "QSFP56 DAC 2". The base is cut so that the name keeps within 60 characters. */
   function uniqueName(list, name) {
-    const used = new Set(list.map((x) => x.name));
-    if (!used.has(name)) return name;
-    const base = name.slice(0, 56);
-    let i = 2;
-    while (used.has(`${base} ${i}`)) i++;
-    return `${base} ${i}`;
+    return M.uniqueLabel(list, 'name', name);
   }
 
   function moveIn(list, id, toIndex) {
@@ -273,15 +268,21 @@
     return `Network ${i}`;
   }
 
-  /** Adds a network (a free color and a label series from its name unless given); null when the plan has 30. */
+  /**
+   * Adds a network (a free color and a label series from its name unless
+   * given); its name gets a number when another network has it, in any
+   * case, as cable schedules find networks by name. Null when the plan has 30.
+   */
   function addNetwork(project, props) {
     if (project.networks.length >= L.networks) return null;
     const n = M.cleanNetwork(Object.assign({ name: nextNetworkName(project) }, props), project);
     n.id = M.uid('n');
+    n.name = M.uniqueLabel(project.networks, 'name', n.name);
     project.networks.push(n);
     return n;
   }
 
+  /** Changes a network; refuses (with a message) a name another network has, in any case. */
   function updateNetwork(project, id, changes) {
     const i = project.networks.findIndex((n) => n.id === id);
     if (i < 0) return 'Unknown network';
@@ -290,6 +291,7 @@
     if (!M.normalizeHex(merged.color)) merged.color = before.color;
     const next = M.cleanNetwork(merged, project);
     next.id = id;
+    if (next.name !== before.name && M.nameTaken(project.networks, next.name, id)) return `Another network is named ${next.name}`;
     project.networks[i] = next;
     return null;
   }

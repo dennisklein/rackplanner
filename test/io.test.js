@@ -264,6 +264,7 @@ test('version 5 files keep their views; ids and names that clash are made unique
     'Skipped view No id: it has no id.',
     'cn-1 refers to unknown view “zz”; its cluster there is dropped.',
     'cn-1 refers to unknown cluster “nope” and is left unassigned in that view.',
+    'Two views are named lustre: rename one, as CSV files tell them apart by name.',
   ]);
 
   const many = IO.normalizeProject({ version: 5, views: Array.from({ length: 10 }, (_, i) => ({ id: `w${i}`, name: 'Same' })), devices: [] });
@@ -272,6 +273,30 @@ test('version 5 files keep their views; ids and names that clash are made unique
   assert.ok(many.warnings.includes(`Skipped view Same: a plan holds ${M.LIMITS.views} views.`));
   assert.ok(many.warnings.includes('Renamed the view Same to Same 2: the name is used twice.'));
   assert.deepEqual(IO.normalizeProject({ version: 5, views: [], devices: [] }).project.views, [{ id: 'v1', name: 'Default', clusters: [] }], 'a plan has at least one view');
+});
+
+test('a plan that has a name twice keeps it, with a warning for each name', () => {
+  const ex = M.createExampleProject();
+  ex.deviceTypes.find((t) => t.id === 'storage-node').label = 'compute node';
+  ex.rackTypes.push(Object.assign(M.clone(ex.rackTypes[0]), { id: 'rt9' }));
+  ex.floors[1].name = 'GROUND FLOOR';
+  ex.floors[0].rows[1].name = 'Row A';
+  ex.floors[0].rows[0].racks[1].name = ex.floors[0].rows[0].racks[0].name;
+  ex.views[0].clusters[1].name = ex.views[0].clusters[0].name;
+  ex.networks[1].name = ex.networks[0].name.toLowerCase();
+  const text = IO.serialize(ex);
+  const { project: p, warnings } = IO.normalizeProject(JSON.parse(text));
+  assert.equal(IO.serialize(p), text, 'nothing is renamed');
+  const [g, a, c, n] = [ex.floors[0].name, ex.floors[0].rows[0].racks[0].name, ex.views[0].clusters[0].name, ex.networks[0].name.toLowerCase()];
+  assert.deepEqual(warnings, [
+    'Two device types are named compute node: rename one, as CSV files tell them apart by name.',
+    `Two rack types are named ${ex.rackTypes[0].name}: rename one, as CSV files tell them apart by name.`,
+    'Two floors are named GROUND FLOOR: rename one, as CSV files tell them apart by name.',
+    `Two rows on ${g} are named Row A: rename one, as CSV files tell them apart by name.`,
+    `Two racks in ${g} · Row A are named ${a}: rename one, as CSV files tell them apart by name.`,
+    `Two clusters in the view Default are named ${c}: rename one, as CSV files tell them apart by name.`,
+    `Two networks are named ${n}: rename one, as CSV files tell them apart by name.`,
+  ]);
 });
 
 test('CSVs have a cluster column per view, and read them back into the views of those names', () => {

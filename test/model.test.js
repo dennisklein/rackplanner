@@ -1119,3 +1119,83 @@ test('the first eight cluster colors stay apart for color-blind eyes too', () =>
   const example = M.createExampleProject().views[0].clusters.map((c) => c.color);
   assert.ok(example.every((c) => first.includes(c)));
 });
+
+test('names the CSVs find things by stay apart in their list, in any case', () => {
+  const p = M.createExampleProject();
+  // Catalog types: a new one takes a number, a change to a taken name is refused.
+  assert.equal(M.updateDeviceType(p, 'storage-node', { label: 'Compute node' }), 'Another device type is named Compute node');
+  assert.equal(M.typeOf(p, 'storage-node').label, 'Storage node');
+  assert.equal(M.updateDeviceType(p, 'storage-node', { label: 'STORAGE NODE' }), null, 'its own name in another case');
+  const rt = M.addRackType(p, { name: p.rackTypes[0].name.toUpperCase() });
+  assert.equal(rt.name, `${p.rackTypes[0].name.toUpperCase()} 2`);
+  assert.equal(M.updateRackType(p, rt.id, { name: p.rackTypes[0].name }), `Another rack type is named ${p.rackTypes[0].name}`);
+  const long = 'x'.repeat(M.LIMITS.name);
+  M.addDeviceType(p, { label: long });
+  assert.equal(M.addDeviceType(p, { label: long }).label, `${'x'.repeat(M.LIMITS.name - 4)} 2`, 'the number keeps within the length a name keeps');
+
+  // Floors, rows and racks: within their parent.
+  const [ground, first] = p.floors;
+  const extra = M.insertFloor(p, ground.name.toUpperCase());
+  assert.equal(extra.name, `${ground.name.toUpperCase()} 2`);
+  M.removeFloor(p, extra.id);
+  assert.equal(M.renameFloor(p, first.id, ground.name), false);
+  assert.equal(M.renameFloor(p, first.id, ''), false);
+  assert.equal(first.name, 'First floor');
+  assert.equal(M.renameFloor(p, first.id, 'Mezzanine'), true);
+  const [a, b] = ground.rows;
+  assert.equal(M.renameRow(p, b.id, a.name.toLowerCase()), false);
+  assert.equal(M.renameRow(p, b.id, 'Row Q'), true);
+  assert.equal(M.renameRow(p, first.rows[0].id, 'Row Q'), true, 'a row on another floor may have the name');
+  const [r1, r2] = a.racks;
+  assert.equal(M.renameRack(p, r2.id, r1.name), false);
+  assert.equal(M.renameRack(p, r2.id, `${r2.name} `), true);
+  assert.equal(M.addRack(p, b.id, { name: b.racks[0].name.toLowerCase() }).name, `${b.racks[0].name.toLowerCase()} 2`);
+  assert.equal(M.insertRow(p, ground, a.name).name, `${a.name} 2`);
+  // Moved to another floor or row, a row or rack whose name is taken there gets a number.
+  const upper = M.addRow(p, first.id, { name: a.name.toUpperCase(), racks: 1 });
+  assert.equal(upper.name, a.name.toUpperCase(), 'a row on another floor may have the name');
+  assert.ok(M.moveRow(p, upper.id, ground.id));
+  assert.equal(upper.name, `${a.name.toUpperCase()} 3`);
+  assert.ok(M.moveRow(p, upper.id, ground.id, 0));
+  assert.equal(upper.name, `${a.name.toUpperCase()} 3`, 'on its own floor it keeps its name');
+  const spare = M.addRack(p, a.id, { name: 'Rack Z9' });
+  M.addRack(p, b.id, { name: 'rack z9' });
+  assert.ok(M.moveRack(p, spare.id, b.id));
+  assert.equal(spare.name, 'Rack Z9 2');
+  assert.ok(M.moveRack(p, spare.id, b.id, 0));
+  assert.equal(spare.name, 'Rack Z9 2', 'in its own row it keeps its name');
+  // Copies of a floor take free names.
+  const copies = [M.duplicateFloor(p, ground.id), M.duplicateFloor(p, ground.id)];
+  assert.deepEqual(copies.map((f) => f.name), [`${ground.name} (copy)`, `${ground.name} (copy 2)`]);
+
+  // Clusters: within their view.
+  const view = p.views[0];
+  const [c, other] = view.clusters;
+  assert.equal(M.updateCluster(p, other.id, { name: c.name.toUpperCase() }), `Another cluster in ${view.name} is named ${c.name.toUpperCase()}`);
+  assert.equal(M.updateCluster(p, other.id, { name: ' ' }), 'A cluster needs a name');
+  assert.equal(M.updateCluster(p, other.id, { name: 'Spare', color: '#123456' }), null);
+  assert.deepEqual([other.name, other.color], ['Spare', '#123456']);
+  const added = M.addCluster(p, view.id, { name: 'spare' });
+  assert.deepEqual([added.name, view.clusters[view.clusters.length - 1]], ['spare 2', added]);
+  const ib = M.addView(p, 'InfiniBand');
+  assert.equal(M.addCluster(p, ib.id, { name: 'Spare' }).name, 'Spare', 'another view may have the name');
+
+  // Views: a new one, or a renamed one, never takes a name another view has.
+  assert.equal(M.addView(p, 'infiniband').name, 'infiniband 2');
+  assert.equal(M.renameView(p, ib.id, view.name.toUpperCase()), false);
+  assert.equal(ib.name, 'InfiniBand');
+  assert.equal(M.renameView(p, ib.id, 'INFINIBAND'), true);
+  const copy1 = M.addView(p, M.copyViewName(p, ib.id), ib.id);
+  const copy2 = M.addView(p, M.copyViewName(p, ib.id), ib.id);
+  assert.deepEqual([copy1.name, copy2.name], ['INFINIBAND (copy)', 'INFINIBAND (copy 2)']);
+
+  // A plan that has a name twice still lets those things change, as long as the name stays.
+  p.deviceTypes.find((t) => t.id === 'compute-node').label = 'Storage node';
+  assert.equal(M.updateDeviceType(p, 'compute-node', { powerW: 800 }), null);
+  other.name = c.name;
+  assert.equal(M.updateCluster(p, other.id, { name: c.name, color: '#654321' }), null);
+  assert.equal(other.color, '#654321');
+  assert.equal(M.renameRack(p, r2.id, r1.name), false);
+  r2.name = r1.name;
+  assert.equal(M.renameRack(p, r2.id, r1.name), true);
+});

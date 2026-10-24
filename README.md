@@ -463,7 +463,9 @@ from the plans themselves. A saved plan that needs fixing when it is
 opened (an earlier version saved it, or this version reads it with
 tighter rules) lists what was fixed, as **Open** does for a file; the first
 save over it keeps the plan as it was saved as a backup (see
-[Data model](#data-model)). A plan open in two tabs shows in each what
+[Data model](#data-model)). A warning that changes nothing, such as two
+rows of one name, shows when it is new, not at each open, and needs no
+backup. A plan open in two tabs shows in each what
 the other saves. When both changed it, the tab that would save over the
 newer copy asks first: **Reload** takes the other tab's plan, **Keep mine
 as a copy** saves its own as a new plan. A plan that a newer Rackplanner
@@ -803,6 +805,17 @@ New ones get the next free `f1`, `row1` or `r1`, new catalog types `t1`,
 are random. Cluster ids are unique across all views; an import gives a
 cluster id used in an earlier view a new one. View and cluster ids starting
 with `__` are reserved for the app and replaced on import.
+
+CSV files find things by name, in any case, so these names are unique in
+their list, in any case: device type labels, the names of rack types, cable
+types, transceivers, networks and views, cluster names within their view,
+floor names, row names within their floor and rack names within their row.
+Something new whose name is taken gets a number (`Spare 2`), a copy
+`(copy)`, and so does a row or rack moved to a floor or row where its name
+is taken; a rename to a taken name is refused. Opening a plan file gives
+a view, cable type or transceiver whose name an earlier one has, as
+written, a number; any other name used twice stays as it is, with a warning
+that names it.
 
 What a change does to the rest of the plan:
 

@@ -136,10 +136,11 @@
 
   // ---------------------------------------------------------------- state
 
-  const prefs = Object.assign({ zoom: null, lastClusters: {}, view: 'sheet', metric: 'space', rows: {}, views: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ zoom: null, lastClusters: {}, view: 'sheet', metric: 'space', rows: {}, views: {}, noted: {}, theme: 'system', workspace: 'racks', detail: 'full' }, readJSON(PREFS_KEY) || {});
   if (!prefs.rows || typeof prefs.rows !== 'object') prefs.rows = {};
   if (!prefs.views || typeof prefs.views !== 'object') prefs.views = {};
   if (!prefs.lastClusters || typeof prefs.lastClusters !== 'object') prefs.lastClusters = {};
+  if (!prefs.noted || typeof prefs.noted !== 'object') prefs.noted = {};
   delete prefs.lastCluster;
   if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
@@ -238,12 +239,25 @@
       loaded = { project: p, warnings: [] };
     }
     openPlan(id, loaded.project, loaded.backup);
-    reportLoad((moved && moved.id === id ? moved.warnings : []).concat(loaded.warnings));
+    const movedHere = !!moved && moved.id === id;
+    reportLoad((movedHere ? moved.warnings : []).concat(loaded.warnings), loaded.backup || (movedHere && moved.backup));
   }
 
-  /** Lists what reading the saved plan that was just opened fixed, as Open does for a file. */
-  function reportLoad(warnings) {
-    reportWarnings(`Opened ${project.name}`, `${plural(warnings.length, 'thing')} in the saved plan needed fixing. A backup keeps the plan as it was saved.`, warnings);
+  /**
+   * Lists what reading the saved plan that was just opened fixed, as Open
+   * does for a file, when reading changed it (`changed`, so it has a
+   * backup). Warnings that change nothing, such as two rows of one name,
+   * are advice: they show when one of them is new, not at each open.
+   */
+  function reportLoad(warnings, changed) {
+    const prints = warnings.map(fingerprint).slice(0, 200);
+    const noted = prefs.noted[planId] || [];
+    if (!changed && prints.every((x) => noted.includes(x))) return;
+    if (prints.length) prefs.noted[planId] = prints;
+    else delete prefs.noted[planId];
+    savePrefs();
+    const sub = changed ? 'needed fixing. A backup keeps the plan as it was saved.' : 'to look at. Opening it changed nothing.';
+    reportWarnings(`Opened ${project.name}`, `${plural(warnings.length, 'thing')} in the saved plan ${sub}`, warnings);
   }
 
   let persistTimer = null;
@@ -1613,6 +1627,30 @@
     });
   }
 
+  /**
+   * The name field of a floor, row or rack: `rename(draft, name)` as typed,
+   * which refuses an empty name or one another `what` has (CSV files find
+   * them by name). Left empty, the field takes `fallback()`; left with a
+   * name taken, it says so and takes back the name it had.
+   */
+  function bindName(input, key, rename, current, fallback, what) {
+    let before = current();
+    input.addEventListener('focus', () => (before = current()));
+    input.addEventListener('input', () => {
+      const v = input.value;
+      commit((p) => (rename(p, v) ? undefined : false), { key, inspector: false });
+    });
+    input.addEventListener('change', () => {
+      const typed = input.value.trim().slice(0, M.LIMITS.name).trim();
+      const name = typed || fallback();
+      if (current() !== name && !commit((p) => (rename(p, name) ? undefined : false), { key }) && typed) {
+        toast(`Another ${what} is named ${typed}.`, { warn: true });
+        commit((p) => (rename(p, before) ? undefined : false), { key });
+      }
+      input.value = current();
+    });
+  }
+
   /** A field bound to a device property: text as typed, or `parse`d when the field is left. */
   function bindField(input, id, prop, parse) {
     if (!parse) return bindText(input, `${prop}:${id}`, (p, v) => M.setDeviceText(M.deviceById(p, id), prop, v));
@@ -1957,7 +1995,7 @@
       `</div>`;
 
     const id = rack.id;
-    bindText($('#insp-rack-name'), 'rack:' + id, (p, v) => (M.rackById(p, id).name = v), () => M.defaultRackName(project, pos.row.id, pos.index));
+    bindName($('#insp-rack-name'), 'rack:' + id, (p, v) => M.renameRack(p, id, v), () => M.rackById(project, id).name, () => M.defaultRackName(project, pos.row.id, pos.index), `rack in ${pos.row.name}`);
     $('#insp-rack-type').addEventListener('change', (e) => {
       const err = commitOrError((p) => M.setRackType(p, id, e.target.value), `Changed the type of ${rack.name}`);
       if (err) {
@@ -1979,7 +2017,9 @@
       const target = e.target.value;
       if (!commit((p) => (M.moveRack(p, id, target) ? undefined : false), { label: `Moved ${rack.name}` })) return renderInspector();
       setRow(target);
-      toast(`Moved ${rack.name} to ${M.formatWhere(project, target)}`, { action: 'Undo', onAction: undo });
+      // A rack there with its name, in any case, gives it a number.
+      const now = M.rackById(project, id).name;
+      toast(`Moved ${rack.name} to ${M.formatWhere(project, target)}${now !== rack.name ? ` as ${now}, as a rack there has its name` : ''}`, { action: 'Undo', onAction: undo });
     });
     $('#insp-dup-rack').addEventListener('click', () => duplicateStructure('rack', id));
     $('#insp-rack-select').addEventListener('click', () => selectDevices(devs.map((d) => d.id)));
@@ -2030,12 +2070,15 @@
       `</div>`;
 
     const id = row.id;
-    bindText($('#insp-row-name'), 'row:' + id, (p, v) => (M.rowById(p, id).name = v), () => `Row ${M.letters(pos.rowIndex)}`);
+    bindName($('#insp-row-name'), 'row:' + id, (p, v) => M.renameRow(p, id, v), () => M.rowById(project, id).name, () => `Row ${M.letters(pos.rowIndex)}`, `row on ${pos.floor.name}`);
     $('#row-less').addEventListener('click', () => setRowRackCount(id, row.racks.length - 1));
     $('#row-more').addEventListener('click', () => setRowRackCount(id, row.racks.length + 1));
     $('#row-renumber').addEventListener('click', () => commit((p) => void M.renumberRacks(p, id), { label: `Renumbered the racks of ${row.name}` }));
     $('#insp-row-floor').addEventListener('change', (e) => {
-      if (!commit((p) => (M.moveRow(p, id, e.target.value) ? undefined : false), { label: `Moved ${row.name}` })) renderInspector();
+      if (!commit((p) => (M.moveRow(p, id, e.target.value) ? undefined : false), { label: `Moved ${row.name}` })) return renderInspector();
+      // A row there with its name, in any case, gives it a number.
+      const now = M.rowById(project, id).name;
+      if (now !== row.name) toast(`Moved ${row.name} to ${M.floorById(project, e.target.value).name} as ${now}, as a row there has its name`, { action: 'Undo', onAction: undo });
     });
     $$('[data-row-act]', el.inspector).forEach((b) =>
       b.addEventListener('click', () => commit((p) => void M.moveRow(p, id, pos.floor.id, pos.rowIndex + (b.dataset.rowAct === 'up' ? -1 : 1)), { label: `Moved ${row.name}` }))
@@ -2080,7 +2123,7 @@
       `<button type="button" class="btn danger-text" id="floor-del"${project.floors.length <= 1 ? ' disabled title="A plan needs at least one floor"' : ''}>${icon('trash')}Delete floor</button>` +
       `</div>`;
     const id = floor.id;
-    bindText($('#insp-floor-name'), 'floor:' + id, (p, v) => (M.floorById(p, id).name = v), () => `Floor ${i + 1}`);
+    bindName($('#insp-floor-name'), 'floor:' + id, (p, v) => M.renameFloor(p, id, v), () => M.floorById(project, id).name, () => `Floor ${i + 1}`, 'floor');
     bindProp($('#floor-pitch'), (p) => M.floorById(p, id), 'rowPitchM', (v) => M.clampNum(String(v).trim() === '' ? null : v, 0.5, 50, M.DEFAULT_ROW_PITCH_M));
     $$('[data-open-row]', el.inspector).forEach((b) => b.addEventListener('click', () => setRow(b.dataset.openRow, { view: 'sheet' })));
     $$('[data-floor-act]', el.inspector).forEach((b) =>
@@ -3708,8 +3751,8 @@
     let newCluster = null;
     if (picked === '__new') {
       const cname = $('#place-new-name').value.trim();
-      if (!cname) {
-        showError('#place-error', 'Name the new cluster, or pick another one.');
+      if (!cname || M.nameTaken(M.clustersOf(project, ui.clusterView), cname)) {
+        showError('#place-error', cname ? `A cluster is named ${cname} already: pick it, or give the new one another name.` : 'Name the new cluster, or pick another one.');
         $('#place-new-name').focus();
         return;
       }
@@ -3738,7 +3781,7 @@
     const placed = count > 1 ? `Placed ${count} devices, ${names[0]} to ${names[count - 1]}` : `Placed ${names[0]}`;
     commit(
       (p) => {
-        if (newCluster) M.clustersOf(p, view).push(newCluster);
+        if (newCluster) M.addCluster(p, view, newCluster);
         p.devices.push(...devices);
       },
       { label: placed }
@@ -3821,24 +3864,23 @@
       showError('#cluster-error', 'Give the cluster a name.');
       return;
     }
+    // CSV files find a cluster by its name in its view.
+    const view = clusterDlg.id ? M.viewOfCluster(project, clusterDlg.id) : M.viewOf(project, ui.clusterView);
+    const old = clusterDlg.id ? M.clusterById(project, clusterDlg.id).name : null;
+    if (name !== old && M.nameTaken(view.clusters, name, clusterDlg.id || undefined)) {
+      showError('#cluster-error', `Another cluster in ${view.name} is named ${name}.`);
+      return;
+    }
     const color = clusterDlg.color;
     if (clusterDlg.id) {
       const id = clusterDlg.id;
-      commit(
-        (p) => {
-          const c = M.clusterById(p, id);
-          c.name = name;
-          c.color = color;
-        },
-        { label: `Changed cluster ${name}` }
-      );
+      commit((p) => (M.updateCluster(p, id, { name, color }) ? false : undefined), { label: `Changed cluster ${name}` });
     } else {
       const nc = { id: M.uid('c'), name, color };
       const onCreate = clusterDlg.onCreate;
-      const view = ui.clusterView;
       commit(
         (p) => {
-          M.clustersOf(p, view).push(nc);
+          M.addCluster(p, view.id, nc);
           if (onCreate) onCreate(p, nc.id);
         },
         { label: `Added cluster ${name}` }
@@ -4947,7 +4989,7 @@
     render();
     fitWidth();
     toast(message || `Opened ${project.name}`);
-    reportLoad(loaded.warnings);
+    reportLoad(loaded.warnings, loaded.backup);
   }
 
   /** Adds `p` as a new plan, under a name no other plan has, and opens it. `source` marks a plan from a share link. */
@@ -5460,11 +5502,11 @@
     );
   });
 
-  /** A short fingerprint of the code of a share link, kept with the plans opened from it. */
-  function shareSource(code) {
+  /** A short fingerprint of `text`: of the code of a share link, kept with the plans opened from it, or of a warning shown (see reportLoad). */
+  function fingerprint(text) {
     let h = 0x811c9dc5;
-    for (let i = 0; i < code.length; i++) h = Math.imul(h ^ code.charCodeAt(i), 0x01000193);
-    return `${(h >>> 0).toString(36)}-${code.length.toString(36)}`;
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+    return `${(h >>> 0).toString(36)}-${text.length.toString(36)}`;
   }
 
   /** Opens a plan passed in the address (#plan=…) as a new plan, or the plan opened from the same link before. */
@@ -5480,7 +5522,7 @@
       return toast(e.message, { warn: true });
     }
     delete result.project.meta.example;
-    const source = shareSource(code);
+    const source = fingerprint(code);
     const before = lib.list().find((p) => p.source === source && lib.load(p.id));
     if (before) {
       const existing = await confirmDialog({

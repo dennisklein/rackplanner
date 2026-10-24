@@ -106,6 +106,17 @@ test('a stored plan that needed fixing or has another version is kept as a backu
   assert.equal(store.get(Library.backupKey(id)), null, 'the backup goes with its plan');
 });
 
+test('a stored plan with warnings that change nothing needs no backup', () => {
+  const store = memoryStore();
+  const lib = Library.create(store);
+  const p = M.createExampleProject();
+  p.floors[0].rows[1].name = 'row a';
+  const id = lib.add(p);
+  const loaded = lib.load(id);
+  assert.deepEqual(loaded.warnings, ['Two rows on Ground floor are named row a: rename one, as CSV files tell them apart by name.']);
+  assert.equal(loaded.backup, false, 'saving it gives the text it has');
+});
+
 test('a full store refuses the save instead of losing the index', () => {
   const store = memoryStore(12000);
   const lib = Library.create(store);
