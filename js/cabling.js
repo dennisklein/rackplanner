@@ -1017,6 +1017,42 @@
     };
   }
 
+  /**
+   * What freezePicks would write into each of `cables` (default: all):
+   * [{ cable, type, transceivers: [{ end, transceiver }], lengthM }] for
+   * the cables with something picked, `type` and `lengthM` being null when
+   * they stay as they are. `ctx` is optional.
+   */
+  function openPicks(project, cables, ctx) {
+    const out = [];
+    for (const d of describeAll(project, cables, ctx)) {
+      const type = !d.cable.type && d.type ? d.type.id : null;
+      const transceivers = d.ends.filter((e) => !e.end.transceiver && e.transceiver).map((e) => ({ end: e.end, transceiver: e.transceiver.id }));
+      const lengthM = d.lengthAuto && d.type && d.lengthM !== null ? d.lengthM : null;
+      if (type || transceivers.length || lengthM !== null) out.push({ cable: d.cable, type, transceivers, lengthM });
+    }
+    return out;
+  }
+
+  /**
+   * Writes what is picked for `cables` (default: all) into them: the cable
+   * type of a cable without one, the transceiver of each end that picks
+   * one, and the stock length (or the length made to) of a cable whose
+   * length is estimated. A later change to the catalog's order or to the
+   * layout then leaves these cables and the order list as they are. What
+   * cannot be picked (no type fits, no length across floors, past the
+   * longest stock length) stays open. Returns the number of cables changed.
+   */
+  function freezePicks(project, cables, ctx) {
+    const open = openPicks(project, cables, ctx);
+    for (const x of open) {
+      if (x.type) x.cable.type = x.type;
+      for (const t of x.transceivers) t.end.transceiver = t.transceiver;
+      if (x.lengthM !== null) x.cable.lengthM = x.lengthM;
+    }
+    return open.length;
+  }
+
   // --------------------------------------------------------------- grouping
 
   const ROUTE_KINDS = ['rack', 'row', 'floor', 'plan'];
@@ -1381,6 +1417,8 @@
     describe,
     describeAll,
     billOfMaterials,
+    openPicks,
+    freezePicks,
     routeOf,
     groupCables,
     cableMatcher,

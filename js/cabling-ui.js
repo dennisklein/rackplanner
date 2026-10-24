@@ -1958,8 +1958,13 @@
         return { html, summary: esc(summary) + warn };
       };
       const all = part(scope.cables);
+      const open = C.openPicks(project(), scope.cables, fresh().ctx).length;
+      const freezeTitle = open
+        ? `Write the cable type, transceivers and stock length picked for ${plural(open, 'cable')} into them, so that changes to the catalog or the layout leave the order list as it is`
+        : 'Every cable here has its type, transceivers and length written';
       const head =
         `<div class="bom-head"><b>${esc(`To order · ${scope.name}`)}</b><span>${all.summary}</span>` +
+        `<button type="button" class="btn sm subtle" id="sc-freeze" title="${esc(freezeTitle)}"${open ? '' : ' disabled'}>${icon('check', 'ic-sm')}Freeze picks</button>` +
         `<button type="button" class="btn sm subtle" id="sc-order-csv" title="What to order for these cables, as CSV">${icon('download', 'ic-sm')}Order list (CSV)</button>` +
         `<button type="button" class="btn sm subtle" id="sc-cables-csv" title="These cables with both ends, as CSV">${icon('download', 'ic-sm')}Cable schedule (CSV)</button></div>`;
       if (!all.html) return head + `<p class="bom-empty">Nothing to order yet.</p>`;
@@ -2177,6 +2182,7 @@
       }
       if (t.closest('#sc-series')) return openConnect({ series: true });
       if (t.closest('#sc-add')) return openConnect({ series: false });
+      if (t.closest('#sc-freeze')) return freezeScope();
       if (t.closest('#sc-order-csv')) return exportScope('order');
       if (t.closest('#sc-cables-csv')) return exportScope('cables');
       const dev = t.closest('[data-cab-device]');
@@ -2193,6 +2199,18 @@
       if (t.matches('input[type="checkbox"]')) t.checked = !t.checked; // drawn by the selection, as for a click on the row
       clickRow(itemOf(tr), e, box);
     });
+
+    /** Writes the picks of the scope's cables into them (see C.freezePicks), as one step with Undo. */
+    function freezeScope() {
+      const ids = new Set(scopeInfo().cables.map((c) => c.id));
+      let n = 0;
+      ctx.commit((p) => {
+        n = C.freezePicks(p, p.cables.filter((c) => ids.has(c.id)));
+        return n ? undefined : false;
+      }, { label: 'Froze the cable picks' });
+      if (n) toast(`Froze the type, transceivers and length of ${plural(n, 'cable')}`, { action: 'Undo', onAction: ctx.undo });
+      else toast('Every cable here has its type, transceivers and length written');
+    }
 
     function exportScope(what) {
       const scope = scopeInfo();

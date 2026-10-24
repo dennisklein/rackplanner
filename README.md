@@ -436,6 +436,15 @@ apart, **Shared with other rows**, with their own subtotal, and its CSV has
 a **Part** column that tells them apart. The plan's list counts each cable
 once.
 
+A cable on **Auto** picks its type, transceivers and length each time it is
+read, so a change to the catalog's order or to the layout can change it and
+the order list. **Freeze picks**, next to **Order list (CSV)**, writes what
+is picked for the cables of the row, floor or plan into them, as one step
+with **Undo**: each cable then names its type and transceivers and has its
+stock length set, and the order list stays as it is. What cannot be picked
+(no type fits, a cable between floors, a length beyond the longest stock
+length) stays open.
+
 **Checks** flag what needs a look, in the schedule's Check column, the
 cable's inspector and the **To check** list of the row: a plug that doesn't
 fit, missing optics or a transceiver that doesn't fit, a cable that runs
@@ -792,7 +801,9 @@ breakout cable (a type with 2 to 8 `legs`) a list of one end per leg, with
 `transceiver` is absent or `null` to have one picked, or the id of the
 transceiver chosen. `type: null` picks the cable type from the ports and the
 length; a breakout cable names its type. `lengthM: null` estimates the
-length.
+length. What is picked is worked out again each time the plan is read, so
+it follows the catalog's order and the layout; **Freeze picks** writes it
+into these same fields.
 
 ```json
 "cables": [

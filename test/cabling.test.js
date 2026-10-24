@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const M = require('../js/model.js');
 const C = require('../js/cabling.js');
+const IO = require('../js/io.js');
 const CR = require('../js/cabling-render.js');
 
 const U = C.UNIT_M;
@@ -464,6 +465,48 @@ test('the order list counts stock lengths, lengths made to measure and transceiv
   const some = C.billOfMaterials(p, p.cables.filter((c) => c.network === 'n-sas'));
   assert.deepEqual(some.cables.map((x) => [x.type.id, x.lengthM, x.count]), [['sas-hd', 2, 12]]);
   assert.deepEqual(some.transceivers, []);
+});
+
+test('freezing the picks writes them into the cables, so a catalog reorder no longer changes the order list', () => {
+  const p = M.createExampleProject();
+  const bom = (q) => JSON.stringify(C.billOfMaterials(q));
+  const picks = (q) => C.describeAll(q).map((d) => [d.type && d.type.id, d.lengthM, d.ends.map((e) => e.transceiver && e.transceiver.id)]);
+  const byLabel = (q, l) => q.cables.find((c) => c.label === l);
+  byLabel(p, 'MGT-0001').lengthM = 4;
+  const before = { bom: bom(p), picks: picks(p) };
+  // Moving MPO fiber to the top of the catalog turns InfiniBand DACs into fiber.
+  const moved = M.clone(p);
+  C.moveCableType(moved, 'mpo-om4', 0);
+  assert.notEqual(bom(moved), before.bom);
+
+  const json = JSON.stringify(p.cables);
+  assert.equal(C.openPicks(p).length, p.cables.length - 1, 'every cable but the DAC too long for any stock length');
+  assert.equal(JSON.stringify(p.cables), json, 'openPicks changes nothing');
+  assert.equal(C.freezePicks(p), p.cables.length - 1);
+  assert.equal(bom(p), before.bom, 'the order list stays as it was');
+  assert.deepEqual(picks(p), before.picks, 'so does each cable');
+  const ib = byLabel(p, 'IB-0001');
+  assert.deepEqual([ib.type, ib.lengthM, 'transceiver' in ib.a, 'transceiver' in ib.b], ['dac-qsfp56', 1, false, false], 'no transceiver on a DAC');
+  assert.deepEqual([byLabel(p, 'MGT-0001').type, byLabel(p, 'MGT-0001').lengthM], ['cat6a', 4], 'a length set by hand stays');
+  const fiber = p.cables.find((c) => c.type === 'mpo-om4');
+  assert.deepEqual([fiber.a.transceiver, fiber.b.transceiver], ['qsfp56-200g-sr4', 'qsfp56-200g-sr4'], 'the transceivers picked at both ends');
+  const open = p.cables.filter((c) => c.type === null || c.lengthM === null);
+  assert.equal(open.length, 1, 'only what cannot be picked stays open');
+  assert.deepEqual([open[0].lengthM, C.describe(p, open[0]).lengthM], [null, null], 'no stock length is long enough');
+  assert.equal(M.pruneCables(M.clone(p)), 0, 'the frozen cables are valid');
+  assert.deepEqual(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.cables, p.cables, 'and saved as they are');
+
+  // Now the catalog's order and the layout change nothing.
+  C.moveCableType(p, 'mpo-om4', 0);
+  p.floors[0].rowPitchM = 10;
+  assert.equal(bom(p), before.bom);
+  assert.equal(C.freezePicks(p), 0, 'nothing is left to freeze');
+
+  // Only the cables given.
+  const q = M.createExampleProject();
+  const auto = q.cables.filter((c) => c.type === null).length;
+  assert.equal(C.freezePicks(q, [byLabel(q, 'IB-0001')]), 1);
+  assert.equal(q.cables.filter((c) => c.type === null).length, auto - 1);
 });
 
 test('a context with a memo describes each cable once, and the order list, groups and filters take it', () => {

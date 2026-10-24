@@ -493,6 +493,49 @@ test('the order list shows stock lengths, cables made to length with their total
   await expect(strip.locator('.bom-part')).toHaveCount(0);
 });
 
+test('Freeze picks writes the picked types, transceivers and lengths into the scope’s cables, as one step with Undo', async ({ page }) => {
+  await toCabling(page);
+  const open = (scope) =>
+    plan(page, (p, scope, RP) => RP.cabling.openPicks(p, scope ? RP.cabling.cablesWithin(p, scope) : p.cables).length, scope);
+  const order = () => plan(page, (p, a, RP) => JSON.stringify(RP.cabling.billOfMaterials(p)));
+  const before = { row: await open('row1'), plan: await open(null), order: await order(), json: await page.evaluate(() => JSON.stringify(window.RP.app.project())) };
+  expect(before.row).toBeGreaterThan(0);
+  expect(before.plan).toBeGreaterThan(before.row);
+  const freeze = page.locator('#sc-freeze');
+  await expect(freeze).toBeEnabled();
+  await expect(freeze).toHaveAttribute('title', new RegExp(`picked for ${before.row} cables`));
+
+  // The row's cables only.
+  await freeze.click();
+  await expect(page.locator('.toast', { hasText: `Froze the type, transceivers and length of ${before.row} cables` })).toBeVisible();
+  expect(await open('row1')).toBe(0);
+  expect(await open(null)).toBe(before.plan - before.row);
+  expect(await order()).toBe(before.order);
+  await expect(freeze).toBeDisabled();
+  await expect(freeze).toHaveAttribute('title', 'Every cable here has its type, transceivers and length written');
+  const ib = await cableBy(page, 'IB-0001');
+  expect([ib.type, ib.lengthM]).toEqual(['dac-qsfp56', 1]);
+  await expect(page.locator('#btn-undo')).toHaveAttribute('title', 'Undo: Froze the cable picks (Ctrl+Z)');
+
+  // Undo brings the picks back as they were.
+  await undoToast(page).click();
+  expect(await page.evaluate(() => JSON.stringify(window.RP.app.project()))).toBe(before.json);
+  await expect(freeze).toBeEnabled();
+
+  // The plan's cables; moving MPO fiber to the top of the catalog then changes nothing on the order list.
+  await page.click('[data-sc-scope="plan"]');
+  const reordered = () =>
+    plan(page, (p, a, RP) => {
+      const q = RP.model.clone(p);
+      RP.cabling.moveCableType(q, 'mpo-om4', 0);
+      return JSON.stringify(RP.cabling.billOfMaterials(q));
+    });
+  expect(await reordered()).not.toBe(before.order);
+  await freeze.click();
+  expect(await open(null)).toBe(0);
+  expect(await reordered()).toBe(before.order);
+});
+
 test('the cable schedule and the order list download as CSV, for the plan and for the scope', async ({ page }) => {
   await toCabling(page);
   const read = async (click) => {
