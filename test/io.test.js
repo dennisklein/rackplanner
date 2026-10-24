@@ -330,6 +330,33 @@ test('a plan that has a name twice keeps it, with a warning for each name', () =
   ]);
 });
 
+test('a version 5 file without views gets an empty Default view and says what it drops', () => {
+  const raw = {
+    version: 5,
+    racks: [{ id: 'r1' }],
+    clusters: [{ id: 'c1', name: 'HPC' }],
+    devices: [
+      { id: 'a', type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', v2: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } },
+      { id: 'b', type: 'compute-node', name: 'cn-2', cluster: 'c1', loc: { rack: 'r1', kind: 'u', at: 3 } },
+    ],
+  };
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(p.views, [{ id: 'v1', name: 'Default', clusters: [] }]);
+  assert.deepEqual(p.devices.map((d) => d.groups), [{}, {}]);
+  const said = [
+    'cn-1 refers to unknown view “v1”; its cluster there is dropped.',
+    'cn-1 refers to unknown view “v2”; its cluster there is dropped.',
+    'cn-2 refers to unknown cluster “c1” and is left unassigned.',
+  ];
+  assert.deepEqual(warnings, said);
+  assert.deepEqual(IO.normalizeProject(Object.assign({}, raw, { views: [] })).warnings, said, 'an empty list of views too');
+  // Before version 5, the clusters become the view Default.
+  const v4 = IO.normalizeProject(Object.assign({}, raw, { version: 4 }));
+  assert.deepEqual(v4.project.views, [{ id: 'v1', name: 'Default', clusters: [{ id: 'c1', name: 'HPC', color: M.nextClusterColor({ views: [{ clusters: [] }] }) }] }]);
+  assert.deepEqual(v4.project.devices.map((d) => d.groups), [{}, { v1: 'c1' }]);
+  assert.deepEqual(v4.warnings, []);
+});
+
 test('CSVs have a cluster column per view, and read them back into the views of those names', () => {
   const p = M.createEmptyProject();
   p.views[0].clusters.push({ id: 'c1', name: 'Alpha', color: '#2f6fdb' });

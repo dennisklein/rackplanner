@@ -211,13 +211,11 @@
   }
 
   /**
-   * Reads the views and their clusters into `p.views`. A file without views
-   * is read as one before version 5 was: its one list of clusters and a
-   * cluster per device become one view, "Default". Cluster ids are unique
+   * Reads the views and their clusters into `p.views`; a file without a
+   * view gets one, "Default", without clusters. Cluster ids are unique
    * across the plan, so a cluster id used in two views gets a new id in the
    * second. Returns a map from the file's view ids to { id, clusters: map
-   * from the file's cluster ids to the plan's }; the key '' stands for a file
-   * without views.
+   * from the file's cluster ids to the plan's }.
    */
   function readViews(raw, p, warnings) {
     const out = new Map();
@@ -254,12 +252,9 @@
       return clusters;
     };
     p.views = [];
-    if (!Array.isArray(raw.views)) {
-      out.set('', { id: 'v1', clusters: readView({ clusters: raw.clusters }, 'v1', M.DEFAULT_VIEW_NAME) });
-      return out;
-    }
-    const usedViews = new Set(raw.views.filter(isObj).map((v) => idOf(v.id)));
-    raw.views.forEach((v, i) => {
+    const list = Array.isArray(raw.views) ? raw.views : [];
+    const usedViews = new Set(list.filter(isObj).map((v) => idOf(v.id)));
+    list.forEach((v, i) => {
       if (!isObj(v)) return;
       const fileId = idOf(v.id);
       const label = str(v.name, 60) || `#${i + 1}`;
@@ -271,25 +266,21 @@
       const name = str(v.name, 60) || M.nextViewName(p);
       out.set(fileId, { id, clusters: readView(v, id, name) });
     });
-    if (!p.views.length) out.set('', { id: 'v1', clusters: readView({ clusters: [] }, 'v1', M.DEFAULT_VIEW_NAME) });
+    if (!p.views.length) readView({ clusters: [] }, 'v1', M.DEFAULT_VIEW_NAME);
     // Names tell views apart in CSV columns.
     uniqueNames(p.views, 'view', warnings);
     return out;
   }
 
   /**
-   * A device's clusters in the plan's views, from `d.groups`, or `d.cluster`
-   * in a file without views, with a warning for each one the plan doesn't have.
+   * A device's clusters in the plan's views, from `d.groups`, with a warning
+   * for each one the plan doesn't have.
    */
   function readDeviceGroups(d, name, views, warnings) {
     const groups = {};
-    if (views.has('')) {
-      const view = views.get('');
-      const cluster = idOf(d.cluster);
-      if (cluster && !view.clusters.has(cluster)) warnings.push(`${name} refers to unknown cluster “${cluster}” and is left unassigned.`);
-      if (view.clusters.has(cluster)) groups[view.id] = view.clusters.get(cluster);
-      return groups;
-    }
+    // A cluster as files before version 5 had it, in a file without views to hold it.
+    const old = idOf(d.cluster);
+    if (old && !views.size) warnings.push(`${name} refers to unknown cluster “${old}” and is left unassigned.`);
     if (!isObj(d.groups)) return groups;
     for (const [fileView, value] of Object.entries(d.groups)) {
       const cluster = idOf(value);

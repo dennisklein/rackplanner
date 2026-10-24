@@ -867,7 +867,9 @@ Versions 1 to 3 had no ports or cables: their standard device types and rack
 types get the standard ports, sizes, tray distance and slack, and the plan
 gets the standard cable types and transceivers and no networks or cables.
 Versions 1 to 4 had one list of clusters and a `cluster` per device: they
-become one view, `Default`. Each of these changes is a step from one version
+become one view, `Default`. A version 5 file without views gets an empty
+`Default` view, with a warning for each cluster of a device that it drops.
+Each of these changes is a step from one version
 to the next in `js/io.js`, and a file goes through the steps from its own
 version on before it is read as a current one. The steps keep the standard
 types as they were when they were written, so a later change of the standard
