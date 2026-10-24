@@ -547,7 +547,7 @@ Type columns; Floor, Row, Height, Cluster and the other columns of the export
 are used when present. A `Cluster` column fills the view shown, a
 `Cluster: <view>` column the view of that name. A new plan from a CSV with
 only `Cluster: <view>` columns has just those views and shows the first. Missing floors, rows, racks,
-views and clusters are created by name, and unknown types become generic types of the given height. Comma,
+views and clusters are created by name (a cluster only for a device placed, a view only when a device is), and unknown types become generic types of the given height. Comma,
 semicolon and tab separators all work.
 
 **Open** also reads a **cable schedule CSV**, like the export or made by

@@ -876,12 +876,31 @@
   }
 
   /**
+   * Takes the clusters a CSV import made that no device is in out of
+   * `project`, and the views it made when it placed no device; those of
+   * `base`, the plan imported into, stay.
+   */
+  function dropUnplaced(project, base, added) {
+    const views = new Set();
+    const clusters = new Set();
+    for (const v of base ? base.views : []) {
+      views.add(v.id);
+      for (const c of v.clusters) clusters.add(c.id);
+    }
+    for (const d of project.devices) for (const c of Object.values(d.groups)) clusters.add(c);
+    for (const v of project.views) v.clusters = v.clusters.filter((c) => clusters.has(c.id));
+    const kept = project.views.filter((v) => views.has(v.id));
+    if (!added && kept.length) project.views = kept;
+  }
+
+  /**
    * Reads a CSV inventory (the columns of toCSV; only Rack, Position and
    * Name or Type are required). Devices are added to `base` when given,
    * otherwise to a new plan. Floors, rows, racks, views, clusters and device
    * types that don't exist yet are created by name. A "Cluster" column
    * fills view `viewId`, a "Cluster: <view>" column the view of that name;
-   * a new plan with only such columns has only their views.
+   * a new plan with only such columns has only their views. Clusters are
+   * made only for the lines placed, and views only when a line is.
    * Returns { project, warnings, added }.
    */
   function importCSV(text, base, viewId) {
@@ -1010,6 +1029,7 @@
     if (!work.floors.length) throw new Error('The CSV has no devices that could be placed.');
     const result = normalizeProject(work);
     const added = result.project.devices.length - (base ? base.devices.length : 0);
+    dropUnplaced(result.project, base, added);
     return { project: result.project, warnings: warnings.concat(result.warnings), added };
   }
 

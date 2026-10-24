@@ -1214,6 +1214,22 @@ test('a mounting kind this version does not know, or a position that is not a nu
   assert.deepEqual(old.project.devices.map((d) => [d.name, d.loc.at]), [['n5', 47 + 2 - 20 - M.typeOf(old.project, 'compute-node').height]]);
 });
 
+test('a CSV import makes clusters only for the lines it places, and views only when it places one', () => {
+  const base = M.createExampleProject();
+  const before = base.views[0].clusters.map((c) => c.id);
+  const occupied = 'Rack,Position,Type,Name,Cluster,Cluster: Power\n' + Array.from({ length: 50 }, (_, i) => `Rack A01,U4,Compute node,x-${i},Lost ${i},Feed ${i}`).join('\n');
+  const none = IO.importCSV(occupied, base, base.views[0].id);
+  assert.equal(none.added, 0);
+  assert.deepEqual(none.project.views.map((v) => v.clusters.map((c) => c.id)), [before]);
+
+  const mixed = 'Rack,Position,Type,Name,Cluster,Cluster: Power\nRack A01,U4,Compute node,taken,Lost,Feed A\nRack A01,U30,Compute node,free,Found,\n';
+  const some = IO.importCSV(mixed, base, base.views[0].id);
+  assert.equal(some.added, 1);
+  assert.deepEqual(some.project.views.map((v) => v.name), ['Default', 'Power'], 'a line placed keeps the view of its column');
+  assert.deepEqual(some.project.views[0].clusters.slice(before.length).map((c) => c.name), ['Found']);
+  assert.deepEqual(some.project.views[1].clusters, []);
+});
+
 /** A plan written as a file, read back and written again gives the same text, without warnings. */
 function assertRoundTrip(p, what) {
   const text = IO.serialize(p);
