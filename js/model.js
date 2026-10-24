@@ -2588,6 +2588,29 @@
   }
 
   /**
+   * Calls `visit(ref, cable)` for each place in the plan that names a port
+   * of a device: the { device, port } of each cable end and breakout leg.
+   * Code that renames or moves ports goes through here, so that whatever
+   * names a port moves with it.
+   */
+  function forEachPortRef(project, visit) {
+    for (const c of project.cables || []) for (const x of cableEnds(c)) visit(x.end, c);
+  }
+
+  /**
+   * Moves the port references on the devices of `deviceIds` (a Set) to the
+   * port `moves` (from portMoves) gives, and drops those whose place is
+   * gone. Returns what pruneCables returns.
+   */
+  function movePortRefs(project, deviceIds, moves) {
+    forEachPortRef(project, (ref) => {
+      // Port names are never empty, so prune removes an end set to ''.
+      if (deviceIds.has(ref.device)) ref.port = moves.get(ref.port) || '';
+    });
+    return pruneCables(project);
+  }
+
+  /**
    * After the ports of a device type changed from `oldPorts`, moves the
    * cable ends on its devices to the port at the same place (see portMoves)
    * and drops the ends whose place is gone.
@@ -2595,16 +2618,8 @@
   function remapPorts(project, typeId, oldPorts) {
     const type = typeOf(project, typeId);
     if (!type || !Array.isArray(project.cables)) return 0;
-    const moves = portMoves(oldPorts, type.ports);
     const devices = new Set(project.devices.filter((d) => d.type === typeId).map((d) => d.id));
-    for (const c of project.cables) {
-      for (const x of cableEnds(c)) {
-        if (!devices.has(x.end.device)) continue;
-        // Port names are never empty, so prune removes an end set to ''.
-        x.end.port = moves.get(x.end.port) || '';
-      }
-    }
-    return pruneCables(project);
+    return movePortRefs(project, devices, portMoves(oldPorts, type.ports));
   }
 
   /**
@@ -2630,12 +2645,7 @@
     d.type = typeId;
     if (type.variable) d.height = height;
     else delete d.height;
-    const moves = portMoves(before ? before.ports : [], type.ports);
-    for (const c of project.cables || []) {
-      // Port names are never empty, so prune removes an end set to ''.
-      for (const x of cableEnds(c)) if (x.end.device === d.id) x.end.port = moves.get(x.end.port) || '';
-    }
-    pruneCables(project);
+    movePortRefs(project, new Set([d.id]), portMoves(before ? before.ports : [], type.ports));
     return null;
   }
 
@@ -3052,6 +3062,7 @@
     nextCableLabel,
     copyCables,
     portMoves,
+    forEachPortRef,
     remapPorts,
     setDeviceType,
     statsByRack,

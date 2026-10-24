@@ -996,6 +996,23 @@ test('adding or removing a port group leaves the other groups’ cables on their
   assert.deepEqual([...M.portMoves(sw, [sw[0], Object.assign({}, sw[1], { count: 2 })])].slice(-3), [['swp48', 'swp48'], ['swp49', 'swp49'], ['swp50', 'swp50']]);
 });
 
+test('forEachPortRef visits each cable end and breakout leg once, as the object in the plan', () => {
+  const p = M.createExampleProject();
+  const seen = [];
+  M.forEachPortRef(p, (ref, cable) => seen.push([ref, cable]));
+  assert.equal(seen.length, p.cables.reduce((n, c) => n + M.cableEnds(c).length, 0));
+  const breakout = p.cables.find((c) => Array.isArray(c.b));
+  const visits = seen.filter(([, c]) => c === breakout).map(([ref]) => ref);
+  assert.deepEqual(visits, [breakout.a].concat(breakout.b.filter(Boolean)), 'the head, then each leg');
+  assert.ok(visits.every((ref) => typeof ref.device === 'string' && typeof ref.port === 'string'));
+  // A rename through it changes the plan.
+  M.forEachPortRef(p, (ref) => {
+    if (ref === breakout.a) ref.port = 'renamed';
+  });
+  assert.equal(breakout.a.port, 'renamed');
+  M.forEachPortRef({ cables: undefined }, () => assert.fail('a plan without cables has no port to visit'));
+});
+
 test('setDeviceType changes the type of one device and keeps its cables on the ports at the same place', () => {
   const p = M.createExampleProject();
   const cn = p.devices.find((d) => d.name === 'cn-001');
