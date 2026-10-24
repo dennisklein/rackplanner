@@ -36,8 +36,9 @@
  * color groups), and a device's `groups` names its cluster in each view
  * (a view it is missing from leaves it unassigned there). Every device
  * shows in every view. Cluster ids are unique across the plan. A plan has
- * 1 to 8 views; functions that take a `viewId` fall back to the first view
- * when it is missing or unknown.
+ * 1 to 8 views; functions that read by a `viewId` fall back to the first
+ * view when it is missing or unknown, while setClusterOf, which writes,
+ * refuses an unknown view and a cluster of another view.
  *
  * Device and rack types belong to the plan, so a plan file carries its own
  * catalog. The built-in type 'reserved' marks space for future equipment; it
@@ -470,12 +471,18 @@
   function clusterOf(project, d, viewId) {
     return clusterById(project, clusterIdOf(project, d, viewId));
   }
-  /** Puts device `d` into cluster `clusterId` of view `viewId`; null leaves it unassigned there. */
+  /**
+   * Puts device `d` into cluster `clusterId` of view `viewId`; null leaves
+   * it unassigned there. Unlike the reads, it has no fallback: false, and
+   * nothing changed, for an unknown view or a cluster of another view.
+   */
   function setClusterOf(project, d, viewId, clusterId) {
-    const v = viewOf(project, viewId);
+    const v = viewById(project, viewId);
+    if (!v || (clusterId && !v.clusters.some((c) => c.id === clusterId))) return false;
     if (!d.groups) d.groups = {};
     if (clusterId) d.groups[v.id] = clusterId;
     else delete d.groups[v.id];
+    return true;
   }
   function deviceById(project, id) {
     return project.devices.find((d) => d.id === id) || null;

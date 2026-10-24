@@ -1000,14 +1000,20 @@ test('a new plan has one view, and every view groups the same devices in cluster
   assert.deepEqual([ib.id, ib.name, ib.clusters], ['v2', 'InfiniBand', []]);
   assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a new view starts unassigned');
   ib.clusters.push({ id: 'c2', name: 'HDR', color: '#d64545' });
-  M.setClusterOf(p, b, 'v2', 'c2');
+  assert.equal(M.setClusterOf(p, b, 'v2', 'c2'), true);
   assert.deepEqual([M.clusterIdOf(p, a, 'v1'), M.clusterIdOf(p, b, 'v1'), M.clusterIdOf(p, b, 'v2')], ['c1', null, 'c2']);
   assert.equal(M.clusterById(p, 'c2').name, 'HDR', 'cluster ids are unique across views');
   assert.equal(M.viewOfCluster(p, 'c2'), ib);
   assert.equal(M.clusterIdOf(p, a, 'nope'), 'c1', 'an unknown view id falls back to the first view');
-  M.setClusterOf(p, a, 'v2', 'c1');
+  assert.equal(M.setClusterOf(p, a, 'v2', 'c1'), false, 'a cluster of another view is refused');
   assert.equal(M.clusterIdOf(p, a, 'v2'), null, 'a cluster of another view does not count');
-  M.setClusterOf(p, b, 'v2', null);
+  assert.deepEqual(a.groups, { v1: 'c1' }, 'and not stored');
+  // Writes have no fallback to the first view: its cluster stays.
+  assert.equal(M.setClusterOf(p, a, 'v-gone', 'c2'), false);
+  assert.equal(M.setClusterOf(p, a, 'v-gone', null), false);
+  assert.equal(M.setClusterOf(p, a, undefined, null), false);
+  assert.deepEqual(a.groups, { v1: 'c1' });
+  assert.equal(M.setClusterOf(p, b, 'v2', null), true);
   assert.deepEqual(b.groups, {});
 
   assert.equal(M.nextClusterName(p, 'v2'), 'Cluster 2');
