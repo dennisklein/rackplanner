@@ -1396,4 +1396,12 @@ test('plans the model makes read back as written, long notes included', () => {
   M.addView(p, '', p.views[0].id);
   M.addView(p, 'Power', p.views[0].id);
   assertRoundTrip(p, 'after copies and long notes');
+
+  // Copies and series of a device with the longest name keep apart after a reload.
+  const q = M.createEmptyProject(3);
+  q.devices.push(M.newDevice({ type: 'compute-node', name: 'n'.repeat(M.NAME_MAX), loc: { rack: 'r1', kind: 'u', at: 1 } }));
+  q.devices.push(...M.copiesAt(q, [3, 5].map((at) => ({ id: q.devices[0].id, loc: { rack: 'r1', kind: 'u', at } }))));
+  M.namesAt(q, 'm'.repeat(M.NAME_MAX), 'r2', ['r2', 'r2']).forEach((name, i) => q.devices.push(M.newDevice({ type: 'compute-node', name, loc: { rack: 'r2', kind: 'u', at: 1 + 2 * i } })));
+  assert.equal(new Set(q.devices.map((d) => d.name)).size, 5);
+  assertRoundTrip(q, 'long names');
 });

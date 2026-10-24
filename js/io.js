@@ -649,7 +649,7 @@
           warnings.push(`Added the standard device type ${std.label}, which the plan uses.`);
         }
       }
-      const name = str(d.name, 80) || (type ? M.suggestName(p, type.id) : `device ${i + 1}`);
+      const name = str(d.name, M.NAME_MAX) || (type ? M.suggestName(p, type.id) : `device ${i + 1}`);
       if (!type) return void warnings.push(`Skipped ${name}: unknown device type “${String(d.type)}”.`);
       const loc = isObj(d.loc) ? d.loc : {};
       const rack = rackIds.get(idOf(loc.rack)) || null;

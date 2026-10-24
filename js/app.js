@@ -1724,7 +1724,7 @@
       `<div class="insp-head">` +
       `<div class="kicker"><span class="sw" style="--c:${cluster ? cluster.color : 'var(--unassigned)'}"></span>${esc(type.label)} · ${hU}U</div>` +
       `<label for="insp-name" class="sr-only">Device name</label>` +
-      `<input id="insp-name" class="name-input" type="text" value="${esc(d.name)}" spellcheck="false" autocomplete="off" maxlength="80">` +
+      `<input id="insp-name" class="name-input" type="text" value="${esc(d.name)}" spellcheck="false" autocomplete="off" maxlength="${M.NAME_MAX}">` +
       `<p class="warn-note name-clash" id="insp-name-dup" role="status" hidden></p>` +
       `<div class="insp-where">${esc(M.formatDeviceLoc(project, d))}</div>` +
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
@@ -1923,7 +1923,7 @@
       (mountable.length ? mountRadios('multi-mount', mounts.size === 1 ? [...mounts][0] : undefined, 'multi-mount-label', commonPortsSide(mountable.map((d) => M.typeOf(project, d.type)))) : '') +
       `<div class="field-grid">` +
       `<div class="field span2"><label for="multi-owner">Owner</label><input id="multi-owner" type="text" value="${owners.size === 1 ? esc([...owners][0]) : ''}" placeholder="${owners.size > 1 ? 'Mixed' : ''}" autocomplete="off" maxlength="${M.FIELD_MAX}"></div>` +
-      `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="80"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div>` +
+      `<div class="field span2"><label for="multi-rename">Rename in series, top to bottom</label><div class="inline"><input id="multi-rename" class="mono" type="text" value="${esc(sorted[0].name)}" autocomplete="off" spellcheck="false" maxlength="${M.NAME_MAX}"><button type="button" class="btn sm" id="multi-rename-go">Rename</button></div>` +
       `<p class="warn-note name-clash" id="multi-rename-dup" role="status" hidden></p></div>` +
       `</div></section>` +
       `<section class="insp-sec"><h3>Devices</h3><ol class="contents">${rows}</ol></section>` +
@@ -3756,6 +3756,7 @@
     $('#place-budget').hidden = !place.over.length;
   }
 
+  $('#place-name').maxLength = M.NAME_MAX;
   $('#place-name').addEventListener('input', () => {
     place.nameTouched = true;
     showError('#place-error', '');
@@ -4259,7 +4260,7 @@
       `<div class="field"><label for="cat-height">Height (U)</label><input id="cat-height" data-prop="height" data-num type="number" min="1" max="${M.LIMITS.deviceHeight}" step="1" value="${t.height}"></div>` +
       `<div class="field span2"><label for="cat-face">Drawing</label><select id="cat-face" data-prop="face">${faces}</select></div>` +
       `<div class="field span2"><label for="cat-spec">Description</label><input id="cat-spec" data-prop="spec" type="text" value="${esc(t.spec)}" maxlength="60" placeholder="48 × RJ45, 24 bays …" autocomplete="off"></div>` +
-      `<div class="field span2"><label for="cat-default">First name</label><input id="cat-default" class="mono" data-prop="defaultName" type="text" value="${esc(t.defaultName)}" maxlength="80" autocomplete="off" spellcheck="false"></div>` +
+      `<div class="field span2"><label for="cat-default">First name</label><input id="cat-default" class="mono" data-prop="defaultName" type="text" value="${esc(t.defaultName)}" maxlength="${M.NAME_MAX}" autocomplete="off" spellcheck="false"></div>` +
       `<div class="field"><label for="cat-power">Power (W)</label><input id="cat-power" data-prop="powerW" data-num type="number" min="0" step="10" value="${t.powerW}"></div>` +
       `<div class="field"><label for="cat-weight">Weight (kg)</label><input id="cat-weight" data-prop="weightKg" data-num type="number" min="0" step="0.5" value="${t.weightKg}"></div>` +
       `</div>` +

@@ -481,6 +481,25 @@ test('names count up in series', () => {
   assert.equal(p.devices.length, 2, 'the plan is left as it is');
 });
 
+test('generated names keep within the length of a name and keep their number', () => {
+  const long = 'y'.repeat(M.NAME_MAX);
+  assert.deepEqual(M.nameSequence(long, 3), ['01', '02', '03'].map((n) => 'y'.repeat(M.NAME_MAX - 3) + '-' + n));
+  assert.deepEqual(M.nameSequence('x'.repeat(M.NAME_MAX - 3) + '-99', 2), ['x'.repeat(M.NAME_MAX - 3) + '-99', 'x'.repeat(M.NAME_MAX - 4) + '-100']);
+  const p = project([['compute-node', 'r1', 'u', 1, long]]);
+  assert.equal(M.nextFreeName(p, long), 'y'.repeat(M.NAME_MAX - 2) + '-2');
+  const copies = M.copiesAt(p, [
+    { id: 'd1', loc: { rack: 'r2', kind: 'u', at: 1 } },
+    { id: 'd1', loc: { rack: 'r2', kind: 'u', at: 3 } },
+  ]);
+  assert.deepEqual(copies.map((c) => c.name), ['y'.repeat(M.NAME_MAX - 2) + '-2', 'y'.repeat(M.NAME_MAX - 2) + '-3']);
+  // With the code of its rack, a copy takes the code of the other rack.
+  M.rackById(p, 'r1').name = 'Rack A01';
+  M.rackById(p, 'r2').name = 'Rack ' + 'B'.repeat(40) + '2';
+  const coded = 'z'.repeat(M.NAME_MAX - 4) + '-a01';
+  assert.equal(M.nameInRack(p, coded, 'r1', 'r2', 1), 'z'.repeat(M.NAME_MAX - 42) + '-' + 'b'.repeat(40) + '2');
+  assert.ok(M.namesAt(p, coded, 'r1', ['r1', 'r1', 'r2']).every((n) => n.length <= M.NAME_MAX));
+});
+
 test('slugs are plain ASCII words joined by dashes', () => {
   assert.equal(M.slug('Hall 2 expansion'), 'hall-2-expansion');
   assert.equal(M.slug('  Halle Süd (Rév. 3)! '), 'halle-sud-rev-3');

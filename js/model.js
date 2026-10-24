@@ -196,7 +196,8 @@
     { key: 'ip', label: 'IP address', csv: 'IP address', instance: true },
     { key: 'owner', label: 'Owner', csv: 'Owner' },
   ];
-  // The longest text a plan keeps in a field of FIELDS and in the notes of a device or cable.
+  // The longest text a plan keeps in a device's name, in a field of FIELDS and in the notes of a device or cable.
+  const NAME_MAX = 80;
   const FIELD_MAX = 120;
   const NOTES_MAX = 2000;
 
@@ -793,7 +794,7 @@
       spec: str(r.spec, 60),
       height: clampInt(r.height, 1, LIMITS.deviceHeight, 1),
       face: FACE_IDS.has(r.face) ? r.face : 'generic',
-      defaultName: str(r.defaultName, 80) || `${slug(label, 20) || 'dev'}-01`,
+      defaultName: str(r.defaultName, NAME_MAX) || `${slug(label, 20) || 'dev'}-01`,
       powerW: clampNum(r.powerW, 0, 100000, 0),
       weightKg: clampNum(r.weightKg, 0, 5000, 0),
       ports: cleanPorts(r.ports),
@@ -2022,8 +2023,19 @@
     return m ? { head: m[1], num: parseInt(m[2], 10), width: m[2].length, tail: m[3] } : null;
   }
 
+  /**
+   * `head` and then `tail` within the length of a name: a long head is cut
+   * before the dashes or dots it ends in, so that they and the number in
+   * `tail` stay.
+   */
+  function fitName(head, tail) {
+    const sep = /[^a-z0-9]*$/i.exec(head)[0];
+    if (head.length + tail.length <= NAME_MAX) return head + tail;
+    return (head.slice(0, Math.max(0, NAME_MAX - tail.length - sep.length)) + sep + tail).slice(0, NAME_MAX);
+  }
+
   function formatSerial(s, n) {
-    return s.head + String(n).padStart(s.width, '0') + s.tail;
+    return fitName(s.head, String(n).padStart(s.width, '0') + s.tail);
   }
 
   /** Like parseSerial; a name without a number starts a series: db → db-01, db-02, … */
@@ -2115,7 +2127,7 @@
     if (!at || !to) return nextInSeries(project, name, count, false);
     const code = rackCode(to.name);
     const was = name.slice(at[0], at[1]);
-    const seed = name.slice(0, at[0]) + (was === was.toLowerCase() ? code.toLowerCase() : code) + name.slice(at[1]);
+    const seed = fitName(name.slice(0, at[0]), (was === was.toLowerCase() ? code.toLowerCase() : code) + name.slice(at[1]));
     const moved = seed !== name;
     const s = parseSerial(name);
     const end = s ? name.length - s.tail.length : -1;
@@ -2131,7 +2143,7 @@
         if (!used.has(next)) return next;
       }
     }
-    return firstFree(used, 2, (i) => `${seed}-${i}`);
+    return firstFree(used, 2, (i) => fitName(seed, `-${i}`));
   }
 
   /**
@@ -2188,7 +2200,7 @@
   function nextFreeName(project, name) {
     const used = namesOf(project.devices);
     const s = parseSerial(name);
-    return s ? firstFree(used, s.num + 1, (n) => formatSerial(s, n)) : firstFree(used, 2, (i) => `${name}-${i}`);
+    return s ? firstFree(used, s.num + 1, (n) => formatSerial(s, n)) : firstFree(used, 2, (i) => fitName(name, `-${i}`));
   }
 
   function nextClusterColor(project, viewId) {
@@ -2909,6 +2921,7 @@
   return {
     SCHEMA_VERSION,
     LIMITS,
+    NAME_MAX,
     FIELD_MAX,
     NOTES_MAX,
     RACK_UNITS,

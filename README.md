@@ -763,9 +763,10 @@ plan), and so are top-level keys the app does not read: up to 64 KB for
 `meta` and as much for those keys.
 A plan has 1 to 6 floors, 1 to 8 views with up to 1000 clusters each,
 1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
-and 20 000 cables. A device type has up to 32 port groups and 1024 ports. The
-notes of a device or cable keep up to 2000 characters, the serial number,
-asset tag, IP address and owner of a device up to 120. A
+and 20 000 cables. A device type has up to 32 port groups and 1024 ports. A
+device's name keeps up to 80 characters (the names of copies and series are
+cut before their number to fit), its serial number, asset tag, IP address
+and owner up to 120, and the notes of a device or cable up to 2000. A
 device's `reversed` and `slackM` are left out of the file while they are
 `false` and `null`.
 
