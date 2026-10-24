@@ -828,7 +828,8 @@ A plan never holds an end on a device or port that does not exist, a second
 cable on a port, the same port twice in a cable, a cable from a device to
 itself (the legs of a breakout may share a device, but not with the head), or
 a cable type or transceiver that is not in the catalog. Imports drop such
-cables with a warning.
+cables with a warning. A breakout only loses its legs there, as when a
+device is deleted, unless it loses its head or all its legs.
 
 Floors, rows and racks share one id space, so an id names only one of them.
 A new plan's floor, row and racks are `f1`, `row1` and `r1`, `r2`, … and its

@@ -301,7 +301,9 @@
   /**
    * Reads the cables of a file. Ends refer to devices by their id in the
    * file (`deviceIds` maps them to the plan's) and to ports by name. A
-   * cable that would break the plan's rules is skipped with a warning.
+   * cable that would break the plan's rules is skipped with a warning; as
+   * pruneCables does in the app, a breakout only loses the legs that
+   * would, unless it loses them all or its head.
    */
   function readCables(list, p, deviceIds, networkIds, warnings) {
     const ctx = M.cableContext(p);
@@ -311,30 +313,47 @@
       if (!isObj(c)) return;
       const label = str(c.label, 40);
       const what = label ? `cable ${label}` : `cable ${i + 1}`;
+      const What = label ? `Cable ${label}` : `Cable ${i + 1}`;
       const skip = (why) => void warnings.push(`Skipped ${what}: ${why}.`);
       if (p.cables.length >= L.cables) return void dropped++;
       const type = idOf(c.type);
       if (type && !M.cableTypeById(p, type)) return skip(`unknown cable type “${type}”`);
       let network = idOf(c.network);
       if (network && !networkIds.has(network)) {
-        warnings.push(`${label ? `Cable ${label}` : `Cable ${i + 1}`} refers to unknown network “${network}” and has none.`);
+        warnings.push(`${What} refers to unknown network “${network}” and has none.`);
         network = '';
       }
-      let problem = null;
+      // An end as read, and why its device or transceiver cannot be in the plan.
       const end = (e) => {
-        if (!isObj(e)) return null;
         const fileId = idOf(e.device);
         const device = deviceIds.get(fileId);
-        if (!device) problem = problem || (fileId ? `device “${fileId}” is not in the plan` : 'an end has no device');
         const out = { device: device || '', port: idOf(e.port) };
         const tr = idOf(e.transceiver);
-        if (tr && !M.transceiverById(p, tr)) problem = problem || `unknown transceiver “${tr}”`;
         if (tr) out.transceiver = tr;
-        return out;
+        let why = null;
+        if (!device) why = fileId ? `device “${fileId}” is not in the plan` : 'an end has no device';
+        else if (tr && !M.transceiverById(p, tr)) why = `unknown transceiver “${tr}”`;
+        return { end: out, why };
       };
-      const a = end(c.a);
-      const b = Array.isArray(c.b) ? c.b.slice(0, L.legs + 1).map(end) : end(c.b);
-      if (problem) return skip(problem);
+      const head = isObj(c.a) ? end(c.a) : null;
+      if (head && head.why) return skip(head.why);
+      const a = head && head.end;
+      // Legs of a breakout left unplugged, as [index, why]; said when the cable stays.
+      const lost = [];
+      let b;
+      if (Array.isArray(c.b)) {
+        b = c.b.slice(0, L.legs + 1).map((e, k) => {
+          if (e === null || e === undefined) return null;
+          const leg = isObj(e) ? end(e) : { why: 'it is no cable end' };
+          if (!leg.why) return leg.end;
+          lost.push([k, leg.why]);
+          return null;
+        });
+      } else {
+        const far = isObj(c.b) ? end(c.b) : null;
+        if (far && far.why) return skip(far.why);
+        b = far && far.end;
+      }
       let id = idOf(c.id);
       if (!id || ids.has(id)) id = M.uid('cb');
       const cable = {
@@ -347,8 +366,27 @@
         a,
         b,
       };
-      problem = M.cableProblem(p, cable, ctx);
+      let problem = M.cableProblem(p, cable, ctx);
+      if (problem && Array.isArray(b)) {
+        // Leg by leg, each with the ones kept before it: a leg that breaks the rules is left unplugged.
+        const legs = b.map(() => null);
+        let first = null;
+        b.forEach((e, k) => {
+          if (!e) return;
+          legs[k] = e;
+          const why = M.cableProblem(p, Object.assign({}, cable, { b: legs }), ctx);
+          if (!why) return;
+          legs[k] = null;
+          lost.push([k, why]);
+          first = first || why;
+        });
+        lost.sort((x, y) => x[0] - y[0]);
+        // Without a leg left, the cable goes: for what the first leg checked broke (the head's fault, if it is one), else what its first leg lacks.
+        if (legs.some(Boolean)) cable.b = legs;
+        problem = legs.some(Boolean) ? null : first || (lost.length ? lost[0][1] : problem);
+      }
       if (problem) return skip(problem);
+      for (const [k, why] of lost) warnings.push(`${What} loses leg ${k + 1}: ${why}.`);
       ids.add(id);
       M.claimPorts(ctx, cable);
       p.cables.push(cable);

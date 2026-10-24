@@ -627,6 +627,40 @@ test('cables that would break the plan’s rules are skipped with a warning', ()
   assert.equal(M.pruneCables(p), 0);
 });
 
+test('a breakout loses only the legs that cannot be in the plan, as in the app, unless it loses them all or its head', () => {
+  const raw = JSON.parse(IO.serialize(M.createExampleProject()));
+  const by = (label) => raw.cables.find((c) => c.label === label);
+  by('IB-0043').b[1].port = 'nope';
+  by('IB-0044').b[0].device = 'ghost';
+  by('IB-0045').b[0].device = 'ghost';
+  by('IB-0045').b[1].port = 'nope';
+  by('IB-0046').a.port = 'nope';
+  by('IB-0047').b[1] = 'junk';
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, [
+    'Cable IB-0043 loses leg 2: gpu-srv-01 has no port nope.',
+    'Cable IB-0044 loses leg 1: device “ghost” is not in the plan.',
+    'Skipped cable IB-0045: gpu-srv-02 has no port nope.',
+    'Skipped cable IB-0046: ib-leaf-b02 has no port nope.',
+    'Cable IB-0047 loses leg 2: it is no cable end.',
+  ]);
+  const legs = (label) => p.cables.find((c) => c.label === label).b;
+  assert.deepEqual(legs('IB-0043'), [{ device: 'ex-52', port: 'ib0' }, null]);
+  assert.deepEqual(legs('IB-0044'), [null, { device: 'ex-52', port: 'ib3' }]);
+  assert.deepEqual(legs('IB-0047'), [{ device: 'ex-54', port: 'ib0' }, null]);
+  assert.equal(p.cables.length, 147 - 2);
+  assert.equal(M.pruneCables(p), 0);
+
+  // A device that cannot be placed takes only its legs, as deleting it does in the app.
+  const app = M.createExampleProject();
+  app.devices = app.devices.filter((d) => d.id !== 'ex-52');
+  M.pruneCables(app);
+  const file = JSON.parse(IO.serialize(M.createExampleProject()));
+  file.devices.find((d) => d.id === 'ex-52').loc.at = 1;
+  const loaded = IO.normalizeProject(file).project;
+  assert.deepEqual(IO.serialize(loaded), IO.serialize(Object.assign(app, { devices: loaded.devices })));
+});
+
 test('a cable schedule exports one line per cable and leg and reads back into a plan', () => {
   const ex = M.createExampleProject();
   const csv = IO.exportCablesCSV(ex);
