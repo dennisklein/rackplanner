@@ -1290,6 +1290,7 @@ test('the first eight cluster colors stay apart for color-blind eyes too', () =>
 test('names the CSVs find things by stay apart in their list, in any case', () => {
   const p = M.createExampleProject();
   // Catalog types: a new one takes a number, a change to a taken name is refused.
+  assert.equal(M.addDeviceType(p, { label: 'compute NODE' }).label, 'compute NODE 2');
   assert.equal(M.updateDeviceType(p, 'storage-node', { label: 'Compute node' }), 'Another device type is named Compute node');
   assert.equal(M.typeOf(p, 'storage-node').label, 'Storage node');
   assert.equal(M.updateDeviceType(p, 'storage-node', { label: 'STORAGE NODE' }), null, 'its own name in another case');

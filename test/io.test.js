@@ -500,6 +500,15 @@ test('a CSV adds devices to a plan and creates what is missing', () => {
   assert.throws(() => IO.importCSV('just one line'), /no devices/);
 });
 
+test('a generic type a CSV adds gets a label no other type has, in any case', () => {
+  const base = M.createEmptyProject();
+  M.addDeviceType(base, { label: 'generic 2U device', height: 2, face: 'storage' });
+  const { project: p, warnings } = IO.importCSV('Name,Rack,Position,Height\nbox-1,Rack A01,U3,2', base);
+  const made = p.deviceTypes.find((t) => t.id === p.devices[0].type);
+  assert.deepEqual([made.label, made.face], ['Generic 2U device 2', 'generic']);
+  assert.deepEqual(warnings, ['Added the device type Generic 2U device 2 (2U) to the catalog.']);
+});
+
 test('CSV lines with long floor and row names end up on one floor and row', () => {
   const hall = `Hall ${'x'.repeat(70)}`;
   const row = `Row ${'y'.repeat(70)}`;

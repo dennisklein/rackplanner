@@ -926,14 +926,7 @@
     if (project.deviceTypes.length >= LIMITS.deviceTypes) return null;
     const t = cleanDeviceType(template);
     t.id = uid('t');
-    // Numbered past a label in the same case only, as a CSV import has
-    // always named the generic types it adds; updateDeviceType refuses a
-    // label another type has in any case.
-    const used = new Set(project.deviceTypes.map((x) => x.label));
-    if (used.has(t.label)) {
-      const head = t.label.slice(0, LIMITS.name - 4).trim();
-      t.label = firstFree(used, 2, (i) => `${head} ${i}`);
-    }
+    t.label = uniqueLabel(project.deviceTypes, 'label', t.label);
     project.deviceTypes.push(t);
     return t;
   }
