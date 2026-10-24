@@ -1290,6 +1290,20 @@
     });
   }
 
+  /** Cables that would lose an end if device `deviceId` got the type `typeId`, as model.setDeviceType does it. */
+  function typeChangeImpact(project, deviceId, typeId) {
+    const work = Object.assign({}, project, {
+      devices: project.devices.map((d) => (d.id === deviceId ? M.clone(d) : d)),
+      cables: M.clone(project.cables),
+    });
+    if (M.setDeviceType(work, deviceId, typeId)) return [];
+    const after = new Map(work.cables.map((c) => [c.id, c]));
+    return project.cables.filter((c) => {
+      const n = after.get(c.id);
+      return !n || M.cableEnds(n).length < M.cableEnds(c).length;
+    });
+  }
+
   /**
    * Cables that keep their ends but would have one on another port name if
    * device type `typeId` got the port groups `newPorts`: [{ cable, moves:
@@ -1374,6 +1388,7 @@
     fabric,
     rangeName,
     portChangeImpact,
+    typeChangeImpact,
     portChangeMoves,
     remapPortsForType: M.remapPorts,
   };

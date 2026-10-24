@@ -996,6 +996,64 @@ test('adding or removing a port group leaves the other groups’ cables on their
   assert.deepEqual([...M.portMoves(sw, [sw[0], Object.assign({}, sw[1], { count: 2 })])].slice(-3), [['swp48', 'swp48'], ['swp49', 'swp49'], ['swp50', 'swp50']]);
 });
 
+test('setDeviceType changes the type of one device and keeps its cables on the ports at the same place', () => {
+  const p = M.createExampleProject();
+  const cn = p.devices.find((d) => d.name === 'cn-001');
+  cn.serial = 'SN-1';
+  const ports = (q, d) => q.cables.flatMap((c) => M.cableEnds(c).filter((x) => x.end.device === d.id).map((x) => x.end.port)).sort();
+  const node = M.addDeviceType(p, {
+    label: 'GPU node',
+    height: 2,
+    face: 'gpu',
+    ports: [
+      { name: 'bmc', connector: 'rj45', side: 'rear' },
+      { name: 'eth0', connector: 'rj45', side: 'rear' },
+      { name: 'ib', first: 0, count: 2, connector: 'qsfp56', speedGbps: 200, side: 'rear' },
+    ],
+  });
+  const cables = p.cables.length;
+  assert.deepEqual(C.typeChangeImpact(p, cn.id, node.id), []);
+  assert.equal(M.setDeviceType(p, cn.id, node.id), null);
+  assert.deepEqual([cn.type, cn.name, cn.serial, cn.groups.v1], [node.id, 'cn-001', 'SN-1', 'c-kestrel'], 'the device keeps its fields');
+  assert.equal(p.cables.length, cables);
+  assert.deepEqual(ports(p, cn), ['bmc', 'eth0', 'ib0'], 'ib0 is the first port of the ib series');
+  assert.equal(p.devices.filter((d) => d.type === 'compute-node').length, 19, 'the other compute nodes keep theirs');
+  assert.equal(M.setDeviceType(p, cn.id, node.id), null, 'the same type changes nothing');
+
+  // A type without those ports unplugs their cables.
+  const blank = M.addDeviceType(p, { label: 'Blank 2U', height: 2, ports: [] });
+  assert.deepEqual(C.typeChangeImpact(p, cn.id, blank.id).map((c) => c.label), ['MGT-0001', 'BMC-0001', 'IB-0001']);
+  assert.equal(M.setDeviceType(p, cn.id, blank.id), null);
+  assert.equal(p.cables.length, cables - 3);
+  assert.equal(M.pruneCables(M.clone(p)), 0);
+
+  // A type that does not fit where the device is is refused, and the plan stays as it was.
+  const json = JSON.stringify(p);
+  assert.equal(M.setDeviceType(p, cn.id, 'storage-node'), 'Overlaps cn-002 at U6–7');
+  assert.equal(M.setDeviceType(p, 'nope', 'storage-node'), 'Unknown device or device type');
+  assert.equal(M.setDeviceType(p, cn.id, 'nope'), 'Unknown device or device type');
+  assert.deepEqual(C.typeChangeImpact(p, cn.id, 'storage-node'), []);
+  assert.equal(JSON.stringify(p), json);
+
+  // Reserved space takes the height of the device; a device takes its type's.
+  assert.equal(M.setDeviceType(p, cn.id, 'reserved'), null);
+  assert.equal(cn.height, 2);
+  assert.equal(M.setDeviceType(p, cn.id, 'compute-node'), null);
+  assert.ok(!('height' in cn));
+
+  // A switch mounted back to front, as switches are, becomes a PDU mounted as PDUs are.
+  const sw = p.devices.find((d) => d.name === 'sw-bmc-a01');
+  assert.equal(sw.reversed, true);
+  assert.equal(M.setDeviceType(p, sw.id, 'pdu'), null);
+  assert.equal(sw.reversed, false);
+  assert.ok(!p.cables.some((c) => M.cableEnds(c).some((x) => x.end.device === sw.id)), 'no switch port is in the place of mgmt');
+  const turned = p.devices.find((d) => d.name === 'cn-002');
+  turned.reversed = true;
+  assert.equal(M.setDeviceType(p, turned.id, node.id), null);
+  assert.equal(turned.reversed, true, 'a device turned by hand stays turned');
+  assert.equal(M.layoutProblem(p), null);
+});
+
 test('cable labels continue their series', () => {
   const p = M.createEmptyProject();
   p.networks.push({ id: 'n1', name: 'InfiniBand', color: '#2f6fdb', firstLabel: 'IB-0001' });

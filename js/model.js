@@ -2607,6 +2607,38 @@
     return pruneCables(project);
   }
 
+  /**
+   * Gives device `deviceId` the type `typeId` (of the catalog, or reserved
+   * space), where it is. Its cable ends move to the port at the same place
+   * in the new type's port groups (see portMoves); the ends whose place is
+   * gone are unplugged (see pruneCables). A device mounted the way devices
+   * of its old type are by default is mounted the way those of the new
+   * type are. Returns an error message and leaves the plan unchanged when
+   * the device would not fit where it is.
+   */
+  function setDeviceType(project, deviceId, typeId) {
+    const d = deviceById(project, deviceId);
+    const type = typeOf(project, typeId);
+    if (!d || !type) return 'Unknown device or device type';
+    const before = typeOf(project, d.type);
+    if (before === type) return null;
+    // Reserved space takes the height of what it replaces.
+    const height = type.variable ? deviceHeight(project, d) : undefined;
+    const fit = canPlace(project, typeId, d.loc, d.id, height);
+    if (!fit.ok) return fit.reason;
+    if (!before || mountsReversed(before) === !!d.reversed) d.reversed = mountsReversed(type);
+    d.type = typeId;
+    if (type.variable) d.height = height;
+    else delete d.height;
+    const moves = portMoves(before ? before.ports : [], type.ports);
+    for (const c of project.cables || []) {
+      // Port names are never empty, so prune removes an end set to ''.
+      for (const x of cableEnds(c)) if (x.end.device === d.id) x.end.port = moves.get(x.end.port) || '';
+    }
+    pruneCables(project);
+    return null;
+  }
+
   // ------------------------------------------------------------- statistics
 
   function emptyStats(project, rack) {
@@ -3021,6 +3053,7 @@
     copyCables,
     portMoves,
     remapPorts,
+    setDeviceType,
     statsByRack,
     rackStats,
     overBudgetWith,
