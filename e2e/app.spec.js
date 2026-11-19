@@ -1290,10 +1290,10 @@ test('a plan a newer version saved is left as it is, and the user is told', asyn
   const stored = await page.evaluate(() => {
     const index = JSON.parse(localStorage.getItem('rackplanner.library.v1'));
     const entry = index.plans.find((p) => p.id === index.current);
-    entry.version = 6;
+    entry.version = 7;
     localStorage.setItem('rackplanner.library.v1', JSON.stringify(index));
     const key = `rackplanner.plan.${entry.id}`;
-    const text = localStorage.getItem(key).replace('"version":5,', '"version":6,');
+    const text = localStorage.getItem(key).replace('"version":6,', '"version":7,');
     localStorage.setItem(key, text);
     return { key, text };
   });

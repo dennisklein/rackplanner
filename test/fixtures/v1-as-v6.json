@@ -1,6 +1,6 @@
 {
   "app": "rackplanner",
-  "version": 5,
+  "version": 6,
   "name": "Hall 2, row A",
   "info": {
     "site": "",
@@ -36,6 +36,14 @@
           "side": "front"
         }
       ],
+      "inlets": [
+        {
+          "name": "psu",
+          "first": 1,
+          "count": 2,
+          "connector": "c14"
+        }
+      ],
       "slackM": 0
     },
     {
@@ -56,6 +64,14 @@
           "connector": "qsfp56",
           "speedGbps": 200,
           "side": "front"
+        }
+      ],
+      "inlets": [
+        {
+          "name": "psu",
+          "first": 1,
+          "count": 2,
+          "connector": "c14"
         }
       ],
       "slackM": 0
@@ -88,6 +104,14 @@
           "connector": "qsfp56",
           "speedGbps": 200,
           "side": "rear"
+        }
+      ],
+      "inlets": [
+        {
+          "name": "psu",
+          "first": 1,
+          "count": 2,
+          "connector": "c14"
         }
       ],
       "slackM": 0.3
@@ -138,6 +162,14 @@
           "side": "rear"
         }
       ],
+      "inlets": [
+        {
+          "name": "psu",
+          "first": 1,
+          "count": 2,
+          "connector": "c14"
+        }
+      ],
       "slackM": 0.3
     },
     {
@@ -170,6 +202,14 @@
           "side": "rear"
         }
       ],
+      "inlets": [
+        {
+          "name": "psu",
+          "first": 1,
+          "count": 2,
+          "connector": "c14"
+        }
+      ],
       "slackM": 0.3
     }
   ],
@@ -179,6 +219,11 @@
       "name": "47U rack",
       "units": 47,
       "sideSlots": 2,
+      "pduSlots": [
+        "left",
+        "right"
+      ],
+      "defaultPdu": null,
       "powerW": 12000,
       "weightKg": 1200,
       "widthMm": 600,
@@ -191,6 +236,11 @@
       "name": "42U rack",
       "units": 42,
       "sideSlots": 2,
+      "pduSlots": [
+        "left",
+        "right"
+      ],
+      "defaultPdu": null,
       "powerW": 8000,
       "weightKg": 1000,
       "widthMm": 600,
@@ -203,6 +253,11 @@
       "name": "48U high-density rack",
       "units": 48,
       "sideSlots": 2,
+      "pduSlots": [
+        "left",
+        "right"
+      ],
+      "defaultPdu": null,
       "powerW": 20000,
       "weightKg": 1500,
       "widthMm": 800,
@@ -430,6 +485,36 @@
       "reachM": 50
     }
   ],
+  "cordTypes": [
+    {
+      "id": "c14-c13",
+      "name": "C14–C13 cord",
+      "outlet": "c13",
+      "inlet": "c14",
+      "maxA": 10,
+      "lengthsM": [
+        0.6,
+        1,
+        1.5,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "c20-c19",
+      "name": "C20–C19 cord",
+      "outlet": "c19",
+      "inlet": "c20",
+      "maxA": 16,
+      "lengthsM": [
+        0.6,
+        1,
+        1.5,
+        2,
+        3
+      ]
+    }
+  ],
   "floors": [
     {
       "id": "f1",
@@ -500,6 +585,11 @@
     }
   ],
   "networks": [],
+  "powerGrids": [],
+  "powerSettings": {
+    "powerFactor": 1,
+    "limitPct": 80
+  },
   "devices": [
     {"id":"ex-1","type":"switch-rj45","name":"sw-mgmt-a01","groups":{"v1":"c-net"},"loc":{"rack":"r1","kind":"u","at":1}},
     {"id":"ex-2","type":"switch-qsfp","name":"ib-leaf-a01","groups":{"v1":"c-net"},"loc":{"rack":"r1","kind":"u","at":2}},
@@ -540,6 +630,7 @@
     {"id":"ex-37","type":"storage-enclosure","name":"jbod-04","groups":{"v1":"c-lustre"},"loc":{"rack":"r3","kind":"u","at":24}}
   ],
   "cables": [],
+  "powerCords": [],
   "meta": {
     "example": true
   }

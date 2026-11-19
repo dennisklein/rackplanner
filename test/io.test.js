@@ -103,44 +103,49 @@ test('version 1 plans, counted from the bottom, keep their layout', () => {
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, []);
   assert.deepEqual(p.devices.map((d) => d.loc.at), [1, 44, 26, 0]);
-  assert.equal(p.version, 5);
-  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 5 is kept');
+  assert.equal(p.version, 6);
+  assert.equal(IO.normalizeProject(JSON.parse(IO.serialize(p))).project.devices[1].loc.at, 44, 'version 6 is kept');
 });
 
 // test/fixtures/vN.json is the example plan as version N wrote it, with that version's own code.
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
-test('files written by versions 1 to 4 read as the committed version 5 snapshots', () => {
-  for (const v of [1, 2, 3, 4]) {
+test('files written by versions 1 to 5 read as the committed version 6 snapshots', () => {
+  for (const v of [1, 2, 3, 4, 5]) {
     const raw = JSON.parse(fixture(`v${v}.json`));
     assert.equal(raw.version, v);
     const { project, warnings } = IO.normalizeProject(raw);
     assert.deepEqual(warnings, [], `v${v}`);
-    assert.equal(IO.serialize(project) + '\n', fixture(`v${v}-as-v5.json`), `v${v}`);
+    assert.equal(IO.serialize(project) + '\n', fixture(`v${v}-as-v6.json`), `v${v}`);
   }
 });
 
 test('a change of the standard catalog does not change how old files read', () => {
-  const saved = M.clone([M.DEFAULT_DEVICE_TYPES, M.DEFAULT_RACK_TYPES, M.DEFAULT_CABLE_TYPES, M.DEFAULT_TRANSCEIVERS]);
+  const lists = [M.DEFAULT_DEVICE_TYPES, M.DEFAULT_RACK_TYPES, M.DEFAULT_CABLE_TYPES, M.DEFAULT_TRANSCEIVERS, M.DEFAULT_CORD_TYPES];
+  const saved = M.clone(lists);
+  const settings = M.clone(M.DEFAULT_POWER_SETTINGS);
   try {
-    for (const t of M.DEFAULT_DEVICE_TYPES) Object.assign(t, { height: 1, ports: [], label: 'Changed' });
-    for (const t of M.DEFAULT_RACK_TYPES) Object.assign(t, { units: 42, widthMm: 700 });
+    for (const t of M.DEFAULT_DEVICE_TYPES) Object.assign(t, { height: 1, ports: [], inlets: [], label: 'Changed' });
+    for (const t of M.DEFAULT_RACK_TYPES) Object.assign(t, { units: 42, widthMm: 700, pduSlots: ['left'] });
     M.DEFAULT_CABLE_TYPES.splice(0);
     M.DEFAULT_TRANSCEIVERS.splice(0);
-    for (const v of [1, 2, 3, 4]) assert.equal(IO.serialize(IO.normalizeProject(JSON.parse(fixture(`v${v}.json`))).project) + '\n', fixture(`v${v}-as-v5.json`), `v${v}`);
+    M.DEFAULT_CORD_TYPES.splice(0);
+    Object.assign(M.DEFAULT_POWER_SETTINGS, { powerFactor: 0.9, limitPct: 50 });
+    for (const v of [1, 2, 3, 4, 5]) assert.equal(IO.serialize(IO.normalizeProject(JSON.parse(fixture(`v${v}.json`))).project) + '\n', fixture(`v${v}-as-v6.json`), `v${v}`);
   } finally {
-    [M.DEFAULT_DEVICE_TYPES, M.DEFAULT_RACK_TYPES, M.DEFAULT_CABLE_TYPES, M.DEFAULT_TRANSCEIVERS].forEach((list, i) => list.splice(0, list.length, ...saved[i]));
+    lists.forEach((list, i) => list.splice(0, list.length, ...saved[i]));
+    Object.assign(M.DEFAULT_POWER_SETTINGS, settings);
   }
 });
 
 test('a plan of a newer version is refused, and a missing or broken version is said', async () => {
   const raw = JSON.parse(IO.serialize(M.createExampleProject()));
-  for (const version of [6, 99, '6', 5.5]) assert.throws(() => IO.normalizeProject(Object.assign({}, raw, { version })), { message: IO.NEWER }, String(version));
+  for (const version of [7, 99, '7', 6.5]) assert.throws(() => IO.normalizeProject(Object.assign({}, raw, { version })), { message: IO.NEWER }, String(version));
   assert.equal(IO.NEWER, 'This plan is from a newer Rackplanner. Reload the page to update.');
-  assert.throws(() => IO.normalizeProject({ app: 'rackplanner', version: 6 }), { message: IO.NEWER }, 'whatever shape it has');
-  assert.throws(() => IO.normalizeProject({ version: 6, devices: [] }), { message: IO.NEWER });
-  assert.throws(() => IO.normalizeProject({ version: 6, name: 'not a plan' }), /not a rack plan/);
-  const shared = await IO.decodeShare('j' + Buffer.from(JSON.stringify(Object.assign({}, raw, { version: 6 }))).toString('base64url'));
+  assert.throws(() => IO.normalizeProject({ app: 'rackplanner', version: 7 }), { message: IO.NEWER }, 'whatever shape it has');
+  assert.throws(() => IO.normalizeProject({ version: 7, devices: [] }), { message: IO.NEWER });
+  assert.throws(() => IO.normalizeProject({ version: 7, name: 'not a plan' }), /not a rack plan/);
+  const shared = await IO.decodeShare('j' + Buffer.from(JSON.stringify(Object.assign({}, raw, { version: 7 }))).toString('base64url'));
   assert.throws(() => IO.normalizeProject(shared), { message: IO.NEWER }, 'a share link too');
 
   // Rackplanner always writes a whole version number: a file without one reads as it did, with a warning.
@@ -153,6 +158,7 @@ test('a plan of a newer version is refused, and a missing or broken version is s
     [-1, 'The file’s version “-1” is not valid; it was read as version 2.'],
     [4.5, 'The file’s version “4.5” is not valid; it was read as version 4.'],
     ['5', 'The file’s version “5” is not valid; it was read as version 5.'],
+    ['6', 'The file’s version “6” is not valid; it was read as version 6.'],
   ]) {
     const file = Object.assign({}, raw, { version });
     if (version === undefined) delete file.version;
@@ -234,7 +240,7 @@ test('version 3 plans are checked against their limits and catalogs', () => {
   assert.equal(p.floors[0].rows[0].racks.length, 16);
   assert.notEqual(p.floors[1].id, 'a', 'duplicate floor ids are replaced');
   assert.equal(p.floors[1].name, 'F0', 'the empty floor is skipped');
-  assert.deepEqual(M.rackTypeById(p, 'huge'), { id: 'huge', name: 'Huge', units: 60, sideSlots: 4, powerW: 0, weightKg: 0, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
+  assert.deepEqual(M.rackTypeById(p, 'huge'), { id: 'huge', name: 'Huge', units: 60, sideSlots: 4, pduSlots: ['left', 'right'], defaultPdu: null, powerW: 0, weightKg: 0, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
   assert.deepEqual(p.deviceTypes.map((t) => [t.id, t.height, t.face, t.powerW]), [['blade', 10, 'generic', 0], ['compute-node', 2, 'compute', 700]]);
   assert.deepEqual(p.devices.map((d) => [d.name, d.loc.at, d.height]), [['bl-1', 51, undefined], ['cn-1', 1, undefined], ['later', 1, 7]]);
   for (const w of [
@@ -612,22 +618,25 @@ test('share links pack and unpack a plan', async () => {
 
 const C = require('../js/cabling.js');
 
-test('version 5 files keep ports, lengths, networks, catalogs, views and cables, a device and a cable to a line', () => {
+test('version 6 files keep ports, lengths, networks, catalogs, views and cables, a device and a cable to a line', () => {
   const ex = M.createExampleProject();
   M.deviceById(ex, 'ex-9').slackM = 0.5;
   ex.floors[0].rows[0].racks[0].trayM = 0.8;
   ex.cables[0].a.transceiver = 'sfp-10g-sr'; // not used by a copper cable, but kept
   const json = IO.serialize(ex);
   const raw = JSON.parse(json);
-  assert.equal(raw.version, 5);
-  assert.deepEqual(Object.keys(raw), ['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'floors', 'views', 'networks', 'devices', 'cables', 'meta']);
+  assert.equal(raw.version, 6);
+  assert.deepEqual(Object.keys(raw), [
+    'app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'cordTypes', 'floors', 'views', 'networks',
+    'powerGrids', 'powerSettings', 'devices', 'cables', 'powerCords', 'meta',
+  ]);
   assert.deepEqual(raw.devices.find((d) => d.id === 'ex-9').groups, { v1: 'c-kestrel' });
   assert.deepEqual(raw.devices.find((d) => d.id === 'ex-1').reversed, true);
   assert.ok(!('reversed' in raw.devices.find((d) => d.id === 'ex-9')), 'only devices mounted back to front say so');
   const lines = json.split('\n');
   assert.equal(lines.filter((l) => l.startsWith('    {"id":"cb-')).length, 147);
   assert.equal(lines.filter((l) => l.startsWith('    {"id":"ex-')).length, 65);
-  assert.ok(lines.length < 1000, `${lines.length} lines`);
+  assert.ok(lines.length < 1100, `${lines.length} lines`);
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, []);
   assert.deepEqual(p, ex);
@@ -1404,4 +1413,170 @@ test('plans the model makes read back as written, long notes included', () => {
   M.namesAt(q, 'm'.repeat(M.NAME_MAX), 'r2', ['r2', 'r2']).forEach((name, i) => q.devices.push(M.newDevice({ type: 'compute-node', name, loc: { rack: 'r2', kind: 'u', at: 1 + 2 * i } })));
   assert.equal(new Set(q.devices.map((d) => d.name)).size, 5);
   assertRoundTrip(q, 'long names');
+});
+
+// ------------------------------------------------------------------ power
+
+const PDU_TYPE = Object.assign({ id: 't-pdu' }, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
+
+/** A version 6 file with one rack, two grids, a PDU in each slot, two compute nodes and three cords. */
+function powerFile(changes) {
+  return Object.assign(
+    {
+      app: 'rackplanner',
+      version: 6,
+      name: 'Power',
+      deviceTypes: M.clone(M.DEFAULT_DEVICE_TYPES).concat([M.clone(PDU_TYPE)]),
+      rackTypes: [{ id: 'rack-47', name: '47U rack', units: 47, sideSlots: 2, pduSlots: ['left', 'right'], defaultPdu: 't-pdu' }],
+      floors: [{ id: 'f1', name: 'Hall', rows: [{ id: 'row1', name: 'Row A', racks: [{ id: 'r1', name: 'Rack A01', type: 'rack-47' }, { id: 'r2', name: 'Rack A02', type: 'rack-47' }] }] }],
+      powerGrids: [{ id: 'pg-a', name: 'Grid A', color: '#d1453b', note: 'UPS 1' }, { id: 'pg-b', name: 'Grid B', color: '#2b6cd4' }],
+      powerSettings: { powerFactor: 0.95, limitPct: 75 },
+      devices: [
+        { id: 'pa', type: 't-pdu', name: 'pdu-a01-a', grid: 'pg-a', loc: { rack: 'r1', kind: 'pdu', at: 0 } },
+        { id: 'pb', type: 't-pdu', name: 'pdu-a01-b', grid: 'pg-b', loc: { rack: 'r1', kind: 'pdu', at: 1 } },
+        { id: 'cn1', type: 'compute-node', name: 'cn-001', loc: { rack: 'r1', kind: 'u', at: 4 } },
+        { id: 'cn2', type: 'compute-node', name: 'cn-002', loc: { rack: 'r2', kind: 'u', at: 4 } },
+      ],
+      powerCords: [
+        { id: 'pc-1', label: 'P-0001', type: null, lengthM: null, color: null, notes: '', inlet: { device: 'cn1', inlet: 'psu1' }, outlet: { device: 'pa', outlet: '3' } },
+        { id: 'pc-2', label: 'P-0002', type: 'c14-c13', lengthM: 1.5, color: '#00FF00', notes: 'spare', inlet: { device: 'cn1', inlet: 'psu2' }, outlet: { device: 'pb', outlet: '3' } },
+      ],
+    },
+    changes
+  );
+}
+
+test('a version 6 file keeps its grids, settings, PDUs, cord types and cords, a cord to a line', () => {
+  const { project: p, warnings } = IO.normalizeProject(powerFile());
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p.powerGrids, [{ id: 'pg-a', name: 'Grid A', color: '#d1453b', note: 'UPS 1' }, { id: 'pg-b', name: 'Grid B', color: '#2b6cd4', note: '' }]);
+  assert.deepEqual(p.powerSettings, { powerFactor: 0.95, limitPct: 75 });
+  assert.deepEqual(p.cordTypes, M.DEFAULT_CORD_TYPES, 'a file without cord types gets the standard ones');
+  assert.deepEqual(p.devices.map((d) => [d.id, d.grid, d.loc.kind]), [['pa', 'pg-a', 'pdu'], ['pb', 'pg-b', 'pdu'], ['cn1', undefined, 'u'], ['cn2', undefined, 'u']]);
+  assert.deepEqual(p.powerCords[1], { id: 'pc-2', label: 'P-0002', type: 'c14-c13', lengthM: 1.5, color: '#00ff00', notes: 'spare', inlet: { device: 'cn1', inlet: 'psu2' }, outlet: { device: 'pb', outlet: '3' } });
+  assert.equal(M.rackTypeById(p, 'rack-47').defaultPdu, 't-pdu');
+  const json = IO.serialize(p);
+  assert.ok(json.includes('\n    {"id":"pc-1","label":"P-0001","type":null,"lengthM":null,"color":null,"notes":"","inlet":{"device":"cn1","inlet":"psu1"},"outlet":{"device":"pa","outlet":"3"}},\n'));
+  assert.ok(json.includes('{"id":"pa","type":"t-pdu","name":"pdu-a01-a","groups":{},"grid":"pg-a","loc":{"rack":"r1","kind":"pdu","at":0}}'));
+  assert.ok(!JSON.parse(json).devices[2].hasOwnProperty('grid'), 'only PDUs name a grid');
+  const again = IO.normalizeProject(JSON.parse(json));
+  assert.deepEqual(again.warnings, []);
+  assert.deepEqual(again.project, p);
+  assert.equal(IO.serialize(again.project), json);
+});
+
+test('what a plan never holds is dropped from a file with a warning', () => {
+  const file = powerFile();
+  file.deviceTypes[file.deviceTypes.length - 1].pdu.fuses[1].outlets.push('1', '99');
+  file.rackTypes.push({ id: 'low', name: 'Low', units: 12, defaultPdu: 'compute-node' });
+  file.devices.push(
+    { id: 'x1', type: 'compute-node', name: 'in-a-slot', loc: { rack: 'r2', kind: 'pdu', at: 0 } },
+    { id: 'x2', type: 't-pdu', name: 'in-the-bay', loc: { rack: 'r2', kind: 'u', at: 20 } },
+    { id: 'x3', type: 't-pdu', name: 'second', loc: { rack: 'r1', kind: 'pdu', at: 0 } },
+    { id: 'x4', type: 't-pdu', name: 'no-slot', loc: { rack: 'r2', kind: 'pdu', at: 2 } },
+    { id: 'pc', type: 't-pdu', name: 'pdu-a02-a', grid: 'pg-z', loc: { rack: 'r2', kind: 'pdu', at: 0 } }
+  );
+  const end = (device, name, key) => ({ device, [key]: name });
+  const c = (label, device, inlet, pdu, outlet, extra) => Object.assign({ label, inlet: end(device, inlet, 'inlet'), outlet: end(pdu, outlet, 'outlet') }, extra);
+  file.powerCords.push(
+    c('other-rack', 'cn2', 'psu1', 'pa', '4'),
+    c('no-inlet', 'cn1', 'psu9', 'pa', '5'),
+    c('no-outlet', 'cn2', 'psu1', 'pc', '31'),
+    c('inlet-twice', 'cn1', 'psu1', 'pb', '6'),
+    c('outlet-twice', 'cn2', 'psu1', 'pc', '7'),
+    c('outlet-twice-2', 'cn2', 'psu2', 'pc', '7'),
+    c('no-type', 'cn2', 'psu2', 'pc', '8', { type: 'nope' }),
+    c('no-device', 'gone', 'psu1', 'pc', '9'),
+    { label: 'half', inlet: end('cn2', 'psu2', 'inlet') }
+  );
+  const { project: p, warnings } = IO.normalizeProject(file);
+  assert.deepEqual(warnings, [
+    'Rack type Low names “compute-node” as its default PDU, which is no vertical PDU type of the plan, and has none.',
+    'Skipped in-a-slot: PDU slots take vertical PDUs only.',
+    'Skipped in-the-bay: A vertical PDU goes in a PDU slot.',
+    'Skipped second: PDU slot P1 holds pdu-a01-a.',
+    'Skipped no-slot: There is no such PDU slot.',
+    'pdu-a02-a refers to unknown power grid “pg-z” and has none.',
+    'Skipped power cord other-rack: cn-002 and pdu-a01-a are in different racks: a power cord stays in its rack.',
+    'Skipped power cord no-inlet: cn-001 has no inlet psu9.',
+    'Skipped power cord no-outlet: pdu-a02-a has no outlet 31.',
+    'Skipped power cord inlet-twice: cn-001 psu1 already has cord P-0001.',
+    'Skipped power cord outlet-twice-2: Outlet 7 of pdu-a02-a already has cord outlet-twice.',
+    'Skipped power cord no-type: unknown cord type “nope”.',
+    'Skipped power cord no-device: device “gone” is not in the plan.',
+    'Skipped power cord half: it has no outlet.',
+  ]);
+  assert.deepEqual(p.powerCords.map((x) => x.label), ['P-0001', 'P-0002', 'outlet-twice']);
+  assert.equal(M.deviceById(p, 'pc').grid, null);
+  assert.deepEqual(M.rackTypeById(p, 'low').pduSlots, [], 'a rack lower than 20 units has no PDU slots by default');
+  const fuses = M.typeOf(p, 't-pdu').pdu.fuses;
+  assert.deepEqual([fuses[0].outlets, fuses[1].outlets], [['1', '2', '3', '4', '5'], ['6', '7', '8', '9', '10']], 'an outlet is in one fuse group, and a group names outlets of the PDU only');
+});
+
+test('racks made up for a file without floors, or with a flat list of racks, hold the file’s PDUs, not default ones', () => {
+  const p = M.createEmptyProject(2);
+  const type = M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
+  assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: type.id }), null);
+  const raw = JSON.parse(IO.serialize(p));
+  // No floors: three racks are made up, and stay empty.
+  raw.floors = [];
+  let r = IO.normalizeProject(raw);
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual(rowRacks(r.project).map((k) => k.id), ['r1', 'r2', 'r3']);
+  assert.deepEqual(r.project.devices, []);
+  assert.equal(r.project.rackTypes[0].defaultPdu, type.id);
+  // A flat list of racks: the PDU of the file hangs in its slot.
+  delete raw.floors;
+  raw.racks = [{ id: 'ra', name: 'One' }, { id: 'rb', name: 'Two' }];
+  raw.devices = [{ id: 'mine', type: type.id, name: 'mine', loc: { rack: 'rb', kind: 'pdu', at: 0 } }];
+  r = IO.normalizeProject(raw);
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual(r.project.devices.map((d) => [d.name, d.loc]), [['mine', { rack: 'r2', kind: 'pdu', at: 0 }]]);
+});
+
+test('a vertical PDU is never turned: one a file says is mounted back to front reads as it hangs', () => {
+  const raw = powerFile();
+  raw.devices.forEach((d) => (d.reversed = true));
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(p.devices.map((d) => [d.id, d.reversed]), [['pa', false], ['pb', false], ['cn1', true], ['cn2', true]]);
+  assert.deepEqual(JSON.parse(IO.serialize(p)).devices.map((d) => !!d.reversed), [false, false, true, true]);
+});
+
+test('version 5 files get PDU slots, standard inlets, cord types and settings; their devices stay', () => {
+  const raw = {
+    version: 5,
+    deviceTypes: [
+      { id: 'compute-node', label: 'My node', height: 2, face: 'compute', powerW: 500, ports: [] },
+      { id: 'switch-rj45', label: 'Switch', height: 1, inlets: [{ name: 'ac', connector: 'c20' }] },
+      { id: 'bmc', label: 'BMC switch', height: 1, powerW: 60 },
+      { id: 'pdu', label: 'PDU', height: 1, face: 'pdu' },
+    ],
+    rackTypes: [{ id: 'rack-47', name: '47U', units: 47 }, { id: 'wall', name: 'Wall box', units: 12 }, { id: 'own', name: 'Own', units: 42, pduSlots: ['right'], defaultPdu: 'pdu' }],
+    floors: [{ id: 'f1', name: 'Hall', rows: [{ id: 'row1', name: 'Row A', racks: [{ id: 'r1', type: 'rack-47' }] }] }],
+    views: [{ id: 'v1', name: 'Default', clusters: [] }],
+    devices: [
+      { id: 'a', type: 'pdu', name: 'pdu-a01-a', loc: { rack: 'r1', kind: 'side', at: 0 } },
+      { id: 'b', type: 'compute-node', name: 'cn-1', loc: { rack: 'r1', kind: 'u', at: 3 } },
+    ],
+  };
+  const { project: p, warnings } = IO.normalizeProject(raw);
+  assert.deepEqual(warnings, ['Rack type Own names “pdu” as its default PDU, which is no vertical PDU type of the plan, and has none.']);
+  assert.equal(p.version, 6);
+  assert.deepEqual(p.deviceTypes.map((t) => [t.id, t.inlets]), [
+    ['compute-node', [{ name: 'psu', first: 1, count: 2, connector: 'c14' }]],
+    ['switch-rj45', [{ name: 'ac', connector: 'c20' }]],
+    ['bmc', []],
+    ['pdu', []],
+  ]);
+  assert.deepEqual(p.rackTypes.map((t) => [t.id, t.pduSlots, t.defaultPdu]), [['rack-47', ['left', 'right'], null], ['wall', [], null], ['own', ['right'], null]]);
+  assert.deepEqual(p.cordTypes, M.DEFAULT_CORD_TYPES);
+  assert.deepEqual(p.powerSettings, { powerFactor: 1, limitPct: 80 });
+  assert.deepEqual([p.powerGrids, p.powerCords], [[], []]);
+  assert.deepEqual(p.devices.map((d) => [d.name, d.loc.kind, d.loc.at]), [['pdu-a01-a', 'side', 0], ['cn-1', 'u', 3]], 'a 1U PDU stays in its side slot');
+  assert.ok(!M.isPduType(M.typeOf(p, 'pdu')));
+  // The same file as version 6 gets nothing by its ids.
+  const v6 = IO.normalizeProject(Object.assign({}, raw, { version: 6 })).project;
+  assert.deepEqual(v6.deviceTypes[0].inlets, []);
+  assert.deepEqual(v6.rackTypes[1].pduSlots, [], 'the default for a rack type that lists none still depends on its height');
 });

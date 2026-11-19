@@ -5,23 +5,34 @@
  * tests. A project looks like this:
  *
  *   {
- *     version: 5,
+ *     version: 6,
  *     name: 'Untitled rack plan',
  *     info: { site, author, revision },                 // title block
  *     deviceTypes: [{ id, label, tag, spec, height, face, defaultName, powerW, weightKg,
- *                     ports: [{ name, first?, count?, connector, speedGbps, side }], slackM }],
- *     rackTypes:   [{ id, name, units, sideSlots, powerW, weightKg,     // budgets, 0 = none
+ *                     ports: [{ name, first?, count?, connector, speedGbps, side }],
+ *                     inlets: [{ name, first?, count?, connector }], slackM,
+ *                     pdu?: { spanU, phases: 1|3, voltageV, maxA, outlets: [{ name, first?, count?, connector }],
+ *                             fuses: [{ name, outlets: [name], ratingA, phase: 'L1'|'L2'|'L3' }],
+ *                             metering: 'outlet'|'group'|'inlet', meters: [{ name, outlets: [name] }] } }],
+ *     rackTypes:   [{ id, name, units, sideSlots, pduSlots: ['left'|'right'], defaultPdu: id|null,
+ *                     powerW, weightKg,                                 // budgets, 0 = none
  *                     widthMm, depthMm, trayM, slackM }],
  *     cableTypes:  [{ id, name, media, connector, connectorB, legs, speedGbps, maxM, lengthsM: [m] }],
  *     transceivers: [{ id, name, connector, fiber: 'lc'|'mpo', mode: 'mmf'|'smf', speedGbps, reachM }],
+ *     cordTypes:   [{ id, name, outlet, inlet, maxA, lengthsM: [m] }],
  *     floors: [{ id, name, rowPitchM, rows: [{ id, name, racks: [{ id, name, type, trayM, slackM }] }] }],
  *     views:    [{ id, name, clusters: [{ id, name, color: '#rrggbb' }] }],
  *     networks: [{ id, name, color: '#rrggbb', firstLabel }],
+ *     powerGrids: [{ id, name, color: '#rrggbb', note }],
+ *     powerSettings: { powerFactor, limitPct },
  *     devices:  [{ id, type, name, groups: { viewId: clusterId }, notes, serial, asset, ip, owner,
  *                  powerW: null|W, weightKg: null|kg, reversed, slackM: null|m,
- *                  height (reserved space only), loc: { rack, kind: 'u'|'side', at } }],
+ *                  height (reserved space only), grid: id|null (PDUs only),
+ *                  loc: { rack, kind: 'u'|'side'|'pdu', at } }],
  *     cables:   [{ id, type: id|null, network: id|null, label, lengthM: null|m, notes,
  *                  a: { device, port, transceiver? }, b: end | [end|null, …] }],
+ *     powerCords: [{ id, label, type: id|null, lengthM: null|m, color: null|'#rrggbb', notes,
+ *                    inlet: { device, inlet }, outlet: { device, outlet } }],
  *     meta: { example?: true, … },                    // kept as is, up to 64 KB
  *     extra?: { … }        // top-level fields of the file this version does not read, kept as is
  *   }
@@ -31,7 +42,10 @@
  * units (kind 'u', `at` is the lowest-numbered unit it occupies; units are
  * numbered from the top, so U1 is the topmost unit) or in one of the rack's
  * vertical side slots (kind 'side', `at` counts from 0 at the top). Side
- * slots take 1U devices only.
+ * slots take 1U devices only. A vertical PDU (a device type with a `pdu`
+ * block, 0U) sits in one of the PDU slots its rack type lists (kind 'pdu',
+ * `at` is the index in `pduSlots`), and nothing else does; PDU slots are
+ * independent of the units and the side slots.
  *
  * A view is one way to group the devices: it has its own clusters (the
  * color groups), and a device's `groups` names its cluster in each view
@@ -51,6 +65,11 @@
  * transceiver, length, rack tray or slack means "work it out": js/cabling.js
  * picks and estimates. This file keeps cables consistent when devices,
  * racks, rows, floors and types change; js/cabling.js holds the rest.
+ *
+ * Power cords join an inlet of a device to an outlet of a PDU in the same
+ * rack; every inlet and outlet takes one cord. A PDU is fed by a power
+ * grid (`grid`). This file keeps cords consistent like cables;
+ * js/power.js holds the rest: connecting, lengths, loads and checks.
  */
 (function (root, factory) {
   'use strict';
@@ -60,7 +79,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SCHEMA_VERSION = 5;
+  const SCHEMA_VERSION = 6;
   const LIMITS = {
     floors: 6,
     rows: 8, // per floor
@@ -68,6 +87,7 @@
     unitsMin: 10,
     unitsMax: 60,
     sideSlots: 4,
+    pduSlots: 4, // per rack type
     deviceHeight: 20,
     deviceTypes: 60,
     rackTypes: 20,
@@ -80,6 +100,15 @@
     clusters: 1000, // per view
     cables: 20000,
     legs: 8, // of a breakout cable
+    inletGroups: 4, // per device type
+    inlets: 8, // per device type
+    outletGroups: 32, // per PDU type
+    outlets: 96, // per PDU type
+    fuseGroups: 48, // per PDU type
+    meterGroups: 48, // per PDU type
+    powerGrids: 12,
+    cordTypes: 30,
+    powerCords: 20000,
     name: 60, // characters of a floor, row, rack, view, cluster, network or catalog name
   };
   const DEFAULT_VIEW_NAME = 'Default';
@@ -88,8 +117,19 @@
   const DEFAULT_RACKS = 3;
   // A side slot runs along 12U of the rack (a 19" device on its side) plus a 1U gap.
   const SIDE_SLOT_SPAN = 13;
-  // The kinds of `loc`: in the rack's units, or in a side slot.
-  const MOUNT_KINDS = ['u', 'side'];
+  // The kinds of `loc`: in the rack's units, in a side slot, or (a vertical PDU) in a PDU slot.
+  const MOUNT_KINDS = ['u', 'side', 'pdu'];
+  // The sides of a rack a PDU slot is on, seen from the front; a rack type lists its slots, outer first on each side.
+  const PDU_SIDES = ['left', 'right'];
+  const DEFAULT_PDU_SLOTS = ['left', 'right'];
+  // A rack lower than this gets no PDU slots unless its type gives some.
+  const PDU_SLOT_UNITS = 20;
+  const PHASES = ['L1', 'L2', 'L3'];
+  const METERING = [
+    { id: 'outlet', label: 'Per outlet' },
+    { id: 'group', label: 'Per group' },
+    { id: 'inlet', label: 'Inlet only' },
+  ];
 
   const FACES = [
     { id: 'rj45', label: 'Switch, RJ45 ports' },
@@ -109,21 +149,28 @@
   // Port groups as cleanPortGroup leaves them: a single port has no first/count.
   const onePort = (name, connector, speedGbps, side) => ({ name, connector, speedGbps, side });
   const portSeries = (name, first, count, connector, speedGbps, side) => ({ name, first, count, connector, speedGbps, side });
+  // Inlet and outlet groups as cleanPowerGroup leaves them.
+  const powerSeries = (name, first, count, connector) => ({ name, first, count, connector });
+  const psus = (count, connector) => [powerSeries('psu', 1, count, connector || 'c14')];
+  const numbered = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => String(from + i));
 
   const DEFAULT_DEVICE_TYPES = [
     {
       id: 'switch-rj45', label: '48-port switch', tag: 'SWITCH', spec: '48 × RJ45', height: 1, face: 'rj45', defaultName: 'sw-rj45-01', powerW: 150, weightKg: 6,
       ports: [portSeries('swp', 1, 48, 'rj45', 1, 'front'), portSeries('swp', 49, 4, 'sfp+', 10, 'front')],
+      inlets: psus(2),
       slackM: 0,
     },
     {
       id: 'switch-qsfp', label: '24-port switch', tag: 'SWITCH', spec: '24 × QSFP', height: 1, face: 'qsfp', defaultName: 'sw-qsfp-01', powerW: 350, weightKg: 9,
       ports: [portSeries('p', 1, 24, 'qsfp56', 200, 'front')],
+      inlets: psus(2),
       slackM: 0,
     },
     {
       id: 'compute-node', label: 'Compute node', tag: 'COMPUTE', spec: 'server', height: 2, face: 'compute', defaultName: 'cn-001', powerW: 700, weightKg: 25,
       ports: [onePort('bmc', 'rj45', 1, 'rear'), onePort('eth0', 'rj45', 1, 'rear'), onePort('ib0', 'qsfp56', 200, 'rear')],
+      inlets: psus(2),
       slackM: 0.3,
     },
     {
@@ -135,11 +182,13 @@
         portSeries('ib', 0, 2, 'qsfp56', 200, 'rear'),
         portSeries('sas', 0, 4, 'sas-hd', 12, 'rear'),
       ],
+      inlets: psus(2),
       slackM: 0.3,
     },
     {
       id: 'storage-enclosure', label: 'Storage enclosure', tag: 'JBOD', spec: 'JBOD, 2 drawers', height: 4, face: 'jbod', defaultName: 'jbod-01', powerW: 800, weightKg: 60,
       ports: [onePort('mgmt', 'rj45', 1, 'rear'), onePort('sas-a', 'sas-hd', 12, 'rear'), onePort('sas-b', 'sas-hd', 12, 'rear')],
+      inlets: psus(2),
       slackM: 0.3,
     },
   ];
@@ -151,16 +200,38 @@
     portSeries('ib', 0, 4, 'qsfp56', 200, 'rear'),
   ];
 
+  /**
+   * The `pdu` blocks of the vertical PDU templates. The three-phase ones
+   * have six 16 A fuse groups, two on each phase.
+   */
+  const fuseGroups = (count, size, ratingA, phases) =>
+    Array.from({ length: count }, (_, k) => ({ name: `CB${k + 1}`, outlets: numbered(k * size + 1, (k + 1) * size), ratingA, phase: PHASES[phases === 3 ? Math.floor((k * 3) / count) : 0] }));
+  const meterGroups = (count, size) => Array.from({ length: count }, (_, k) => ({ name: `M${k + 1}`, outlets: numbered(k * size + 1, (k + 1) * size) }));
+  const PDU_1P_20 = { spanU: 42, phases: 1, voltageV: 230, maxA: 32, outlets: [powerSeries('', 1, 20, 'c13')], fuses: fuseGroups(2, 10, 16, 1), metering: 'group', meters: meterGroups(2, 10) };
+  // 24 C13 and 6 C19: every fifth outlet is a C19.
+  const PDU_3P_30 = {
+    spanU: 42, phases: 3, voltageV: 230, maxA: 32,
+    outlets: [].concat(...Array.from({ length: 6 }, (_, k) => [powerSeries('', 5 * k + 1, 4, 'c13'), powerSeries('', 5 * k + 5, 1, 'c19')])),
+    fuses: fuseGroups(6, 5, 16, 3), metering: 'group', meters: meterGroups(3, 10),
+  };
+  const PDU_3P_24 = { spanU: 42, phases: 3, voltageV: 230, maxA: 32, outlets: [powerSeries('', 1, 24, 'c13')], fuses: fuseGroups(6, 4, 16, 3), metering: 'outlet', meters: [] };
+  const pduTemplate = (label, spec, weightKg, pdu) => ({ label, tag: 'PDU', spec, height: 0, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [], slackM: 0, pdu });
+
   /** Starting points for new device types in the catalog editor. */
   const TYPE_TEMPLATES = [
-    { label: '1U server', tag: 'SERVER', spec: '10 bays', height: 1, face: 'compute', defaultName: 'srv-01', powerW: 450, weightKg: 16, ports: [onePort('bmc', 'rj45', 1, 'rear'), portSeries('eth', 0, 2, 'rj45', 1, 'rear')], slackM: 0.3 },
-    { label: 'GPU server', tag: 'GPU', spec: '8 × GPU', height: 4, face: 'gpu', defaultName: 'gpu-01', powerW: 3000, weightKg: 65, ports: GPU_SERVER_PORTS, slackM: 0.3 },
-    { label: 'Patch panel', tag: 'PATCH', spec: '24 × RJ45', height: 1, face: 'patch', defaultName: 'pp-01', powerW: 0, weightKg: 2, ports: [], slackM: 0 },
-    { label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], slackM: 0 },
-    { label: 'UPS', tag: 'UPS', spec: '3 kVA', height: 2, face: 'ups', defaultName: 'ups-01', powerW: 150, weightKg: 32, ports: [onePort('mgmt', 'rj45', 1, 'rear')], slackM: 0 },
-    { label: 'Blanking panel', tag: 'BLANK', spec: 'airflow', height: 1, face: 'blank', defaultName: 'blank-01', powerW: 0, weightKg: 0.5, ports: [], slackM: 0 },
-    { label: 'Generic device', tag: 'DEVICE', spec: '', height: 2, face: 'generic', defaultName: 'dev-01', powerW: 300, weightKg: 15, ports: [], slackM: 0 },
+    { label: '1U server', tag: 'SERVER', spec: '10 bays', height: 1, face: 'compute', defaultName: 'srv-01', powerW: 450, weightKg: 16, ports: [onePort('bmc', 'rj45', 1, 'rear'), portSeries('eth', 0, 2, 'rj45', 1, 'rear')], inlets: psus(2), slackM: 0.3 },
+    { label: 'GPU server', tag: 'GPU', spec: '8 × GPU', height: 4, face: 'gpu', defaultName: 'gpu-01', powerW: 3000, weightKg: 65, ports: GPU_SERVER_PORTS, inlets: psus(4, 'c20'), slackM: 0.3 },
+    { label: 'Patch panel', tag: 'PATCH', spec: '24 × RJ45', height: 1, face: 'patch', defaultName: 'pp-01', powerW: 0, weightKg: 2, ports: [], inlets: [], slackM: 0 },
+    { label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [], slackM: 0 },
+    { label: 'UPS', tag: 'UPS', spec: '3 kVA', height: 2, face: 'ups', defaultName: 'ups-01', powerW: 150, weightKg: 32, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [{ name: 'in', connector: 'c20' }], slackM: 0 },
+    { label: 'Blanking panel', tag: 'BLANK', spec: 'airflow', height: 1, face: 'blank', defaultName: 'blank-01', powerW: 0, weightKg: 0.5, ports: [], inlets: [], slackM: 0 },
+    { label: 'Generic device', tag: 'DEVICE', spec: '', height: 2, face: 'generic', defaultName: 'dev-01', powerW: 300, weightKg: 15, ports: [], inlets: psus(2), slackM: 0 },
+    pduTemplate('0U PDU 1P 20 × C13', '20 × C13 · 1 × 32 A', 6, PDU_1P_20),
+    pduTemplate('0U PDU 3P 30', '24 × C13, 6 × C19 · 3 × 32 A', 9, PDU_3P_30),
+    pduTemplate('0U PDU 3P 24 × C13 metered', '24 × C13 · 3 × 32 A · per outlet', 9, PDU_3P_24),
   ];
+  // The inlets a device type gets from the button "Add psu[1-2] C14".
+  const DEFAULT_INLETS = psus(2);
 
   const RESERVED = Object.freeze({
     id: 'reserved',
@@ -173,15 +244,16 @@
     powerW: 0,
     weightKg: 0,
     ports: Object.freeze([]),
+    inlets: Object.freeze([]),
     slackM: 0,
     variable: true,
     builtin: true,
   });
 
   const DEFAULT_RACK_TYPES = [
-    { id: 'rack-47', name: '47U rack', units: 47, sideSlots: 2, powerW: 12000, weightKg: 1200, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
-    { id: 'rack-42', name: '42U rack', units: 42, sideSlots: 2, powerW: 8000, weightKg: 1000, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
-    { id: 'rack-48', name: '48U high-density rack', units: 48, sideSlots: 2, powerW: 20000, weightKg: 1500, widthMm: 800, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
+    { id: 'rack-47', name: '47U rack', units: 47, sideSlots: 2, pduSlots: ['left', 'right'], defaultPdu: null, powerW: 12000, weightKg: 1200, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
+    { id: 'rack-42', name: '42U rack', units: 42, sideSlots: 2, pduSlots: ['left', 'right'], defaultPdu: null, powerW: 8000, weightKg: 1000, widthMm: 600, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
+    { id: 'rack-48', name: '48U high-density rack', units: 48, sideSlots: 2, pduSlots: ['left', 'right'], defaultPdu: null, powerW: 20000, weightKg: 1500, widthMm: 800, depthMm: 1200, trayM: 0.5, slackM: 0.25 },
   ];
   const FALLBACK_RACK_TYPE = DEFAULT_RACK_TYPES[0];
 
@@ -281,6 +353,37 @@
   ];
 
   const DEFAULT_ROW_PITCH_M = 3;
+
+  /**
+   * Power connectors of inlets (on devices) and outlets (on PDUs). A cord
+   * joins an outlet to an inlet when its type names both connectors.
+   * `maxA` is what the connector carries.
+   */
+  const POWER_CONNECTORS = [
+    { id: 'c13', label: 'C13', role: 'outlet', maxA: 10 },
+    { id: 'c14', label: 'C14', role: 'inlet', maxA: 10 },
+    { id: 'c19', label: 'C19', role: 'outlet', maxA: 16 },
+    { id: 'c20', label: 'C20', role: 'inlet', maxA: 16 },
+    { id: 'c5', label: 'C5', role: 'outlet', maxA: 2.5 },
+    { id: 'c6', label: 'C6', role: 'inlet', maxA: 2.5 },
+    { id: 'c15', label: 'C15', role: 'outlet', maxA: 10 },
+    { id: 'c16', label: 'C16', role: 'inlet', maxA: 10 },
+    { id: 'nema-5-15', label: 'NEMA 5-15', role: 'both', maxA: 15 },
+    { id: 'nema-l6-30', label: 'NEMA L6-30', role: 'both', maxA: 30 },
+    { id: 'schuko', label: 'Schuko', role: 'both', maxA: 16 },
+  ];
+  const POWER_CONNECTOR_MAP = new Map(POWER_CONNECTORS.map((c) => [c.id, c]));
+
+  const cordType = (id, name, outlet, inlet, maxA, lengthsM) => ({ id, name, outlet, inlet, maxA, lengthsM });
+  const DEFAULT_CORD_TYPES = [
+    cordType('c14-c13', 'C14–C13 cord', 'c13', 'c14', 10, [0.6, 1, 1.5, 2, 3]),
+    cordType('c20-c19', 'C20–C19 cord', 'c19', 'c20', 16, [0.6, 1, 1.5, 2, 3]),
+  ];
+  const DEFAULT_POWER_SETTINGS = { powerFactor: 1, limitPct: 80 };
+  // Grid A is red and Grid B blue, as feeds are usually marked; the rest stay apart from both.
+  const GRID_COLORS = ['#d1453b', '#2b6cd4', '#e69f00', '#3aa655', '#8a5cd6', '#008568', '#d94c8a', '#6e4a2e', '#7fc6f0', '#8aa82c', '#9e2a6e', '#ecd94a'];
+  // The series of a power cord's label.
+  const CORD_LABEL = 'P-0001';
 
   // ---------------------------------------------------------------- helpers
 
@@ -572,6 +675,18 @@
   function rackSideSlots(project, rack) {
     return rackTypeOf(project, rack).sideSlots;
   }
+  /** The PDU slots of a rack, as its type lists them: 'left' | 'right' each, seen from the front. */
+  function rackPduSlots(project, rack) {
+    return rackTypeOf(project, rack).pduSlots || [];
+  }
+  /** True for a device type that is a vertical PDU. */
+  function isPduType(type) {
+    return !!type && !!type.pdu;
+  }
+  /** True for a device that is a vertical PDU. */
+  function isPdu(project, d) {
+    return !!d && isPduType(typeOf(project, d.type));
+  }
   /** How many side slots fit along a rack of `units`. */
   function maxSideSlots(units) {
     return Math.max(0, Math.min(LIMITS.sideSlots, Math.floor((units - 1) / SIDE_SLOT_SPAN)));
@@ -622,6 +737,20 @@
   }
   function networkById(project, id) {
     return (id && (project.networks || []).find((n) => n.id === id)) || null;
+  }
+  function powerGridById(project, id) {
+    return (id && (project.powerGrids || []).find((g) => g.id === id)) || null;
+  }
+  function cordTypeById(project, id) {
+    return (id && (project.cordTypes || []).find((t) => t.id === id)) || null;
+  }
+  /** The power grid that feeds PDU `d`, or null. */
+  function gridOf(project, d) {
+    return d ? powerGridById(project, d.grid) : null;
+  }
+  /** Power factor and limit of the plan, with the defaults for what it lacks. */
+  function powerSettings(project) {
+    return cleanPowerSettings(project && project.powerSettings);
   }
 
   // ------------------------------------------------------------------ ports
@@ -735,7 +864,7 @@
    * the rack like the ports of servers.
    */
   function mountsReversed(type) {
-    return type.face !== 'reserved' && portsSide(type) === 'front';
+    return type.face !== 'reserved' && !type.pdu && portsSide(type) === 'front';
   }
 
   /** Every port of a device type in catalog order: [{ name, group, index, connector, speedGbps, side }]. */
@@ -745,6 +874,300 @@
       groupNames(g).forEach((name, index) => out.push({ name, group, index, connector: g.connector, speedGbps: g.speedGbps, side: g.side }))
     );
     return out;
+  }
+
+  // ------------------------------------------------------- inlets, outlets
+
+  function powerConnectorById(id) {
+    return POWER_CONNECTOR_MAP.get(id) || null;
+  }
+  /** The power connector id `v` names, in any case; an id this version does not know as it is; '' for no id. */
+  function powerConnectorId(v) {
+    if (typeof v !== 'string') return '';
+    const c = POWER_CONNECTOR_MAP.get(v.toLowerCase());
+    return c ? c.id : OTHER_CONNECTOR.test(v) ? v : '';
+  }
+  const powerConnectorLabel = (id) => (powerConnectorById(id) || { label: String(id).toUpperCase() }).label;
+
+  /**
+   * A valid inlet or outlet group from untrusted input, or null: like a
+   * port group (psu[1-2], [1-24], in), with a power connector.
+   */
+  function cleanPowerGroup(raw) {
+    if (!isObj(raw)) return null;
+    const conn = powerConnectorId(raw.connector);
+    const name = portName(raw.name);
+    const series = given(raw.first) || given(raw.count);
+    if (!conn || (!series && !name)) return null;
+    const g = { name };
+    if (series) {
+      g.first = clampInt(raw.first, 0, 9999, 1);
+      g.count = clampInt(raw.count, 1, LIMITS.outlets, 1);
+    }
+    g.connector = conn;
+    return g;
+  }
+
+  /** Valid inlet or outlet groups: at most `maxGroups` of them and `maxTotal` names; a group that repeats a name is dropped. */
+  function cleanPowerGroups(list, maxGroups, maxTotal) {
+    const out = [];
+    const names = new Set();
+    for (const raw of Array.isArray(list) ? list : []) {
+      if (out.length >= maxGroups) break;
+      const g = cleanPowerGroup(raw);
+      if (!g) continue;
+      const own = groupNames(g);
+      if (names.size + own.length > maxTotal || own.some((n) => names.has(n))) continue;
+      own.forEach((n) => names.add(n));
+      out.push(g);
+    }
+    return out;
+  }
+  /** The power inlets of a device type from untrusted input: up to 4 groups and 8 inlets. */
+  const cleanInlets = (list) => cleanPowerGroups(list, LIMITS.inletGroups, LIMITS.inlets);
+  /** The outlets of a PDU type from untrusted input: up to 32 groups and 96 outlets. */
+  const cleanOutlets = (list) => cleanPowerGroups(list, LIMITS.outletGroups, LIMITS.outlets);
+
+  /** Why `list` cannot be a type's inlets ('inlet') or outlets ('outlet') as given, or null (see portsProblem). */
+  function powerGroupsProblem(list, what) {
+    const groups = Array.isArray(list) ? list : [];
+    const outlet = what === 'outlet';
+    const maxGroups = outlet ? LIMITS.outletGroups : LIMITS.inletGroups;
+    const maxTotal = outlet ? LIMITS.outlets : LIMITS.inlets;
+    const holder = outlet ? 'A PDU type' : 'A device type';
+    if (groups.length > maxGroups) return `${holder} has at most ${maxGroups} ${what} groups`;
+    const names = new Set();
+    for (const raw of groups) {
+      const g = cleanPowerGroup(raw);
+      if (g && Number(raw.count) > maxTotal) return `${holder} has at most ${maxTotal} ${what}s`;
+      if (!g) return outlet ? 'An outlet group needs a range, like [1-24], and a connector' : 'An inlet group needs a name, like in, or a range, like psu[1-2], and a connector';
+      for (const n of groupNames(g)) {
+        if (names.has(n)) return `${outlet ? 'Outlet' : 'Inlet'} ${n} is named twice`;
+        names.add(n);
+      }
+      if (names.size > maxTotal) return `${holder} has at most ${maxTotal} ${what}s`;
+    }
+    return null;
+  }
+
+  const expandGroups = (groups) => {
+    const out = [];
+    (groups || []).forEach((g, group) => groupNames(g).forEach((name, index) => out.push({ name, group, index, connector: g.connector })));
+    return out;
+  };
+  /** Every power inlet of a device type in catalog order: [{ name, group, index, connector }]. */
+  function expandInlets(type) {
+    return expandGroups(type && type.inlets);
+  }
+  /** Every outlet of a PDU type from the top of the strip down: [{ name, group, index, connector }]; none for other types. */
+  function expandOutlets(type) {
+    return expandGroups(type && type.pdu && type.pdu.outlets);
+  }
+
+  /**
+   * The two ends of a range of outlets such as "3-8" or "L1-1-L1-3": the
+   * text before and after the first dash that has an outlet name (a key
+   * of `at`) on both sides, as outlet names may hold dashes; or null.
+   */
+  function rangeEnds(token, at) {
+    for (let i = 1; i < token.length - 1; i++) {
+      if (token[i] !== '-' && token[i] !== '–') continue;
+      const ends = [token.slice(0, i), token.slice(i + 1)];
+      if (at.has(ends[0]) && at.has(ends[1])) return ends;
+    }
+    return null;
+  }
+
+  /**
+   * Outlet names as the text of a fuse or meter group: runs of outlets
+   * that follow each other on the PDU (`all`: every outlet name in order)
+   * are written as a range: "1-5, 21, 26-28". A run whose range would
+   * read as another outlet or range (names with dashes can do that) is
+   * written name by name, so that parseOutletList reads back what was
+   * written.
+   */
+  function formatOutletList(names, all) {
+    const at = new Map(all.map((n, i) => [n, i]));
+    const list = [...new Set(names)].filter((n) => at.has(n)).sort((a, b) => at.get(a) - at.get(b));
+    const out = [];
+    for (let i = 0; i < list.length; ) {
+      let j = i;
+      while (j + 1 < list.length && at.get(list[j + 1]) === at.get(list[j]) + 1) j++;
+      const range = `${list[i]}-${list[j]}`;
+      const ends = j > i && !at.has(range) ? rangeEnds(range, at) : null;
+      if (ends && ends[0] === list[i] && ends[1] === list[j]) out.push(range);
+      else out.push(...list.slice(i, j + 1));
+      i = j + 1;
+    }
+    return out.join(', ');
+  }
+
+  /**
+   * Reads outlets as formatOutletList writes them, and with spaces for
+   * commas: { names } in the order of `all`, or { error } (a sentence) for
+   * a name that is no outlet or a range that runs backwards.
+   */
+  function parseOutletList(text, all) {
+    const at = new Map(all.map((n, i) => [n, i]));
+    const picked = new Set();
+    for (const token of String(text == null ? '' : text).split(/[,;\s]+/).filter(Boolean)) {
+      if (at.has(token)) {
+        picked.add(token);
+        continue;
+      }
+      const ends = rangeEnds(token, at);
+      if (!ends) return { error: `“${token.slice(0, 40)}” is no outlet of this PDU` };
+      if (at.get(ends[1]) < at.get(ends[0])) return { error: `“${token}” runs backwards: put the first outlet first` };
+      for (let i = at.get(ends[0]); i <= at.get(ends[1]); i++) picked.add(all[i]);
+    }
+    return { names: all.filter((n) => picked.has(n)) };
+  }
+
+  const groupName = (v, max) => str(typeof v === 'number' ? String(v) : v, max || 20).replace(/[|,;]/g, '');
+
+  /**
+   * The `pdu` block of a vertical PDU type from untrusted input. Each
+   * outlet is in one fuse group, and with metering per group in one meter
+   * group: an outlet named twice counts where it is named first, a name
+   * that is no outlet is dropped, and the outlets left over get a group
+   * of their own, the fuse at the PDU's rating.
+   */
+  function cleanPdu(raw) {
+    const r = isObj(raw) ? raw : {};
+    const phases = Number(r.phases) === 3 ? 3 : 1;
+    const maxA = clampNum(r.maxA, 1, 1000, 32);
+    const outlets = cleanOutlets(r.outlets);
+    const all = [].concat(...outlets.map(groupNames));
+    const known = new Set(all);
+    const groups = (list, max, prefix, make) => {
+      const out = [];
+      const names = new Set();
+      const seen = new Set();
+      const add = (name, own, from) => {
+        let n = name;
+        for (let i = 2; names.has(n.toLowerCase()); i++) n = `${name.slice(0, 17)} ${i}`;
+        names.add(n.toLowerCase());
+        out.push(make(n, own, from));
+      };
+      for (const g of Array.isArray(list) ? list : []) {
+        if (out.length >= max) break;
+        if (!isObj(g)) continue;
+        const own = [];
+        for (const o of Array.isArray(g.outlets) ? g.outlets : []) {
+          const n = portName(o);
+          if (!known.has(n) || seen.has(n)) continue;
+          seen.add(n);
+          own.push(n);
+        }
+        if (own.length) add(groupName(g.name) || `${prefix}${out.length + 1}`, all.filter((n) => own.includes(n)), g);
+      }
+      const rest = all.filter((n) => !seen.has(n));
+      if (rest.length && out.length < max) add(`${prefix}${out.length + 1}`, rest, {});
+      else if (rest.length) out[max - 1].outlets = all.filter((n) => rest.includes(n) || out[max - 1].outlets.includes(n));
+      return out;
+    };
+    const metering = METERING.some((m) => m.id === r.metering) ? r.metering : 'inlet';
+    return {
+      spanU: clampInt(r.spanU, 1, LIMITS.unitsMax, 42),
+      phases,
+      voltageV: clampNum(r.voltageV, 1, 1000, 230),
+      maxA,
+      outlets,
+      fuses: groups(r.fuses, LIMITS.fuseGroups, 'CB', (name, own, g) => ({
+        name,
+        outlets: own,
+        ratingA: clampNum(g.ratingA, 0.5, 1000, maxA),
+        phase: phases === 3 && PHASES.includes(g.phase) ? g.phase : 'L1',
+      })),
+      metering,
+      meters: metering === 'group' ? groups(r.meters, LIMITS.meterGroups, 'M', (name, own) => ({ name, outlets: own })) : [],
+    };
+  }
+
+  /**
+   * Why `raw` cannot be a PDU type's `pdu` block as given, or null: what
+   * cleanPdu would drop or add silently. Each outlet is in exactly one
+   * fuse group, and with metering per group in exactly one meter group.
+   */
+  function pduProblem(raw) {
+    const r = isObj(raw) ? raw : {};
+    const bad = powerGroupsProblem(r.outlets, 'outlet');
+    if (bad) return bad;
+    const all = [].concat(...cleanOutlets(r.outlets).map(groupNames));
+    if (!all.length) return 'A PDU needs outlets, like [1-24]';
+    const known = new Set(all);
+    const check = (list, max, what) => {
+      const groups = Array.isArray(list) ? list : [];
+      if (groups.length > max) return `A PDU type has at most ${max} ${what} groups`;
+      const names = new Set();
+      const seen = new Map();
+      for (const g of groups) {
+        const name = isObj(g) ? groupName(g.name) : '';
+        if (!name) return `A ${what} group needs a name`;
+        if (names.has(name.toLowerCase())) return `Two ${what} groups are named ${name}`;
+        names.add(name.toLowerCase());
+        const own = Array.isArray(g.outlets) ? g.outlets.map(portName) : [];
+        if (!own.length) return `${name} has no outlets`;
+        for (const o of own) {
+          if (!known.has(o)) return `${name} names outlet ${o}, which the PDU does not have`;
+          if (seen.has(o)) return seen.get(o) === name ? `${name} names outlet ${o} twice` : `Outlet ${o} is in ${seen.get(o)} and in ${name}`;
+          seen.set(o, name);
+        }
+      }
+      const rest = all.filter((n) => !seen.has(n));
+      if (rest.length) return `${rest.length === 1 ? 'Outlet' : 'Outlets'} ${formatOutletList(rest, all)} ${rest.length === 1 ? 'is' : 'are'} in no ${what} group`;
+      return null;
+    };
+    return check(r.fuses, LIMITS.fuseGroups, 'fuse') || (r.metering === 'group' ? check(r.meters, LIMITS.meterGroups, 'meter') : null);
+  }
+
+  /** The fuse group and meter group (null without one) of each outlet of a PDU type: Map from outlet name to { fuse, meter }. */
+  function outletGroups(type) {
+    const out = new Map();
+    if (!isPduType(type)) return out;
+    for (const o of expandOutlets(type)) out.set(o.name, { fuse: null, meter: null });
+    for (const f of type.pdu.fuses) for (const n of f.outlets) if (out.has(n)) out.get(n).fuse = f;
+    for (const m of type.pdu.meters) for (const n of m.outlets) if (out.has(n)) out.get(n).meter = m;
+    return out;
+  }
+
+  /**
+   * The `pdu` block with the outlets `names` in one group of `key` ('fuses'
+   * or 'meters'): the group at index `to`, or without `to` a new one, which
+   * takes the rating and phase of the group its first outlet was in. The
+   * outlets leave the groups they were in, and a group left without one is
+   * gone. Returns a message when there is nothing to do, or no room for
+   * another group.
+   */
+  function groupOutlets(pdu, key, names, to) {
+    const fuses = key === 'fuses';
+    const what = fuses ? 'fuse' : 'meter';
+    const next = clone(pdu);
+    if (!fuses && next.metering !== 'group') return 'Only a PDU that measures per group has meter groups';
+    const list = next[key];
+    const wanted = new Set(names);
+    const picked = [].concat(...next.outlets.map(groupNames)).filter((n) => wanted.has(n));
+    if (!picked.length) return 'Pick outlets in the strip first';
+    const these = picked.length === 1 ? 'this outlet' : 'these outlets';
+    let target = to == null ? null : list[to];
+    if (to != null && !target) return `Unknown ${what} group`;
+    if (target && picked.every((n) => target.outlets.includes(n))) return `${target.name} holds ${these} already`;
+    const whole = !target && list.find((g) => g.outlets.length === picked.length && picked.every((n) => g.outlets.includes(n)));
+    if (whole) return `${whole.name} is ${these} already`;
+    const from = list.find((g) => g.outlets.includes(picked[0])) || {};
+    for (const g of list) g.outlets = g.outlets.filter((n) => !wanted.has(n));
+    if (!target) {
+      const max = fuses ? LIMITS.fuseGroups : LIMITS.meterGroups;
+      if (list.filter((g) => g.outlets.length).length >= max) return `A PDU type has at most ${max} ${what} groups`;
+      const prefix = fuses ? 'CB' : 'M';
+      const taken = new Set(list.map((g) => g.name.toLowerCase()));
+      let n = list.length + 1;
+      while (taken.has(`${prefix}${n}`.toLowerCase())) n++;
+      target = Object.assign({}, from, { name: `${prefix}${n}`, outlets: [] });
+      list.push(target);
+    }
+    target.outlets = target.outlets.concat(picked);
+    return cleanPdu(next);
   }
 
   /** A group written as a pattern: swp[1-48], Ethernet1/[1-32], [1-24] or bmc. */
@@ -787,19 +1210,30 @@
   function cleanDeviceType(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const label = str(r.label, 60) || 'Device';
-    return {
+    // A vertical PDU takes no rack units, and is fed by its grid, not through inlets.
+    const pdu = isObj(r.pdu);
+    const t = {
       id: str(String(r.id == null ? '' : r.id), 40),
       label,
       tag: (str(r.tag, 12) || label.split(/\s+/)[0].slice(0, 12)).toUpperCase(),
       spec: str(r.spec, 60),
-      height: clampInt(r.height, 1, LIMITS.deviceHeight, 1),
-      face: FACE_IDS.has(r.face) ? r.face : 'generic',
+      height: pdu ? 0 : clampInt(r.height, 1, LIMITS.deviceHeight, 1),
+      face: pdu ? 'pdu' : FACE_IDS.has(r.face) ? r.face : 'generic',
       defaultName: str(r.defaultName, NAME_MAX) || `${slug(label, 20) || 'dev'}-01`,
       powerW: clampNum(r.powerW, 0, 100000, 0),
       weightKg: clampNum(r.weightKg, 0, 5000, 0),
       ports: cleanPorts(r.ports),
+      inlets: pdu ? [] : cleanInlets(r.inlets),
       slackM: clampNum(r.slackM, 0, 10, 0),
     };
+    if (pdu) t.pdu = cleanPdu(r.pdu);
+    return t;
+  }
+
+  /** The PDU slots of a rack type from untrusted input: up to 4 sides; `dflt` for anything that is no list. */
+  function cleanPduSlots(list, dflt) {
+    if (!Array.isArray(list)) return dflt.slice();
+    return list.filter((s) => PDU_SIDES.includes(s)).slice(0, LIMITS.pduSlots);
   }
 
   /** A valid rack type from untrusted input (the id is left to the caller). */
@@ -811,6 +1245,9 @@
       name: str(r.name, 60) || `${units}U rack`,
       units,
       sideSlots: clampInt(r.sideSlots, 0, maxSideSlots(units), Math.min(SIDE_SLOTS, maxSideSlots(units))),
+      pduSlots: cleanPduSlots(r.pduSlots, units < PDU_SLOT_UNITS ? [] : DEFAULT_PDU_SLOTS),
+      // The PDU type new racks of this type get in each slot; the caller checks that it is one of the plan.
+      defaultPdu: str(typeof r.defaultPdu === 'number' ? String(r.defaultPdu) : r.defaultPdu, 40) || null,
       powerW: clampNum(r.powerW, 0, 1000000, 0),
       weightKg: clampNum(r.weightKg, 0, 100000, 0),
       widthMm: clampInt(r.widthMm, 300, 1200, 600),
@@ -917,6 +1354,48 @@
     };
   }
 
+  /** A valid cord type from untrusted input (the id is left to the caller): the outlet and the inlet its plugs fit. */
+  function cleanCordType(raw) {
+    const r = isObj(raw) ? raw : {};
+    const outlet = powerConnectorId(r.outlet) || 'c13';
+    const inlet = powerConnectorId(r.inlet) || 'c14';
+    const lengths = (Array.isArray(r.lengthsM) ? r.lengthsM : []).map((v) => clampNum(v, 0.1, 100, null)).filter((v) => v !== null);
+    return {
+      id: str(String(r.id == null ? '' : r.id), 40),
+      name: catalogName(r.name) || `${powerConnectorLabel(inlet)} to ${powerConnectorLabel(outlet)} cord`,
+      outlet,
+      inlet,
+      maxA: clampNum(r.maxA, 0.5, 1000, Math.min((powerConnectorById(outlet) || { maxA: 10 }).maxA, (powerConnectorById(inlet) || { maxA: 10 }).maxA)),
+      lengthsM: [...new Set(lengths)].sort((a, b) => a - b).slice(0, 40),
+    };
+  }
+
+  function nextGridColor(project) {
+    const used = new Set((project.powerGrids || []).map((g) => g.color));
+    return GRID_COLORS.find((c) => !used.has(c)) || GRID_COLORS[(project.powerGrids || []).length % GRID_COLORS.length];
+  }
+  function nextGridName(project) {
+    const grids = project.powerGrids || [];
+    return firstFreeName(grids, grids.length, (i) => `Grid ${letters(i)}`);
+  }
+
+  /** A valid power grid from untrusted input (the id is left to the caller); `project` gives a free name and color when it has none. */
+  function cleanPowerGrid(raw, project) {
+    const r = isObj(raw) ? raw : {};
+    return {
+      id: str(String(r.id == null ? '' : r.id), 80),
+      name: str(r.name, 60) || (project ? nextGridName(project) : 'Grid'),
+      color: normalizeHex(r.color) || (project ? nextGridColor(project) : GRID_COLORS[0]),
+      note: str(r.note, 120),
+    };
+  }
+
+  /** The plan's power settings from untrusted input: the power factor (0.5–1) and the share of a rating to plan up to (10–100 %). */
+  function cleanPowerSettings(raw) {
+    const r = isObj(raw) ? raw : {};
+    return { powerFactor: clampNum(r.powerFactor, 0.5, 1, DEFAULT_POWER_SETTINGS.powerFactor), limitPct: clampNum(r.limitPct, 10, 100, DEFAULT_POWER_SETTINGS.limitPct) };
+  }
+
   function formatTypeSpec(type, height) {
     if (type.variable) return height ? `${height}U · ${type.spec}` : `any height · ${type.spec}`;
     return type.spec ? `${type.height}U · ${type.spec}` : `${type.height}U`;
@@ -942,11 +1421,18 @@
     const i = project.deviceTypes.findIndex((t) => t.id === id);
     if (i < 0) return 'Unknown device type';
     const before = project.deviceTypes[i];
-    const next = cleanDeviceType(Object.assign({}, before, changes));
+    const merged = Object.assign({}, before, changes);
+    // `pdu: null` makes a rack device of a PDU type.
+    if (!isObj(merged.pdu)) delete merged.pdu;
+    const next = cleanDeviceType(merged);
     next.id = id;
     if (next.label !== before.label && nameTaken(project.deviceTypes, next.label, id, 'label')) return `Another device type is named ${next.label}`;
+    if (isPduType(next) !== isPduType(before)) {
+      const n = project.devices.filter((d) => d.type === id).length;
+      if (n) return isPduType(next) ? `${plural(n, 'device')} of this type ${n === 1 ? 'is' : 'are'} placed: a vertical PDU goes in a PDU slot` : `${plural(n, 'PDU')} of this type ${n === 1 ? 'is' : 'are'} placed in PDU slots`;
+    }
     project.deviceTypes[i] = next;
-    if (next.height !== before.height) {
+    if (next.height !== before.height && !isPduType(next)) {
       const racks = new Set(project.devices.filter((d) => d.type === id).map((d) => d.loc.rack));
       const problem = layoutProblem(project, racks);
       if (problem) {
@@ -954,14 +1440,18 @@
         return `${next.height}U does not fit: ${problem}`;
       }
     }
-    if (JSON.stringify(next.ports) !== JSON.stringify(before.ports || [])) remapPorts(project, id, before.ports || []);
+    // A type that is no vertical PDU any more is no rack type's default PDU.
+    if (isPduType(before) && !isPduType(next)) for (const rt of project.rackTypes) if (rt.defaultPdu === id) rt.defaultPdu = null;
+    const moves = typeMoves(before, next);
+    if (moves) movePortRefs(project, new Set(project.devices.filter((d) => d.type === id).map((d) => d.id)), moves);
     return null;
   }
 
-  /** Removes a device type together with its devices and their cables. */
+  /** Removes a device type together with its devices, their cables and their power cords. A rack type that named it as its default PDU has none. */
   function deleteDeviceType(project, id) {
     project.deviceTypes = project.deviceTypes.filter((t) => t.id !== id);
     project.devices = project.devices.filter((d) => d.type !== id);
+    for (const t of project.rackTypes) if (t.defaultPdu === id) t.defaultPdu = null;
     pruneCables(project);
   }
 
@@ -990,9 +1480,15 @@
     return moveType(project.rackTypes, id, toIndex);
   }
 
+  /** A rack type's default PDU, as it can be in the plan: a vertical PDU type of the catalog, and only with PDU slots to fill. */
+  function checkDefaultPdu(project, t) {
+    if (t.defaultPdu && (!t.pduSlots.length || !isPduType(typeOf(project, t.defaultPdu)))) t.defaultPdu = null;
+    return t;
+  }
+
   function addRackType(project, template) {
     if (project.rackTypes.length >= LIMITS.rackTypes) return null;
-    const t = cleanRackType(template);
+    const t = checkDefaultPdu(project, cleanRackType(template));
     t.id = uid('rt');
     t.name = uniqueLabel(project.rackTypes, 'name', t.name);
     project.rackTypes.push(t);
@@ -1004,7 +1500,7 @@
     const i = project.rackTypes.findIndex((t) => t.id === id);
     if (i < 0) return 'Unknown rack type';
     const before = project.rackTypes[i];
-    const next = cleanRackType(Object.assign({}, before, changes));
+    const next = checkDefaultPdu(project, cleanRackType(Object.assign({}, before, changes)));
     next.id = id;
     if (next.name !== before.name && nameTaken(project.rackTypes, next.name, id)) return `Another rack type is named ${next.name}`;
     project.rackTypes[i] = next;
@@ -1081,11 +1577,15 @@
         rackTypes: clone(DEFAULT_RACK_TYPES),
         cableTypes: clone(DEFAULT_CABLE_TYPES),
         transceivers: clone(DEFAULT_TRANSCEIVERS),
+        cordTypes: clone(DEFAULT_CORD_TYPES),
         floors: [],
         views: [{ id: 'v1', name: DEFAULT_VIEW_NAME, clusters: [] }],
         networks: [],
+        powerGrids: [],
+        powerSettings: clone(DEFAULT_POWER_SETTINGS),
         devices: [],
         cables: [],
+        powerCords: [],
         meta: {},
       },
       props
@@ -1100,13 +1600,16 @@
    * Adds the first floor of a plan that has none (see addFloor), with the
    * ids a new plan starts with: f1, row1 and r1, r2, … by position. Floors,
    * rows and racks added later get random ids, so these are never given
-   * out again.
+   * out again. The racks get their default PDUs once they have these ids,
+   * unless `opts.empty`.
    */
   function addFirstFloor(project, opts) {
-    const floor = addFloor(project, opts);
+    const o = opts || {};
+    const floor = addFloor(project, Object.assign({}, o, { empty: true }));
     floor.id = 'f1';
     floor.rows[0].id = 'row1';
     floor.rows[0].racks.forEach((r, i) => (r.id = `r${i + 1}`));
+    if (!o.empty) fillPduSlots(project, floor.rows[0].racks.map((r) => r.id));
     return floor;
   }
 
@@ -1117,13 +1620,15 @@
     return p;
   }
 
-  /** Same floors, rows, racks, catalogs and views as `project`, without devices, clusters, cables or networks. */
+  /** Same floors, rows, racks, catalogs, views and power settings as `project`, without devices, clusters, cables, networks, power cords or power grids. */
   function copyLayout(project) {
     const p = clone(project);
     p.devices = [];
     for (const v of p.views) v.clusters = [];
     p.cables = [];
     p.networks = [];
+    p.powerCords = [];
+    p.powerGrids = [];
     p.meta = {};
     p.name = `${project.name} (layout)`;
     return p;
@@ -1149,22 +1654,22 @@
     return row;
   }
 
-  /** Adds a floor with one row of racks; null when the plan has six floors. */
+  /** Adds a floor with one row of racks (see addRow); null when the plan has six floors. */
   function addFloor(project, opts) {
     const o = opts || {};
     const floor = insertFloor(project, o.name, o.index);
-    if (floor) addRow(project, floor.id, { racks: o.racks == null ? DEFAULT_RACKS : o.racks, type: o.type });
+    if (floor) addRow(project, floor.id, { racks: o.racks == null ? DEFAULT_RACKS : o.racks, type: o.type, empty: o.empty });
     return floor;
   }
 
-  /** Adds a row of racks to a floor; null when the floor has eight rows. */
+  /** Adds a row of racks to a floor, with their default PDUs unless `opts.empty` (see addRack); null when the floor has eight rows. */
   function addRow(project, floorId, opts) {
     const o = opts || {};
     const floor = floorById(project, floorId);
     const row = floor && insertRow(project, floor, o.name, o.index);
     if (!row) return null;
     const n = clampInt(o.racks, 1, LIMITS.racks, DEFAULT_RACKS);
-    for (let i = 0; i < n; i++) addRack(project, row.id, { type: o.type });
+    for (let i = 0; i < n; i++) addRack(project, row.id, { type: o.type, empty: o.empty });
     return row;
   }
 
@@ -1172,7 +1677,9 @@
    * Adds an empty rack to a row at `opts.index` (default: the end), named
    * `opts.name` like insertFloor or by its place. It gets `opts.type`, else
    * the type of its neighbour, else the first rack type of the catalog.
-   * Null when the row already has sixteen racks.
+   * A rack of a type with a default PDU gets one in each PDU slot (see
+   * fillPduSlots), unless `opts.empty`. Null when the row already has
+   * sixteen racks.
    */
   function addRack(project, rowId, opts) {
     const o = opts || {};
@@ -1186,6 +1693,7 @@
       project.rackTypes[0].id;
     const rack = { id: uid('r'), name: uniqueLabel(row.racks, 'name', str(o.name, LIMITS.name) || nextRackName(project, rowId)), type, trayM: null, slackM: null };
     row.racks.splice(index, 0, rack);
+    if (!o.empty) fillPduSlots(project, [rack.id]);
     return rack;
   }
 
@@ -1327,12 +1835,13 @@
     p.deviceTypes.splice(2, 0, {
       id: 'switch-osfp', label: '32-port 400G switch', tag: 'SWITCH', spec: '32 × OSFP', height: 1, face: 'qsfp', defaultName: 'sw-osfp-01', powerW: 900, weightKg: 13,
       ports: [portSeries('p', 1, 32, 'osfp', 400, 'front')],
+      inlets: psus(2),
       slackM: 0,
     });
     p.deviceTypes.push(
-      { id: 'gpu-server', label: 'GPU server', tag: 'GPU', spec: '8 × GPU', height: 4, face: 'gpu', defaultName: 'gpu-srv-01', powerW: 3000, weightKg: 65, ports: clone(GPU_SERVER_PORTS), slackM: 0.3 },
-      { id: 'patch-panel', label: 'Patch panel', tag: 'PATCH', spec: '24 × RJ45', height: 1, face: 'patch', defaultName: 'pp-01', powerW: 0, weightKg: 2, ports: [], slackM: 0 },
-      { id: 'pdu', label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], slackM: 0 }
+      { id: 'gpu-server', label: 'GPU server', tag: 'GPU', spec: '8 × GPU', height: 4, face: 'gpu', defaultName: 'gpu-srv-01', powerW: 3000, weightKg: 65, ports: clone(GPU_SERVER_PORTS), inlets: psus(4, 'c20'), slackM: 0.3 },
+      { id: 'patch-panel', label: 'Patch panel', tag: 'PATCH', spec: '24 × RJ45', height: 1, face: 'patch', defaultName: 'pp-01', powerW: 0, weightKg: 2, ports: [], inlets: [], slackM: 0 },
+      { id: 'pdu', label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [], slackM: 0 }
     );
     const rack = (id, name, type) => ({ id, name, type: type || 'rack-47', trayM: null, slackM: null });
     p.floors = [
@@ -1503,7 +2012,8 @@
   /** True when the plan still equals the example (the notice flag aside). */
   function isPristineExample(project) {
     const ex = createExampleProject();
-    const pick = (p) => JSON.stringify([p.name, p.info, p.deviceTypes, p.rackTypes, p.cableTypes, p.transceivers, p.floors, p.views, p.networks, p.devices, p.cables]);
+    const pick = (p) =>
+      JSON.stringify([p.name, p.info, p.deviceTypes, p.rackTypes, p.cableTypes, p.transceivers, p.cordTypes, p.floors, p.views, p.networks, p.powerGrids, p.powerSettings, p.devices, p.cables, p.powerCords]);
     return pick(project) === pick(ex);
   }
 
@@ -1546,6 +2056,17 @@
     const rack = loc ? rackById(project, loc.rack) : null;
     if (!rack) return { ok: false, reason: 'Drop it on a rack' };
     const h = heightOf(project, typeId, height);
+
+    if (loc.kind === 'pdu') {
+      if (!isPduType(type)) return { ok: false, reason: 'PDU slots take vertical PDUs only' };
+      const slots = rackPduSlots(project, rack).length;
+      if (!slots) return { ok: false, reason: `${rack.name} has no PDU slots` };
+      if (!Number.isInteger(loc.at) || loc.at < 0 || loc.at >= slots) return { ok: false, reason: 'There is no such PDU slot' };
+      const other = project.devices.find((d) => !skip.has(d.id) && d.loc.rack === loc.rack && d.loc.kind === 'pdu' && d.loc.at === loc.at);
+      if (other) return { ok: false, reason: `PDU slot P${loc.at + 1} holds ${other.name}`, conflict: other.id };
+      return { ok: true };
+    }
+    if (isPduType(type)) return { ok: false, reason: 'A vertical PDU goes in a PDU slot' };
 
     if (loc.kind === 'side') {
       const slots = rackSideSlots(project, rack);
@@ -1621,13 +2142,13 @@
    * spread evenly over them as in planSpread: in the first rack from slot
    * `start` on and then the slots before it, in the others from the top.
    * Returns [{ rack, at }] rack by rack; fewer than `count` when the side
-   * slots are full.
+   * slots are full. With `kind` 'pdu', the same for PDU slots.
    */
-  function planSideSlots(project, typeId, rackIdsList, start, count) {
+  function planSideSlots(project, typeId, rackIdsList, start, count, kind) {
     const racks = rackIdsList.filter((id) => rackById(project, id));
     if (!racks.length || !typeOf(project, typeId)) return [];
     const avail = racks.map((id, i) => {
-      const free = validLocs(project, typeId, id).filter((l) => l.kind === 'side').map((l) => l.at);
+      const free = validLocs(project, typeId, id).filter((l) => l.kind === (kind || 'side')).map((l) => l.at);
       return i ? free : free.filter((at) => at >= start).concat(free.filter((at) => at < start));
     });
     return spreadOver(racks, avail, count);
@@ -1659,6 +2180,13 @@
     const type = typeOf(project, typeId);
     const out = [];
     if (!type || !rackById(project, rackId)) return out;
+    if (isPduType(type)) {
+      rackPduSlots(project, rackId).forEach((side, s) => {
+        const loc = { rack: rackId, kind: 'pdu', at: s };
+        if (canPlace(project, typeId, loc, ignore).ok) out.push(loc);
+      });
+      return out;
+    }
     const h = heightOf(project, typeId, height);
     if (h === 1) {
       for (let s = 0; s < rackSideSlots(project, rackId); s++) {
@@ -1822,7 +2350,8 @@
       if (!grids.has(rackId)) grids.set(rackId, rackGrid(project, rackId));
       return grids.get(rackId);
     };
-    const sideTaken = (rackId) => new Set(project.devices.filter((d) => d.loc.rack === rackId && d.loc.kind === 'side').map((d) => d.loc.at));
+    const taken = (rackId, kind) => new Set(project.devices.filter((d) => d.loc.rack === rackId && d.loc.kind === kind).map((d) => d.loc.at));
+    const sideTaken = (rackId) => taken(rackId, 'side');
     const attempt = (dRack, dU) => {
       const claimed = new Map();
       const out = [];
@@ -1831,7 +2360,17 @@
         const target = pos && pos.row.racks[pos.index + dRack];
         if (!target) return null;
         let mine = claimed.get(target.id);
-        if (!mine) claimed.set(target.id, (mine = { units: new Set(), side: sideTaken(target.id) }));
+        if (!mine) claimed.set(target.id, (mine = { units: new Set(), side: sideTaken(target.id), pdu: taken(target.id, 'pdu') }));
+        if (d.loc.kind === 'pdu') {
+          // The same PDU slot, or another free one of the target rack.
+          const slots = rackPduSlots(project, target).length;
+          const order = [d.loc.at].concat(Array.from({ length: slots }, (_, i) => i));
+          const at = order.find((s) => s < slots && !mine.pdu.has(s));
+          if (at === undefined) return null;
+          mine.pdu.add(at);
+          out.push({ id: d.id, loc: { rack: target.id, kind: 'pdu', at } });
+          continue;
+        }
         if (d.loc.kind === 'side') {
           if (deviceHeight(project, d) !== 1) return null;
           const slots = rackSideSlots(project, target);
@@ -1906,13 +2445,15 @@
       .map((d) => ({ id: d.id, loc: Object.assign({}, d.loc, { rack: rackMap.get(d.loc.rack) }) }));
     const copies = copiesAt(project, moves);
     project.devices.push(...copies);
-    copyCables(project, new Map(moves.map((m, i) => [m.id, copies[i].id])));
+    const idMap = new Map(moves.map((m, i) => [m.id, copies[i].id]));
+    copyCables(project, idMap);
+    copyCords(project, idMap);
   }
 
   /** Inserts a copy of a rack, with copies of its devices, right after it. Null when the row is full. */
   function duplicateRack(project, rackId) {
     const pos = locateRack(project, rackId);
-    const rack = pos && addRack(project, pos.row.id, { index: pos.index + 1, type: pos.rack.type });
+    const rack = pos && addRack(project, pos.row.id, { index: pos.index + 1, type: pos.rack.type, empty: true });
     if (rack) {
       Object.assign(rack, { trayM: orNull(pos.rack.trayM), slackM: orNull(pos.rack.slackM) });
       copyDevicesInto(project, new Map([[rackId, rack.id]]));
@@ -1973,10 +2514,16 @@
       if (!rack) return `${d.name} is in an unknown rack`;
       let g = grids.get(rack.id);
       if (!g) {
-        g = { units: new Array(rackUnits(project, rack) + 1).fill(null), side: new Array(rackSideSlots(project, rack)).fill(null) };
+        g = { units: new Array(rackUnits(project, rack) + 1).fill(null), side: new Array(rackSideSlots(project, rack)).fill(null), pdu: new Array(rackPduSlots(project, rack).length).fill(null) };
         grids.set(rack.id, g);
       }
       const h = deviceHeight(project, d);
+      if (d.loc.kind === 'pdu') {
+        if (d.loc.at >= g.pdu.length) return `${d.name} would lose its PDU slot in ${rack.name}`;
+        if (g.pdu[d.loc.at]) return `${d.name} and ${g.pdu[d.loc.at]} share a PDU slot in ${rack.name}`;
+        g.pdu[d.loc.at] = d.name;
+        continue;
+      }
       if (d.loc.kind === 'side') {
         if (d.loc.at >= g.side.length) return `${d.name} would lose its side slot in ${rack.name}`;
         if (h !== 1) return `${d.name} is too tall for a side slot`;
@@ -1997,13 +2544,20 @@
 
   function formatPosition(project, loc, typeId, height) {
     if (loc.kind === 'side') return `V${loc.at + 1}`;
+    if (loc.kind === 'pdu') return `P${loc.at + 1}`;
     return formatSpan(loc.at, loc.at + heightOf(project, typeId, height) - 1);
   }
   function formatLoc(project, loc, typeId, height) {
     const rack = rackById(project, loc.rack);
     const rackName = rack ? rack.name : 'Unknown rack';
     if (loc.kind === 'side') return `${rackName} · side slot V${loc.at + 1}`;
+    if (loc.kind === 'pdu') return `${rackName} · PDU slot P${loc.at + 1}`;
     return `${rackName} · ${formatPosition(project, loc, typeId, height)}`;
+  }
+  /** A PDU slot of a rack as lists show it: "P1 · left" (the side seen from the front). */
+  function formatPduSlot(project, rack, at) {
+    const side = rackPduSlots(project, rack)[at];
+    return side ? `P${at + 1} · ${side}` : `P${at + 1}`;
   }
   function formatDeviceLoc(project, d) {
     return formatLoc(project, d.loc, d.type, d.height);
@@ -2438,10 +2992,12 @@
    * Drops cable ends on devices or ports that no longer exist (and ends on a
    * port another cable already uses). A cable that loses its head or its far
    * end goes; a breakout loses only the leg, unless none is left. Clears
-   * networks that no longer exist. Returns the number of cables removed or
+   * networks that no longer exist. Power cords are pruned along with the
+   * cables (see pruneCords). Returns the number of cables removed or
    * changed.
    */
   function pruneCables(project) {
+    pruneCords(project);
     if (!Array.isArray(project.cables) || !project.cables.length) return 0;
     const ctx = cableContext(Object.assign({}, project, { cables: [] }));
     const nets = new Set((project.networks || []).map((n) => n.id));
@@ -2499,10 +3055,11 @@
    * Hands out cable labels that continue series past the highest label of
    * each series among the plan's cables and `taken` (a Set), reading those
    * once, or (with `from`) fill a series from a label given by hand. Every
-   * label handed out counts as taken.
+   * label handed out counts as taken. With `items`, the labels of those
+   * (the plan's power cords, say) count instead of the cables'.
    */
-  function labeler(project, taken) {
-    const used = new Set((project.cables || []).map((c) => c.label));
+  function labeler(project, taken, items) {
+    const used = new Set((items || project.cables || []).map((c) => c.label));
     if (taken) for (const l of taken) used.add(l);
     const highest = new Map();
     const note = (label) => {
@@ -2599,8 +3156,10 @@
    * not move to an RJ45 port that took the place of its port.
    * A port keeps its place in its matched group; a port without one keeps
    * its name when that port still exists and no other port moves to it.
+   * `fits(oldConnector, newConnector)` replaces plugFits for groups that
+   * are no network ports (inlets, outlets).
    */
-  function portMoves(oldPorts, newPorts) {
+  function portMoves(oldPorts, newPorts, fits) {
     const olds = Array.isArray(oldPorts) ? oldPorts : [];
     const news = Array.isArray(newPorts) ? newPorts : [];
     const match = new Map();
@@ -2618,7 +3177,7 @@
     pair((g, h) => g.name === h.name);
     const leftOld = olds.map((g, i) => i).filter((i) => !match.has(i));
     const leftNew = news.map((h, j) => j).filter((j) => !taken.has(j));
-    if (leftOld.length === leftNew.length) leftOld.forEach((i, k) => plugFits(olds[i].connector, news[leftNew[k]].connector) && match.set(i, leftNew[k]));
+    if (leftOld.length === leftNew.length) leftOld.forEach((i, k) => (fits || plugFits)(olds[i].connector, news[leftNew[k]].connector) && match.set(i, leftNew[k]));
     const names = news.map((h) => groupNames(h));
     const out = new Map();
     const targets = new Set();
@@ -2637,26 +3196,49 @@
   }
 
   /**
-   * Calls `visit(ref, cable)` for each place in the plan that names a port
-   * of a device: the { device, port } of each cable end and breakout leg.
-   * Code that renames or moves ports goes through here, so that whatever
-   * names a port moves with it.
+   * Calls `visit(ref, owner, kind)` for each place in the plan that names
+   * a port, inlet or outlet of a device: the { device, port } of each
+   * cable end and breakout leg (kind 'port'), and the { device, inlet }
+   * and { device, outlet } of each power cord (kinds 'inlet' and
+   * 'outlet'; the name is at ref[kind]). Code that renames or moves ports
+   * goes through here, so that whatever names one moves with it.
    */
   function forEachPortRef(project, visit) {
-    for (const c of project.cables || []) for (const x of cableEnds(c)) visit(x.end, c);
+    for (const c of project.cables || []) for (const x of cableEnds(c)) visit(x.end, c, 'port');
+    for (const c of project.powerCords || []) {
+      if (c.inlet) visit(c.inlet, c, 'inlet');
+      if (c.outlet) visit(c.outlet, c, 'outlet');
+    }
   }
 
   /**
-   * Moves the port references on the devices of `deviceIds` (a Set) to the
-   * port `moves` (from portMoves) gives, and drops those whose place is
+   * Moves the references on the devices of `deviceIds` (a Set) to the
+   * names `moves` gives: { port, inlet, outlet }, each a Map from portMoves
+   * (a kind without one stays as it is), and drops those whose place is
    * gone. Returns what pruneCables returns.
    */
   function movePortRefs(project, deviceIds, moves) {
-    forEachPortRef(project, (ref) => {
-      // Port names are never empty, so prune removes an end set to ''.
-      if (deviceIds.has(ref.device)) ref.port = moves.get(ref.port) || '';
+    forEachPortRef(project, (ref, owner, kind) => {
+      // Names are never empty, so prune removes an end set to ''.
+      if (deviceIds.has(ref.device) && moves[kind]) ref[kind] = moves[kind].get(ref[kind]) || '';
     });
     return pruneCables(project);
+  }
+
+  const sameConnector = (a, b) => a === b;
+  const outletsOf = (type) => (type && type.pdu ? type.pdu.outlets : []);
+  /**
+   * Where the ports, inlets and outlets of a device type go when it
+   * becomes `next` (another type, or itself changed): the maps
+   * movePortRefs takes, only of the kinds that differ; null when none does.
+   */
+  function typeMoves(before, next) {
+    const out = {};
+    const differ = (a, b) => JSON.stringify(a || []) !== JSON.stringify(b || []);
+    if (differ(before.ports, next.ports)) out.port = portMoves(before.ports, next.ports);
+    if (differ(before.inlets, next.inlets)) out.inlet = portMoves(before.inlets, next.inlets, sameConnector);
+    if (differ(outletsOf(before), outletsOf(next))) out.outlet = portMoves(outletsOf(before), outletsOf(next), sameConnector);
+    return Object.keys(out).length ? out : null;
   }
 
   /**
@@ -2668,7 +3250,7 @@
     const type = typeOf(project, typeId);
     if (!type || !Array.isArray(project.cables)) return 0;
     const devices = new Set(project.devices.filter((d) => d.type === typeId).map((d) => d.id));
-    return movePortRefs(project, devices, portMoves(oldPorts, type.ports));
+    return movePortRefs(project, devices, { port: portMoves(oldPorts, type.ports) });
   }
 
   /**
@@ -2678,7 +3260,8 @@
    * gone are unplugged (see pruneCables). A device mounted the way devices
    * of its old type are by default is mounted the way those of the new
    * type are. Returns an error message and leaves the plan unchanged when
-   * the device would not fit where it is.
+   * the device would not fit where it is. Its power cords move with its
+   * inlets (a PDU's with its outlets) in the same way.
    */
   function setDeviceType(project, deviceId, typeId) {
     const d = deviceById(project, deviceId);
@@ -2694,7 +3277,267 @@
     d.type = typeId;
     if (type.variable) d.height = height;
     else delete d.height;
-    movePortRefs(project, new Set([d.id]), portMoves(before ? before.ports : [], type.ports));
+    movePortRefs(project, new Set([d.id]), typeMoves(before || {}, type) || {});
+    return null;
+  }
+
+  // ------------------------------------------------------------ power cords
+
+  const endKey = (device, name) => `${device}|${name}`;
+
+  /** A power cord from untrusted input: its ends as { device, inlet } and { device, outlet }, null for an end that is none. */
+  function cleanCordEnd(raw, key) {
+    if (!isObj(raw)) return null;
+    return { device: String(raw.device == null ? '' : raw.device), [key]: portName(raw[key]) };
+  }
+
+  /**
+   * What checking power cords needs, built once: devices by id with the
+   * names of their inlets and outlets, and the inlets and outlets taken by
+   * cords other than `ignoreCordId` ("device|name" → cord).
+   */
+  function cordContext(project, ignoreCordId) {
+    const byType = new Map();
+    const devices = new Map();
+    const inlets = new Map();
+    const outlets = new Map();
+    for (const d of project.devices) {
+      let names = byType.get(d.type);
+      if (!names) {
+        const t = typeOf(project, d.type);
+        byType.set(d.type, (names = { inlets: new Set(expandInlets(t).map((x) => x.name)), outlets: new Set(expandOutlets(t).map((x) => x.name)) }));
+      }
+      devices.set(d.id, d);
+      inlets.set(d.id, names.inlets);
+      outlets.set(d.id, names.outlets);
+    }
+    const usedInlets = new Map();
+    const usedOutlets = new Map();
+    for (const c of project.powerCords || []) {
+      if (c.id === ignoreCordId) continue;
+      if (c.inlet) usedInlets.set(endKey(c.inlet.device, c.inlet.inlet), c);
+      if (c.outlet) usedOutlets.set(endKey(c.outlet.device, c.outlet.outlet), c);
+    }
+    return { devices, inlets, outlets, usedInlets, usedOutlets };
+  }
+
+  /** Marks the inlet and the outlet of `cord` as taken in a context from cordContext. */
+  function claimCord(ctx, cord) {
+    ctx.usedInlets.set(endKey(cord.inlet.device, cord.inlet.inlet), cord);
+    ctx.usedOutlets.set(endKey(cord.outlet.device, cord.outlet.outlet), cord);
+  }
+
+  /**
+   * Why `cord` cannot be in the plan, or null: an end on a device, inlet
+   * or outlet that does not exist, an inlet or outlet that already has a
+   * cord, ends in two racks, or a cord type that is not in the plan.
+   */
+  function cordProblem(project, cord, ctx) {
+    const c = ctx || cordContext(project, cord.id);
+    if (cord.type && !cordTypeById(project, cord.type)) return `Unknown cord type “${cord.type}”`;
+    if (!cord.inlet || !cord.outlet) return 'A power cord needs an inlet and an outlet';
+    const d = c.devices.get(cord.inlet.device);
+    if (!d) return `Unknown device “${cord.inlet.device}”`;
+    if (!c.inlets.get(d.id).has(cord.inlet.inlet)) return `${d.name} has no inlet ${cord.inlet.inlet}`;
+    const pdu = c.devices.get(cord.outlet.device);
+    if (!pdu) return `Unknown PDU “${cord.outlet.device}”`;
+    if (!c.outlets.get(pdu.id).has(cord.outlet.outlet)) return `${pdu.name} has no outlet ${cord.outlet.outlet}`;
+    if (d.loc.rack !== pdu.loc.rack) return `${d.name} and ${pdu.name} are in different racks: a power cord stays in its rack`;
+    const a = c.usedInlets.get(endKey(d.id, cord.inlet.inlet));
+    if (a && a.id !== cord.id) return `${d.name} ${cord.inlet.inlet} already has cord ${a.label || 'without a label'}`;
+    const b = c.usedOutlets.get(endKey(pdu.id, cord.outlet.outlet));
+    if (b && b.id !== cord.id) return `Outlet ${cord.outlet.outlet} of ${pdu.name} already has cord ${b.label || 'without a label'}`;
+    return null;
+  }
+
+  /**
+   * Drops the power cords that cannot be in the plan any more (see
+   * cordProblem): an end on a device, inlet or outlet that is gone, ends
+   * in two racks. A cord type that is gone becomes Auto, and a PDU's grid
+   * that is gone none. Returns the number of cords removed.
+   */
+  function pruneCords(project) {
+    const grids = new Set((project.powerGrids || []).map((g) => g.id));
+    for (const d of project.devices) if (d.grid && !grids.has(d.grid)) d.grid = null;
+    if (!Array.isArray(project.powerCords) || !project.powerCords.length) return 0;
+    const ctx = cordContext(Object.assign({}, project, { powerCords: [] }));
+    const before = project.powerCords.length;
+    project.powerCords = project.powerCords.filter((c) => {
+      if (c.type && !cordTypeById(project, c.type)) c.type = null;
+      if (cordProblem(project, c, ctx)) return false;
+      claimCord(ctx, c);
+      return true;
+    });
+    return before - project.powerCords.length;
+  }
+
+  /** The power cords with an end on a device of `deviceIds` (a Set or list). */
+  function cordsOf(project, deviceIds) {
+    const ids = deviceIds instanceof Set ? deviceIds : new Set(deviceIds);
+    return (project.powerCords || []).filter((c) => ids.has(c.inlet.device) || ids.has(c.outlet.device));
+  }
+
+  /**
+   * The power cords that moving devices (`moves`: [{ id, loc }]) would
+   * unplug: those with one end in another rack than the other afterwards.
+   */
+  function cordsBrokenBy(project, moves) {
+    const to = new Map(moves.map((m) => [m.id, m.loc.rack]));
+    const rackOf = (id) => {
+      if (to.has(id)) return to.get(id);
+      const d = deviceById(project, id);
+      return d ? d.loc.rack : null;
+    };
+    return (project.powerCords || []).filter((c) => (to.has(c.inlet.device) || to.has(c.outlet.device)) && rackOf(c.inlet.device) !== rackOf(c.outlet.device));
+  }
+
+  /** Label for a new power cord: the series P-0001 continued. */
+  function nextCordLabel(project, taken) {
+    return labeler(project, taken, project.powerCords || []).next(CORD_LABEL, true);
+  }
+
+  /**
+   * Copies the power cords between devices that were copied (`idMap`: old
+   * → new device ids), like copyCables: a cord is copied when its device
+   * and its PDU both are. Returns the copies.
+   */
+  function copyCords(project, idMap) {
+    if (!Array.isArray(project.powerCords) || !idMap.size) return [];
+    const labels = labeler(project, null, project.powerCords);
+    const out = [];
+    for (const c of project.powerCords.slice()) {
+      if (!idMap.has(c.inlet.device) || !idMap.has(c.outlet.device)) continue;
+      if (project.powerCords.length + out.length >= LIMITS.powerCords) break;
+      const copy = clone(c);
+      copy.id = uid('pc');
+      copy.label = c.label ? labels.after(c.label) : labels.next(CORD_LABEL, true);
+      copy.inlet.device = idMap.get(c.inlet.device);
+      copy.outlet.device = idMap.get(c.outlet.device);
+      out.push(copy);
+    }
+    project.powerCords.push(...out);
+    return out;
+  }
+
+  // ------------------------------------------------------------------ PDUs
+
+  /**
+   * Name for a new PDU of `typeId` in slot `at` of a rack: by its rack
+   * and slot (pdu-a01-a in P1 of Rack A01, pdu-a01-b in P2), with the
+   * head of the nearest PDU of its type when that is named this way
+   * (rpdu-b02-a → rpdu-a01-a). After a PDU named another way, or in a
+   * rack whose name holds no code, it continues that series or the
+   * type's default name (see suggestPlacement).
+   */
+  function pduNameFor(project, typeId, rackId, at) {
+    const s = suggestPlacement(project, typeId, { rack: rackId, kind: 'pdu', at }, 1);
+    const rack = rackById(project, rackId);
+    const code = rack ? rackCode(rack.name) : '';
+    let head = null;
+    if (!s.from) {
+      if (/\d/.test(code) && /[a-z]/i.test(code) && !/\s/.test(code)) head = `pdu-${code.toLowerCase()}-`;
+    } else if (rackCodeIn(project, s.name, rackId)) {
+      const m = /^(.*[^a-z])[a-z]$/i.exec(s.name);
+      if (m) head = m[1];
+    }
+    if (!head) return s.name;
+    const used = namesOf(project.devices);
+    const first = /[A-Z]$/.test(s.from ? s.name : head + 'a') ? 65 : 97;
+    for (let i = at; i < 26; i++) if (!used.has(head + String.fromCharCode(first + i))) return head + String.fromCharCode(first + i);
+    return s.name;
+  }
+
+  /**
+   * The grid a new PDU in slot `at` gets by default: the plan's grids in
+   * turn, so that P1 is on the first and P2 on the second; null without
+   * grids.
+   */
+  function gridForSlot(project, at) {
+    const grids = project.powerGrids || [];
+    return grids.length ? grids[at % grids.length].id : null;
+  }
+
+  /** The PDU type that fills the PDU slots of racks of type `rt`: its default PDU, else `typeId`; null when neither is a vertical PDU type. */
+  function fillType(project, rt, typeId) {
+    return [rt.defaultPdu, typeId].map((id) => (id ? typeOf(project, id) : null)).find(isPduType) || null;
+  }
+
+  /**
+   * Puts a PDU of the rack type's default PDU type into each free PDU slot
+   * of the racks `rackIds`, named by pduNameFor and fed by gridForSlot.
+   * Racks whose type names none get PDU type `typeId`, or stay as they
+   * are without it. Returns the new devices.
+   */
+  function fillPduSlots(project, rackIds, typeId) {
+    const out = [];
+    for (const rackId of rackIds) {
+      const rack = rackById(project, rackId);
+      if (!rack) continue;
+      const rt = rackTypeOf(project, rack);
+      const type = fillType(project, rt, typeId);
+      if (!type) continue;
+      const taken = new Set(project.devices.filter((d) => d.loc.rack === rack.id && d.loc.kind === 'pdu').map((d) => d.loc.at));
+      (rt.pduSlots || []).forEach((side, at) => {
+        if (taken.has(at)) return;
+        const d = newDevice({ type: type.id, name: pduNameFor(project, type.id, rack.id, at), grid: gridForSlot(project, at), loc: { rack: rack.id, kind: 'pdu', at } });
+        project.devices.push(d);
+        out.push(d);
+      });
+    }
+    return out;
+  }
+
+  /** The racks among `rackIds` that fillPduSlots would give a PDU: a default PDU type (or `typeId`) and a free slot. */
+  function fillableRacks(project, rackIds, typeId) {
+    return rackIds.filter((id) => {
+      const rack = rackById(project, id);
+      const rt = rack ? rackTypeOf(project, rack) : null;
+      if (!rt || !fillType(project, rt, typeId)) return false;
+      return project.devices.filter((d) => d.loc.rack === id && d.loc.kind === 'pdu').length < (rt.pduSlots || []).length;
+    });
+  }
+
+  /**
+   * Makes a vertical PDU type of device type `typeId` (a 1U PDU of an
+   * older plan), with the `pdu` block given, and moves its devices into
+   * the PDU slots of their racks: from side slot V1 to P1 and V2 to P2
+   * where that slot is free, else to the first free one. Names, clusters
+   * and network cables stay. Returns an error message and leaves the plan
+   * unchanged when a device finds no free PDU slot.
+   */
+  function makeVerticalPdu(project, typeId, pdu) {
+    const i = project.deviceTypes.findIndex((t) => t.id === typeId);
+    if (i < 0) return 'Unknown device type';
+    const before = project.deviceTypes[i];
+    if (isPduType(before)) return `${before.label} is a vertical PDU already`;
+    const next = cleanDeviceType(Object.assign({}, before, { pdu: isObj(pdu) ? pdu : PDU_1P_20 }));
+    next.id = typeId;
+    const taken = new Map();
+    const slotsOf = (rackId) => {
+      if (!taken.has(rackId)) taken.set(rackId, new Set(project.devices.filter((d) => d.loc.rack === rackId && d.loc.kind === 'pdu').map((d) => d.loc.at)));
+      return taken.get(rackId);
+    };
+    const moves = [];
+    for (const d of sortedDevices(project).filter((x) => x.type === typeId)) {
+      const slots = rackPduSlots(project, d.loc.rack).length;
+      const used = slotsOf(d.loc.rack);
+      const order = (d.loc.kind === 'side' ? [d.loc.at] : []).concat(Array.from({ length: slots }, (_, k) => k));
+      const at = order.find((s) => s < slots && !used.has(s));
+      if (at === undefined) {
+        const rack = rackById(project, d.loc.rack);
+        return `${d.name} finds no free PDU slot in ${rack ? rack.name : 'its rack'}`;
+      }
+      used.add(at);
+      moves.push([d, at]);
+    }
+    project.deviceTypes[i] = next;
+    for (const [d, at] of moves) {
+      d.loc = { rack: d.loc.rack, kind: 'pdu', at };
+      d.reversed = false;
+      if (d.grid === undefined) d.grid = null;
+    }
+    const changed = typeMoves(before, next);
+    if (changed) movePortRefs(project, new Set(moves.map(([d]) => d.id)), changed);
     return null;
   }
 
@@ -2710,6 +3553,8 @@
       largestFree: rt.units,
       sideUsed: 0,
       sideSlots: rt.sideSlots,
+      pduUsed: 0,
+      pduSlots: (rt.pduSlots || []).length,
       count: 0,
       powerW: 0,
       powerBudgetW: rt.powerW,
@@ -2759,6 +3604,10 @@
         st.sideUsed++;
         continue;
       }
+      if (d.loc.kind === 'pdu') {
+        st.pduUsed++;
+        continue;
+      }
       const [b, t] = deviceSpan(project, d);
       const grid = occ.get(d.loc.rack);
       for (let u = b; u <= Math.min(t, st.units); u++) grid[u] = 1;
@@ -2798,10 +3647,10 @@
 
   /** Totals over several racks' stats (for a row, floor or the plan). */
   function sumStats(list) {
-    const t = { racks: 0, units: 0, used: 0, reserved: 0, free: 0, sideUsed: 0, sideSlots: 0, count: 0, powerW: 0, powerBudgetW: 0, weightKg: 0, weightBudgetKg: 0, overPower: 0, overWeight: 0 };
+    const t = { racks: 0, units: 0, used: 0, reserved: 0, free: 0, sideUsed: 0, sideSlots: 0, pduUsed: 0, pduSlots: 0, count: 0, powerW: 0, powerBudgetW: 0, weightKg: 0, weightBudgetKg: 0, overPower: 0, overWeight: 0 };
     for (const s of list) {
       t.racks++;
-      for (const k of ['units', 'used', 'reserved', 'free', 'sideUsed', 'sideSlots', 'count', 'powerW', 'powerBudgetW', 'weightKg', 'weightBudgetKg']) t[k] += s[k];
+      for (const k of ['units', 'used', 'reserved', 'free', 'sideUsed', 'sideSlots', 'pduUsed', 'pduSlots', 'count', 'powerW', 'powerBudgetW', 'weightKg', 'weightBudgetKg']) t[k] += s[k];
       if (s.overPower) t.overPower++;
       if (s.overWeight) t.overWeight++;
     }
@@ -2826,11 +3675,11 @@
     return m;
   }
 
-  /** Devices ordered by rack (in plan order), then top to bottom, then side slots. */
+  /** Devices ordered by rack (in plan order), then top to bottom, then side slots, then PDU slots. */
   function sortedDevices(project, rackId) {
     const order = rackOrder(project);
     const key = (d) => {
-      const pos = d.loc.kind === 'u' ? d.loc.at : 1000 + d.loc.at;
+      const pos = d.loc.kind === 'u' ? d.loc.at : d.loc.kind === 'side' ? 1000 + d.loc.at : 2000 + d.loc.at;
       return (order.has(d.loc.rack) ? order.get(d.loc.rack) : 1e6) * 10000 + pos;
     };
     return project.devices.filter((d) => !rackId || d.loc.rack === rackId).sort((a, b) => key(a) - key(b));
@@ -2942,6 +3791,61 @@
     DEFAULT_TRANSCEIVERS,
     DEFAULT_ROW_PITCH_M,
     DEFAULT_VIEW_NAME,
+    PDU_SIDES,
+    DEFAULT_PDU_SLOTS,
+    PDU_SLOT_UNITS,
+    PHASES,
+    METERING,
+    POWER_CONNECTORS,
+    DEFAULT_CORD_TYPES,
+    DEFAULT_POWER_SETTINGS,
+    DEFAULT_INLETS,
+    GRID_COLORS,
+    CORD_LABEL,
+    rackPduSlots,
+    isPduType,
+    isPdu,
+    powerGridById,
+    cordTypeById,
+    gridOf,
+    powerSettings,
+    powerConnectorById,
+    powerConnectorId,
+    powerConnectorLabel,
+    cleanInlets,
+    cleanOutlets,
+    powerGroupsProblem,
+    expandInlets,
+    expandOutlets,
+    formatOutletList,
+    parseOutletList,
+    cleanPdu,
+    pduProblem,
+    outletGroups,
+    groupOutlets,
+    cleanPduSlots,
+    cleanCordType,
+    cleanPowerGrid,
+    cleanPowerSettings,
+    nextGridColor,
+    nextGridName,
+    formatPduSlot,
+    cleanCordEnd,
+    cordContext,
+    claimCord,
+    cordProblem,
+    pruneCords,
+    cordsOf,
+    cordsBrokenBy,
+    nextCordLabel,
+    copyCords,
+    pduNameFor,
+    gridForSlot,
+    fillPduSlots,
+    fillableRacks,
+    makeVerticalPdu,
+    typeMoves,
+    movePortRefs,
     clone,
     str,
     plural,

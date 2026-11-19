@@ -172,7 +172,8 @@
         else warnings.push(`Skipped ${floor.name}: it has no rows.`);
       }
       if (droppedFloors) warnings.push(`Only the first ${L.floors} floors were kept.`);
-      if (!p.floors.length) M.addFirstFloor(p, { type: defaultType });
+      // Racks made up here hold what the file says, not the default PDUs of their type.
+      if (!p.floors.length) M.addFirstFloor(p, { type: defaultType, empty: true });
       // Racks without a name are named by position once their row exists.
       for (const { rack, row, index } of M.allRacks(p)) if (unnamed.has(rack.id)) rack.name = M.defaultRackName(p, row.id, index);
       return rackIds;
@@ -181,7 +182,7 @@
     // A flat list of racks: one row.
     const rawRacks = Array.isArray(raw.racks) ? raw.racks.filter(isObj) : [];
     const n = rawRacks.length ? Math.min(rawRacks.length, L.racks) : M.DEFAULT_RACKS;
-    M.addFirstFloor(p, { racks: n, type: defaultType });
+    M.addFirstFloor(p, { racks: n, type: defaultType, empty: true });
     const row = p.floors[0].rows[0];
     if (rawRacks.length) {
       rawRacks.slice(0, L.racks).forEach((r, i) => {
@@ -399,6 +400,56 @@
     if (dropped) warnings.push(`Only the first ${L.cables} cables were kept.`);
   }
 
+  /**
+   * Reads the power cords into `p.powerCords`: a cord that breaks a rule
+   * of the plan (see M.cordProblem) is skipped with a warning.
+   */
+  function readCords(list, p, deviceIds, warnings) {
+    const ctx = M.cordContext(p);
+    const ids = new Set();
+    let dropped = 0;
+    (Array.isArray(list) ? list : []).forEach((c, i) => {
+      if (!isObj(c)) return;
+      const label = str(c.label, 40);
+      const what = label ? `power cord ${label}` : `power cord ${i + 1}`;
+      const skip = (why) => void warnings.push(`Skipped ${what}: ${why}.`);
+      if (p.powerCords.length >= L.powerCords) return void dropped++;
+      const type = idOf(c.type);
+      if (type && !M.cordTypeById(p, type)) return skip(`unknown cord type “${type}”`);
+      // An end as read, and why its device cannot be in the plan.
+      const end = (e, key) => {
+        if (!isObj(e)) return { why: `it has no ${key}` };
+        const fileId = idOf(e.device);
+        const device = deviceIds.get(fileId);
+        if (device === null) return { why: `device id “${fileId}” names more than one device` };
+        if (!device) return { why: fileId ? `device “${fileId}” is not in the plan` : 'an end has no device' };
+        return { end: { device, [key]: idOf(e[key]) } };
+      };
+      const inlet = end(c.inlet, 'inlet');
+      if (inlet.why) return skip(inlet.why);
+      const outlet = end(c.outlet, 'outlet');
+      if (outlet.why) return skip(outlet.why);
+      let id = idOf(c.id);
+      if (!id || ids.has(id)) id = M.uid('pc');
+      const cord = {
+        id,
+        label,
+        type: type || null,
+        lengthM: M.clampNum(c.lengthM, 0.1, 100, null),
+        color: M.normalizeHex(c.color) || null,
+        notes: typeof c.notes === 'string' ? c.notes.slice(0, M.NOTES_MAX) : '',
+        inlet: inlet.end,
+        outlet: outlet.end,
+      };
+      const problem = M.cordProblem(p, cord, ctx);
+      if (problem) return skip(problem);
+      ids.add(id);
+      M.claimCord(ctx, cord);
+      p.powerCords.push(cord);
+    });
+    if (dropped) warnings.push(`Only the first ${L.powerCords} power cords were kept.`);
+  }
+
   // ------------------------------------------------------------- migration
 
   /*
@@ -454,6 +505,15 @@
         transceiver('qsfp56-200g-sr4', 'QSFP56 200G SR4', 'qsfp56', 'mpo', 'mmf', 200, 100),
         transceiver('osfp-400g-sr4', 'OSFP 400G SR4', 'osfp', 'mpo', 'mmf', 400, 50),
       ],
+      // Version 6: the inlets of the standard device types, the cord types, the PDU slots and the power settings.
+      inlets: ['switch-rj45', 'switch-qsfp', 'compute-node', 'storage-node', 'storage-enclosure'].map((id) => ({ id, inlets: [{ name: 'psu', first: 1, count: 2, connector: 'c14' }] })),
+      cordTypes: [
+        { id: 'c14-c13', name: 'C14–C13 cord', outlet: 'c13', inlet: 'c14', maxA: 10, lengthsM: [0.6, 1, 1.5, 2, 3] },
+        { id: 'c20-c19', name: 'C20–C19 cord', outlet: 'c19', inlet: 'c20', maxA: 16, lengthsM: [0.6, 1, 1.5, 2, 3] },
+      ],
+      pduSlots: ['left', 'right'],
+      pduSlotUnits: 20,
+      powerSettings: { powerFactor: 1, limitPct: 80 },
     };
   })();
 
@@ -545,7 +605,31 @@
     return out;
   }
 
-  const MIGRATIONS = { 1: v1to2, 2: v2to3, 3: v3to4, 4: v4to5 };
+  /**
+   * Version 6 added power: grids, vertical PDUs in PDU slots, inlets and
+   * power cords. The standard device types get their standard inlets
+   * (other types none: the Power workspace lists them), each rack type
+   * two PDU slots (none on a rack lower than 20 units) without a default
+   * PDU, and the plan the standard cord types and power settings. Devices
+   * stay where they are: a 1U PDU stays in its side slot.
+   */
+  function v5to6(raw) {
+    const out = Object.assign({}, raw, { version: 6, deviceTypes: withStandard(raw.deviceTypes, STANDARD.inlets, ['inlets']) });
+    if (Array.isArray(raw.rackTypes)) {
+      out.rackTypes = raw.rackTypes.map((t) => {
+        if (!isObj(t) || 'pduSlots' in t) return t;
+        const units = M.clampInt(t.units, L.unitsMin, L.unitsMax, M.RACK_UNITS);
+        return Object.assign({}, t, { pduSlots: units < STANDARD.pduSlotUnits ? [] : STANDARD.pduSlots.slice(), defaultPdu: null });
+      });
+    }
+    if (!Array.isArray(raw.cordTypes)) out.cordTypes = M.clone(STANDARD.cordTypes);
+    if (!Array.isArray(raw.powerGrids)) out.powerGrids = [];
+    if (!isObj(raw.powerSettings)) out.powerSettings = M.clone(STANDARD.powerSettings);
+    if (!Array.isArray(raw.powerCords)) out.powerCords = [];
+    return out;
+  }
+
+  const MIGRATIONS = { 1: v1to2, 2: v2to3, 3: v3to4, 4: v4to5, 5: v5to6 };
 
   /**
    * The version a file's steps start from. A file without a valid version
@@ -566,7 +650,10 @@
   }
 
   // Top-level keys of the plan file, in any version; the file's others are kept in `extra`.
-  const FILE_KEYS = new Set(['app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'racks', 'floors', 'clusters', 'views', 'networks', 'devices', 'cables', 'meta']);
+  const FILE_KEYS = new Set([
+    'app', 'version', 'name', 'info', 'deviceTypes', 'rackTypes', 'cableTypes', 'transceivers', 'cordTypes', 'racks', 'floors', 'clusters', 'views', 'networks',
+    'powerGrids', 'powerSettings', 'devices', 'cables', 'powerCords', 'meta',
+  ]);
   const AS_IS_CHARS = 65536;
 
   /**
@@ -625,6 +712,13 @@
     p.deviceTypes = readTypes(raw.deviceTypes, 'device type', 'label', withConnectors('device type', M.cleanDeviceType), L.deviceTypes, [M.RESERVED.id], warnings) || p.deviceTypes;
     const rackTypes = readTypes(raw.rackTypes, 'rack type', 'name', M.cleanRackType, L.rackTypes, [], warnings);
     if (rackTypes && rackTypes.length) p.rackTypes = rackTypes;
+    for (const t of p.rackTypes) {
+      if (!t.defaultPdu) continue;
+      if (!M.isPduType(M.typeOf(p, t.defaultPdu))) warnings.push(`Rack type ${t.name} names “${t.defaultPdu}” as its default PDU, which is no vertical PDU type of the plan, and has none.`);
+      if (!t.pduSlots.length || !M.isPduType(M.typeOf(p, t.defaultPdu))) t.defaultPdu = null;
+    }
+    p.cordTypes = uniqueNames(readTypes(raw.cordTypes, 'cord type', 'name', M.cleanCordType, L.cordTypes, [], warnings) || p.cordTypes, 'cord type', warnings);
+    p.powerSettings = M.cleanPowerSettings(raw.powerSettings);
     p.cableTypes = uniqueNames(readTypes(raw.cableTypes, 'cable type', 'name', withConnectors('cable type', M.cleanCableType), L.cableTypes, [], warnings) || p.cableTypes, 'cable type', warnings);
     p.transceivers = uniqueNames(readTypes(raw.transceivers, 'transceiver', 'name', withConnectors('transceiver', M.cleanTransceiver), L.transceivers, [], warnings) || p.transceivers, 'transceiver', warnings);
     if (isObj(raw.info)) for (const k of Object.keys(p.info)) p.info[k] = str(raw.info[k], 60);
@@ -633,6 +727,7 @@
     // View, cluster and network ids as written in the file → ids in the plan.
     const views = readViews(raw, p, warnings);
     const networkIds = readGroups(raw.networks, 'network', L.networks, p.networks, (n, id) => Object.assign(M.cleanNetwork(n, p), { id }), warnings);
+    const gridIds = readGroups(raw.powerGrids, 'power grid', L.powerGrids, p.powerGrids, (g, id) => Object.assign(M.cleanPowerGrid(g, p), { id }), warnings);
 
     // Each device is checked against the devices already accepted in its rack.
     const perRack = new Map();
@@ -683,16 +778,23 @@
         notes: typeof d.notes === 'string' ? d.notes.slice(0, M.NOTES_MAX) : '',
         powerW: M.clampNum(d.powerW, 0, 100000, null),
         weightKg: M.clampNum(d.weightKg, 0, 5000, null),
-        reversed: d.reversed === true,
+        // A vertical PDU hangs one way in its slot: it is never turned.
+        reversed: d.reversed === true && !M.isPduType(type),
         slackM: M.clampNum(d.slackM, 0, 10, null),
         loc: nloc,
       });
       for (const f of M.FIELDS) dev[f.key] = str(d[f.key], M.FIELD_MAX);
       if (type.variable) dev.height = height;
+      if (M.isPduType(type)) {
+        const grid = idOf(d.grid);
+        dev.grid = gridIds.get(grid) || null;
+        if (grid && !dev.grid) warnings.push(`${name} refers to unknown power grid “${grid}” and has none.`);
+      }
       list.push(dev);
       p.devices.push(dev);
     });
     readCables(raw.cables, p, deviceIds, networkIds, warnings);
+    readCords(raw.powerCords, p, deviceIds, warnings);
     // Data for tools and later versions survives a round trip; `example` marks the example plan.
     if (isObj(raw.meta)) p.meta = keepAsIs(raw.meta, (k, v) => k !== 'example' || v === true, 'meta field', warnings);
     const extra = keepAsIs(raw, (k) => !FILE_KEYS.has(k), 'field', warnings);
@@ -706,6 +808,7 @@
     }
     for (const v of p.views) warnSameNames(v.clusters, `clusters in the view ${v.name}`, 'name', warnings);
     warnSameNames(p.networks, 'networks', 'name', warnings);
+    warnSameNames(p.powerGrids, 'power grids', 'name', warnings);
     return { project: p, warnings };
   }
 
@@ -738,6 +841,7 @@
       if (d.reversed) o.reversed = true;
       if (d.slackM !== null && d.slackM !== undefined) o.slackM = d.slackM;
       if (d.type === M.RESERVED.id) o.height = M.deviceHeight(project, d);
+      if (d.loc.kind === 'pdu') o.grid = d.grid || null;
       o.loc = d.loc;
       return o;
     });
@@ -750,16 +854,20 @@
       rackTypes: project.rackTypes,
       cableTypes: project.cableTypes || [],
       transceivers: project.transceivers || [],
+      cordTypes: project.cordTypes || [],
       floors: project.floors,
       views: project.views,
       networks: project.networks || [],
+      powerGrids: project.powerGrids || [],
+      powerSettings: M.powerSettings(project),
       devices,
       cables: project.cables || [],
+      powerCords: project.powerCords || [],
       meta: project.meta || {},
     };
     // Top-level fields of the file that this version does not read go back as they came.
     for (const [k, v] of Object.entries(project.extra || {})) if (!FILE_KEYS.has(k) && k !== '__proto__') plan[k] = v;
-    return opts && opts.compact ? JSON.stringify(plan) : prettyJSON(plan, ['devices', 'cables']);
+    return opts && opts.compact ? JSON.stringify(plan) : prettyJSON(plan, ['devices', 'cables', 'powerCords']);
   }
 
   // ------------------------------------------------------------------- CSV

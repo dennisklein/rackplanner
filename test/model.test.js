@@ -16,7 +16,7 @@ function project(devices) {
 
 test('a new plan has one floor with one row of three 47U racks and the standard catalog', () => {
   const p = M.createEmptyProject();
-  assert.equal(p.version, 5);
+  assert.equal(p.version, 6);
   assert.deepEqual(p.floors, [
     {
       id: 'f1',
@@ -625,6 +625,8 @@ test('rack stats report space, reserved units, power and weight against budgets'
     largestFree: 25,
     sideUsed: 1,
     sideSlots: 2,
+    pduUsed: 0,
+    pduSlots: 2,
     count: 3,
     powerW: 900 + 1000 + 150 + 3000,
     powerBudgetW: 12000,
@@ -791,7 +793,7 @@ test('device types expand their ports and drop groups that clash or overflow', (
   assert.equal(many.ports.length, 32, 'at most 32 groups');
   assert.deepEqual(M.expandPorts(M.RESERVED), []);
   assert.equal(M.expandPorts(M.typeOf(M.createEmptyProject(), 'switch-rj45')).length, 52);
-  assert.deepEqual(M.TYPE_TEMPLATES.map((x) => M.expandPorts(x).length), [3, 8, 0, 1, 1, 0, 0]);
+  assert.deepEqual(M.TYPE_TEMPLATES.map((x) => M.expandPorts(x).length), [3, 8, 0, 1, 1, 0, 0, 1, 1, 1]);
 });
 
 test('connectors decide which plugs fit which ports', () => {
@@ -807,7 +809,10 @@ test('connectors decide which plugs fit which ports', () => {
 
 test('racks, floors and devices carry their length settings', () => {
   const p = M.createEmptyProject();
-  assert.deepEqual(M.rackTypeById(p, 'rack-48'), { id: 'rack-48', name: '48U high-density rack', units: 48, sideSlots: 2, powerW: 20000, weightKg: 1500, widthMm: 800, depthMm: 1200, trayM: 0.5, slackM: 0.25 });
+  assert.deepEqual(M.rackTypeById(p, 'rack-48'), {
+    id: 'rack-48', name: '48U high-density rack', units: 48, sideSlots: 2, pduSlots: ['left', 'right'], defaultPdu: null,
+    powerW: 20000, weightKg: 1500, widthMm: 800, depthMm: 1200, trayM: 0.5, slackM: 0.25,
+  });
   assert.deepEqual([M.rackTrayM(p, 'r1'), M.rackSlackM(p, 'r1')], [0.5, 0.25], 'the rack type’s');
   Object.assign(M.rackById(p, 'r1'), { trayM: 1.2, slackM: 0 });
   assert.deepEqual([M.rackTrayM(p, 'r1'), M.rackSlackM(p, 'r1')], [1.2, 0], 'the rack’s own');
@@ -1391,4 +1396,436 @@ test('names the CSVs find things by stay apart in their list, in any case', () =
   assert.equal(M.renameRack(p, r2.id, r1.name), false);
   r2.name = r1.name;
   assert.equal(M.renameRack(p, r2.id, r1.name), true);
+});
+
+// ------------------------------------------------------------------ power
+
+const PDU_3P = M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30');
+
+/** Two racks with grids A and B and a three-phase PDU type `t-pdu`; with `fill`, a PDU of it in each slot. */
+function powerProject(fill) {
+  const p = M.createEmptyProject(2);
+  p.powerGrids.push({ id: 'pg-a', name: 'Grid A', color: '#d1453b', note: '' }, { id: 'pg-b', name: 'Grid B', color: '#2b6cd4', note: '' });
+  M.addDeviceType(p, PDU_3P).id = 't-pdu';
+  if (fill) {
+    assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: 't-pdu' }), null);
+    M.fillPduSlots(p, ['r1', 'r2']);
+  }
+  return p;
+}
+const place = (p, type, name, rack, at, kind) => {
+  const d = M.newDevice({ id: name, type, name, loc: { rack, kind: kind || 'u', at } });
+  p.devices.push(d);
+  return d;
+};
+const cord = (p, id, device, inlet, pdu, outlet, extra) => {
+  const c = Object.assign({ id, label: id.toUpperCase(), type: null, lengthM: null, color: null, notes: '', inlet: { device, inlet }, outlet: { device: M.deviceById(p, pdu) ? pdu : p.devices.find((d) => d.name === pdu).id, outlet } }, extra);
+  p.powerCords.push(c);
+  return c;
+};
+
+test('a new plan has the standard cord types and power settings, no grids, and inlets on its device types', () => {
+  const p = M.createEmptyProject();
+  assert.deepEqual(p.powerGrids, []);
+  assert.deepEqual(p.powerCords, []);
+  assert.deepEqual(p.powerSettings, { powerFactor: 1, limitPct: 80 });
+  assert.deepEqual(p.cordTypes.map((t) => [t.id, t.outlet, t.inlet, t.maxA]), [['c14-c13', 'c13', 'c14', 10], ['c20-c19', 'c19', 'c20', 16]]);
+  assert.deepEqual(p.deviceTypes.map((t) => M.expandInlets(t).map((x) => `${x.name}:${x.connector}`).join(' ')), Array(5).fill('psu1:c14 psu2:c14'));
+  assert.deepEqual(p.rackTypes.map((t) => [t.pduSlots, t.defaultPdu]), Array(3).fill([['left', 'right'], null]));
+  assert.equal(p.devices.length, 0, 'a rack type without a default PDU leaves the slots free');
+});
+
+test('inlets are port groups with a power connector, up to 4 groups and 8 inlets', () => {
+  assert.deepEqual(M.cleanInlets([{ name: 'psu', first: 1, count: 2, connector: 'C14' }, { name: 'in', connector: 'c20' }, { name: 'x' }, { name: 'psu', first: 2, count: 1, connector: 'c14' }]), [
+    { name: 'psu', first: 1, count: 2, connector: 'c14' },
+    { name: 'in', connector: 'c20' },
+  ]);
+  assert.equal(M.cleanInlets([{ name: 'psu', first: 1, count: 9, connector: 'c14' }]).length, 0, 'nine inlets are too many');
+  assert.equal(M.cleanInlets(Array.from({ length: 6 }, (_, i) => ({ name: `in${i}`, connector: 'c14' }))).length, 4);
+  assert.equal(M.powerGroupsProblem([{ name: 'psu', first: 1, count: 2, connector: 'c14' }], 'inlet'), null);
+  assert.equal(M.powerGroupsProblem([{ name: 'psu', first: 1, count: 9, connector: 'c14' }], 'inlet'), 'A device type has at most 8 inlets');
+  assert.equal(M.powerGroupsProblem([{ name: 'a', connector: 'c14' }, { name: 'a', connector: 'c14' }], 'inlet'), 'Inlet a is named twice');
+  assert.match(M.powerGroupsProblem([{ name: 'a' }], 'inlet'), /needs a name/);
+  assert.equal(M.powerGroupsProblem([{ name: '', first: 1, count: 97, connector: 'c13' }], 'outlet'), 'A PDU type has at most 96 outlets');
+  assert.equal(M.powerConnectorId('SCHUKO'), 'schuko');
+  assert.equal(M.powerConnectorId('iec-309'), 'iec-309', 'a connector this version does not know is kept');
+  assert.deepEqual(M.POWER_CONNECTORS.map((c) => c.id), ['c13', 'c14', 'c19', 'c20', 'c5', 'c6', 'c15', 'c16', 'nema-5-15', 'nema-l6-30', 'schuko']);
+});
+
+test('a device type with a pdu block is a vertical PDU: 0U, no inlets, each outlet in one fuse group', () => {
+  const t = M.cleanDeviceType(PDU_3P);
+  assert.equal(t.height, 0);
+  assert.equal(t.face, 'pdu');
+  assert.deepEqual(t.inlets, []);
+  assert.ok(M.isPduType(t));
+  assert.equal(M.formatTypeSpec(t), '0U · 24 × C13, 6 × C19 · 3 × 32 A');
+  const all = M.expandOutlets(t).map((o) => o.name);
+  assert.equal(all.length, 30);
+  assert.deepEqual(M.expandOutlets(t).filter((o) => o.connector === 'c19').map((o) => o.name), ['5', '10', '15', '20', '25', '30']);
+  assert.deepEqual(t.pdu.fuses.map((f) => [f.name, M.formatOutletList(f.outlets, all), f.ratingA, f.phase]), [
+    ['CB1', '1-5', 16, 'L1'], ['CB2', '6-10', 16, 'L1'], ['CB3', '11-15', 16, 'L2'], ['CB4', '16-20', 16, 'L2'], ['CB5', '21-25', 16, 'L3'], ['CB6', '26-30', 16, 'L3'],
+  ]);
+  assert.deepEqual(t.pdu.meters.map((m) => [m.name, M.formatOutletList(m.outlets, all)]), [['M1', '1-10'], ['M2', '11-20'], ['M3', '21-30']]);
+  assert.deepEqual([M.outletGroups(t).get('7').fuse.name, M.outletGroups(t).get('7').meter.name], ['CB2', 'M1']);
+  assert.equal(M.pduProblem(t.pdu), null);
+
+  // What a file may hold: an outlet named twice counts once, a name that is no outlet goes, the rest get a group.
+  const odd = M.cleanPdu({
+    phases: 1, maxA: 20,
+    outlets: [{ name: '', first: 1, count: 6, connector: 'c13' }],
+    fuses: [{ name: 'A', outlets: ['1', '2', '9'], ratingA: 10, phase: 'L3' }, { name: 'A', outlets: ['2', '3'] }, { name: 'empty', outlets: [] }],
+    metering: 'group',
+    meters: [{ name: 'M1', outlets: ['1', '2', '3', '4', '5', '6'] }],
+  });
+  assert.deepEqual(odd.fuses, [
+    { name: 'A', outlets: ['1', '2'], ratingA: 10, phase: 'L1' },
+    { name: 'A 2', outlets: ['3'], ratingA: 20, phase: 'L1' },
+    { name: 'CB3', outlets: ['4', '5', '6'], ratingA: 20, phase: 'L1' },
+  ]);
+  assert.deepEqual(odd.meters, [{ name: 'M1', outlets: ['1', '2', '3', '4', '5', '6'] }]);
+  assert.deepEqual(M.cleanPdu({ outlets: [{ name: '', first: 1, count: 2, connector: 'c13' }], metering: 'outlet', meters: [{ name: 'M', outlets: ['1'] }] }).meters, [], 'meter groups only with metering per group');
+  assert.equal(M.cleanPdu({}).fuses.length, 0);
+
+  // What the editor refuses, with a sentence.
+  const pdu = (changes) => Object.assign(M.clone(t.pdu), changes);
+  assert.equal(M.pduProblem(pdu({ fuses: t.pdu.fuses.slice(1) })), 'Outlets 1-5 are in no fuse group');
+  assert.equal(M.pduProblem(pdu({ fuses: t.pdu.fuses.concat([{ name: 'X', outlets: ['30'], ratingA: 16 }]) })), 'Outlet 30 is in CB6 and in X');
+  assert.equal(M.pduProblem(pdu({ fuses: [{ name: 'X', outlets: ['31'] }] })), 'X names outlet 31, which the PDU does not have');
+  assert.equal(M.pduProblem(pdu({ meters: t.pdu.meters.slice(0, 2) })), 'Outlets 21-30 are in no meter group');
+  assert.equal(M.pduProblem(pdu({ meters: [], metering: 'inlet' })), null);
+  assert.equal(M.pduProblem(pdu({ outlets: [] })), 'A PDU needs outlets, like [1-24]');
+});
+
+test('outlet lists read and write as ranges', () => {
+  const all = ['1', '2', '3', '4', '5', 'A1', 'A2', 'A3'];
+  assert.equal(M.formatOutletList(['3', '1', '2', 'A3', 'A1'], all), '1-3, A1, A3');
+  assert.deepEqual(M.parseOutletList('1-3, A1 A3', all), { names: ['1', '2', '3', 'A1', 'A3'] });
+  assert.deepEqual(M.parseOutletList('4–A2', all), { names: ['4', '5', 'A1', 'A2'] });
+  assert.deepEqual(M.parseOutletList('', all), { names: [] });
+  assert.deepEqual(M.parseOutletList('1-9', all), { error: '“1-9” is no outlet of this PDU' });
+  assert.deepEqual(M.parseOutletList('3-1', all), { error: '“3-1” runs backwards: put the first outlet first' });
+});
+
+test('rack types list 0 to 4 PDU slots by side, and name a vertical PDU type as their default', () => {
+  assert.deepEqual(M.cleanRackType({}).pduSlots, ['left', 'right']);
+  assert.deepEqual(M.cleanRackType({ units: 19 }).pduSlots, [], 'a low rack has none unless its type lists them');
+  assert.deepEqual(M.cleanRackType({ units: 12, pduSlots: ['right'] }).pduSlots, ['right']);
+  assert.deepEqual(M.cleanRackType({ pduSlots: ['left', 'left', 'top', 'right', 'right', 'left'] }).pduSlots, ['left', 'left', 'right', 'right']);
+  assert.deepEqual(M.cleanRackType({ pduSlots: [] }).pduSlots, []);
+  const p = powerProject();
+  assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: 'compute-node' }), null);
+  assert.equal(M.rackTypeById(p, 'rack-47').defaultPdu, null, 'only a vertical PDU type');
+  assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: 't-pdu' }), null);
+  assert.equal(M.rackTypeById(p, 'rack-47').defaultPdu, 't-pdu');
+  assert.equal(M.updateRackType(p, 'rack-47', { pduSlots: [] }), null);
+  assert.equal(M.rackTypeById(p, 'rack-47').defaultPdu, null, 'and only with slots to fill');
+  M.updateRackType(p, 'rack-47', { pduSlots: ['left', 'right'], defaultPdu: 't-pdu' });
+  M.deleteDeviceType(p, 't-pdu');
+  assert.equal(M.rackTypeById(p, 'rack-47').defaultPdu, null, 'a deleted type is no default');
+});
+
+test('a vertical PDU sits in a PDU slot, and nothing else does', () => {
+  const p = powerProject();
+  const at = (kind, n) => ({ rack: 'r1', kind, at: n });
+  assert.deepEqual(M.canPlace(p, 't-pdu', at('pdu', 0)), { ok: true });
+  assert.equal(M.canPlace(p, 't-pdu', at('u', 1)).reason, 'A vertical PDU goes in a PDU slot');
+  assert.equal(M.canPlace(p, 't-pdu', at('side', 0)).reason, 'A vertical PDU goes in a PDU slot');
+  assert.equal(M.canPlace(p, 'compute-node', at('pdu', 0)).reason, 'PDU slots take vertical PDUs only');
+  assert.equal(M.canPlace(p, 't-pdu', at('pdu', 2)).reason, 'There is no such PDU slot');
+  const a = place(p, 't-pdu', 'pdu-a', 'r1', 0, 'pdu');
+  assert.deepEqual(M.canPlace(p, 't-pdu', at('pdu', 0)), { ok: false, reason: 'PDU slot P1 holds pdu-a', conflict: 'pdu-a' });
+  assert.deepEqual(M.canPlace(p, 't-pdu', at('pdu', 0), 'pdu-a'), { ok: true });
+  assert.deepEqual(M.validLocs(p, 't-pdu', 'r1'), [at('pdu', 1)]);
+  assert.deepEqual(M.firstFreeLoc(p, 't-pdu', ['r1', 'r2']), at('pdu', 1));
+  assert.ok(M.validLocs(p, 'compute-node', 'r1').every((l) => l.kind !== 'pdu'));
+  // PDU slots are independent of the units and the side slots.
+  place(p, 'switch-rj45', 'sw', 'r1', 0, 'side');
+  assert.deepEqual(M.canPlace(p, 'compute-node', at('u', 1)), { ok: true });
+  assert.equal(M.formatDeviceLoc(p, a), 'Rack A01 · PDU slot P1');
+  assert.equal(M.formatPosition(p, a.loc, a.type), 'P1');
+  assert.equal(M.formatPduSlot(p, 'r1', 1), 'P2 · right');
+  assert.deepEqual(M.sortedDevices(p, 'r1').map((d) => d.name), ['sw', 'pdu-a']);
+  const st = M.rackStats(p, 'r1');
+  assert.deepEqual([st.pduUsed, st.pduSlots, st.used, st.count], [1, 2, 0, 2]);
+  // A rack type cannot lose a slot that holds a PDU, and a type keeps its kind while it has devices.
+  assert.equal(M.updateRackType(p, 'rack-47', { pduSlots: [] }), 'pdu-a would lose its PDU slot in Rack A01');
+  assert.equal(M.updateRackType(p, 'rack-47', { pduSlots: ['right'] }), null);
+  assert.equal(M.updateDeviceType(p, 't-pdu', { pdu: null }), '1 PDU of this type is placed in PDU slots');
+  place(p, 'compute-node', 'cn', 'r1', 4);
+  assert.match(M.updateDeviceType(p, 'compute-node', { pdu: PDU_3P.pdu }), /^1 device of this type is placed/);
+  assert.equal(M.setDeviceType(p, 'cn', 't-pdu'), 'A vertical PDU goes in a PDU slot');
+  // Copies take the same slot in the next rack.
+  assert.deepEqual(M.copyTargets(p, ['pdu-a']), [{ id: 'pdu-a', loc: { rack: 'r2', kind: 'pdu', at: 0 } }]);
+});
+
+test('new racks of a type with a default PDU get one per slot, on the grids in turn; Fill PDU slots does the same', () => {
+  const p = powerProject();
+  M.updateRackType(p, 'rack-47', { pduSlots: ['left', 'left', 'right'], defaultPdu: 't-pdu' });
+  const rack = M.addRack(p, 'row1');
+  assert.equal(rack.name, 'Rack A03');
+  assert.deepEqual(p.devices.map((d) => [d.name, d.grid, d.loc]), [
+    ['pdu-a03-a', 'pg-a', { rack: rack.id, kind: 'pdu', at: 0 }],
+    ['pdu-a03-b', 'pg-b', { rack: rack.id, kind: 'pdu', at: 1 }],
+    ['pdu-a03-c', 'pg-a', { rack: rack.id, kind: 'pdu', at: 2 }],
+  ]);
+  assert.deepEqual(M.fillableRacks(p, ['r1', 'r2', rack.id]), ['r1', 'r2']);
+  p.devices.splice(1, 1);
+  place(p, 't-pdu', 'pdu-a01-b', 'r1', 1, 'pdu');
+  const added = M.fillPduSlots(p, ['r1', rack.id, 'nope']);
+  assert.deepEqual(added.map((d) => [d.name, d.loc.rack, d.loc.at, d.grid]), [['pdu-a01-a', 'r1', 0, 'pg-a'], ['pdu-a01-c', 'r1', 2, 'pg-a'], ['pdu-a03-b', rack.id, 1, 'pg-b']]);
+  assert.deepEqual(M.fillPduSlots(p, ['r1']), [], 'full racks stay as they are');
+  // Without grids the PDUs have none; without a default PDU type nothing is added.
+  const q = M.createEmptyProject(1);
+  assert.deepEqual(M.fillPduSlots(q, ['r1']), []);
+  M.addDeviceType(q, PDU_3P).id = 't';
+  M.updateRackType(q, 'rack-47', { defaultPdu: 't' });
+  q.floors[0].rows[0].racks[0].name = 'Cage';
+  assert.deepEqual(M.fillPduSlots(q, ['r1']).map((d) => [d.name, d.grid]), [['pdu-01', null], ['pdu-02', null]], 'a rack without a code: the type’s series');
+  // The head of PDUs named by rack and slot is kept, and a series named another way goes on.
+  const r = M.createEmptyProject(2);
+  M.addDeviceType(r, PDU_3P).id = 't';
+  M.updateRackType(r, 'rack-47', { defaultPdu: 't' });
+  place(r, 't', 'RPDU-A01-B', 'r1', 1, 'pdu');
+  assert.deepEqual(M.fillPduSlots(r, ['r1', 'r2']).map((d) => d.name), ['RPDU-A01-A', 'RPDU-A02-A', 'RPDU-A02-B']);
+  r.devices = [];
+  place(r, 't', 'feed-7', 'r1', 1, 'pdu');
+  assert.deepEqual(M.fillPduSlots(r, ['r1', 'r2']).map((d) => d.name), ['feed-8', 'feed-9', 'feed-10']);
+});
+
+test('a power cord joins an inlet to an outlet of a PDU in the same rack, one cord each', () => {
+  const p = powerProject(true);
+  place(p, 'compute-node', 'cn-1', 'r1', 4);
+  place(p, 'compute-node', 'cn-2', 'r2', 4);
+  const c = { id: 'x', label: 'P-0001', type: null, inlet: { device: 'cn-1', inlet: 'psu1' }, outlet: { device: p.devices[0].id, outlet: '1' } };
+  assert.equal(M.cordProblem(p, c), null);
+  const bad = (changes) => M.cordProblem(p, Object.assign({}, c, changes));
+  assert.equal(bad({ inlet: { device: 'cn-1', inlet: 'psu3' } }), 'cn-1 has no inlet psu3');
+  assert.equal(bad({ inlet: { device: 'nope', inlet: 'psu1' } }), 'Unknown device “nope”');
+  assert.equal(bad({ outlet: { device: p.devices[0].id, outlet: '31' } }), 'pdu-a01-a has no outlet 31');
+  assert.equal(bad({ outlet: { device: 'cn-2', outlet: '1' } }), 'cn-2 has no outlet 1');
+  assert.equal(bad({ inlet: { device: 'cn-2', inlet: 'psu1' } }), 'cn-2 and pdu-a01-a are in different racks: a power cord stays in its rack');
+  assert.equal(bad({ type: 'nope' }), 'Unknown cord type “nope”');
+  assert.equal(bad({ outlet: null }), 'A power cord needs an inlet and an outlet');
+  p.powerCords.push(c);
+  assert.equal(M.cordProblem(p, c), null, 'a cord does not clash with itself');
+  assert.equal(M.cordProblem(p, Object.assign({}, c, { id: 'y', outlet: { device: p.devices[1].id, outlet: '1' } })), 'cn-1 psu1 already has cord P-0001');
+  assert.equal(M.cordProblem(p, Object.assign({}, c, { id: 'y', inlet: { device: 'cn-1', inlet: 'psu2' } })), 'Outlet 1 of pdu-a01-a already has cord P-0001');
+  assert.equal(M.nextCordLabel(p), 'P-0002');
+});
+
+test('cords follow their devices: deleted with them, unplugged across racks, copied with a rack', () => {
+  const p = powerProject(true);
+  const [a, b] = p.devices;
+  place(p, 'compute-node', 'cn-1', 'r1', 4);
+  place(p, 'compute-node', 'cn-2', 'r1', 6);
+  cord(p, 'p-0001', 'cn-1', 'psu1', a.id, '1');
+  cord(p, 'p-0002', 'cn-1', 'psu2', b.id, '1');
+  cord(p, 'p-0003', 'cn-2', 'psu1', a.id, '2', { type: 'c14-c13' });
+  assert.deepEqual(M.cordsOf(p, ['cn-1']).map((c) => c.id), ['p-0001', 'p-0002']);
+  assert.deepEqual(M.cordsOf(p, [a.id]).map((c) => c.id), ['p-0001', 'p-0003']);
+  // A move within the rack keeps the cords; to another rack it would unplug them.
+  assert.deepEqual(M.cordsBrokenBy(p, [{ id: 'cn-1', loc: { rack: 'r1', kind: 'u', at: 20 } }]), []);
+  assert.deepEqual(M.cordsBrokenBy(p, [{ id: 'cn-1', loc: { rack: 'r2', kind: 'u', at: 4 } }]).map((c) => c.id), ['p-0001', 'p-0002']);
+  assert.deepEqual(M.cordsBrokenBy(p, [{ id: a.id, loc: { rack: 'r1', kind: 'pdu', at: 1 } }]), [], 'a PDU in another slot of its rack keeps its cords');
+  // A whole rack copied keeps its cords, labeled on in the series; the copied PDUs keep their grids.
+  const copy = M.duplicateRack(p, 'r1');
+  const copies = p.devices.filter((d) => d.loc.rack === copy.id);
+  assert.deepEqual(copies.map((d) => [d.name, d.grid || '']).sort(), [['cn-3', ''], ['cn-4', ''], ['pdu-a03-a', 'pg-a'], ['pdu-a03-b', 'pg-b']]);
+  assert.deepEqual(p.powerCords.slice(3).map((c) => [c.label, M.deviceById(p, c.inlet.device).name, c.inlet.inlet, M.deviceById(p, c.outlet.device).name, c.outlet.outlet, c.type]), [
+    ['P-0004', 'cn-3', 'psu1', 'pdu-a03-a', '1', null],
+    ['P-0005', 'cn-3', 'psu2', 'pdu-a03-b', '1', null],
+    ['P-0006', 'cn-4', 'psu1', 'pdu-a03-a', '2', 'c14-c13'],
+  ]);
+  // Prune: the cords of a device that moved to another rack or is gone, and those of a PDU that is gone.
+  M.deviceById(p, 'cn-1').loc = { rack: 'r2', kind: 'u', at: 4 };
+  assert.equal(M.pruneCords(p), 2);
+  p.devices = p.devices.filter((d) => d.id !== a.id);
+  M.pruneCables(p);
+  assert.deepEqual(p.powerCords.map((c) => c.label), ['P-0004', 'P-0005', 'P-0006']);
+  M.removeRack(p, copy.id);
+  assert.deepEqual(p.powerCords, []);
+  // A grid or cord type that is gone: the PDU has no grid, the cord picks its type.
+  cord(p, 'p-9', 'cn-2', 'psu2', b.id, '9', { type: 'c14-c13' });
+  p.powerGrids = [];
+  p.cordTypes = [];
+  assert.equal(M.pruneCords(p), 0);
+  assert.equal(b.grid, null);
+  assert.equal(p.powerCords[0].type, null);
+});
+
+test('forEachPortRef visits the ends of the power cords too, and type changes move them like cable ends', () => {
+  const p = powerProject(true);
+  const [a] = p.devices;
+  place(p, 'compute-node', 'cn-1', 'r1', 4);
+  const c1 = cord(p, 'p-1', 'cn-1', 'psu1', a.id, '5');
+  const c2 = cord(p, 'p-2', 'cn-1', 'psu2', a.id, '6');
+  const seen = [];
+  M.forEachPortRef(p, (ref, owner, kind) => seen.push([kind, ref, owner]));
+  assert.deepEqual(seen, [['inlet', c1.inlet, c1], ['outlet', c1.outlet, c1], ['inlet', c2.inlet, c2], ['outlet', c2.outlet, c2]]);
+  // Inlets renamed in place: the cords keep their place in the group.
+  assert.equal(M.updateDeviceType(p, 'compute-node', { inlets: [{ name: 'ps', first: 0, count: 2, connector: 'c14' }] }), null);
+  assert.deepEqual(p.powerCords.map((c) => c.inlet.inlet), ['ps0', 'ps1']);
+  // An inlet that is gone unplugs its cord.
+  assert.equal(M.updateDeviceType(p, 'compute-node', { inlets: [{ name: 'ps', first: 0, count: 1, connector: 'c14' }] }), null);
+  assert.deepEqual(p.powerCords.map((c) => c.id), ['p-1']);
+  // Outlets renumbered: the cord keeps its outlet by group and place, and the fuse groups keep the names they are given.
+  const t = M.typeOf(p, 't-pdu');
+  const outlets = t.pdu.outlets.map((g) => Object.assign({}, g, { name: 'A' }));
+  const fuses = t.pdu.fuses.map((f) => Object.assign({}, f, { outlets: f.outlets.map((n) => `A${n}`) }));
+  const meters = t.pdu.meters.map((m) => Object.assign({}, m, { outlets: m.outlets.map((n) => `A${n}`) }));
+  assert.equal(M.updateDeviceType(p, 't-pdu', { pdu: Object.assign({}, t.pdu, { outlets, fuses, meters }) }), null);
+  assert.equal(p.powerCords[0].outlet.outlet, 'A5');
+  assert.equal(M.pduProblem(M.typeOf(p, 't-pdu').pdu), null);
+  // Another type for a device: as for ports, by pattern, then by name.
+  M.addDeviceType(p, { label: 'Other', height: 2, inlets: [{ name: 'in', connector: 'c20' }, { name: 'ps', first: 0, count: 1, connector: 'c14' }] }).id = 'other';
+  assert.equal(M.setDeviceType(p, 'cn-1', 'other'), null);
+  assert.equal(p.powerCords[0].inlet.inlet, 'ps0');
+  assert.equal(M.setDeviceType(p, 'cn-1', 'switch-qsfp'), null);
+  assert.deepEqual(p.powerCords, [], 'psu1 is not where ps0 was');
+});
+
+test('makeVerticalPdu turns a 1U PDU type into a vertical one and moves its devices to the PDU slots', () => {
+  const p = M.createEmptyProject(2);
+  M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === 'PDU')).id = 'pdu';
+  place(p, 'pdu', 'pdu-a01-a', 'r1', 0, 'side');
+  place(p, 'pdu', 'pdu-a01-b', 'r1', 1, 'side');
+  place(p, 'pdu', 'pdu-a02-a', 'r2', 1, 'side');
+  place(p, 'pdu', 'pdu-a02-b', 'r2', 10, 'u');
+  place(p, 'switch-rj45', 'sw', 'r1', 1);
+  p.cables.push({ id: 'cb', type: null, network: null, label: 'C-1', lengthM: null, notes: '', a: { device: 'pdu-a01-a', port: 'mgmt' }, b: { device: 'sw', port: 'swp1' } });
+  assert.equal(M.makeVerticalPdu(p, 'pdu', PDU_3P.pdu), null);
+  const t = M.typeOf(p, 'pdu');
+  assert.deepEqual([t.height, t.label, M.expandOutlets(t).length], [0, 'PDU', 30]);
+  assert.deepEqual(p.devices.slice(0, 4).map((d) => [d.name, d.loc.kind, d.loc.at, d.grid]), [
+    ['pdu-a01-a', 'pdu', 0, null],
+    ['pdu-a01-b', 'pdu', 1, null],
+    ['pdu-a02-a', 'pdu', 1, null],
+    ['pdu-a02-b', 'pdu', 0, null],
+  ]);
+  assert.equal(p.cables.length, 1, 'the management cable stays');
+  assert.equal(M.layoutProblem(p), null);
+  assert.equal(M.makeVerticalPdu(p, 'pdu'), 'PDU is a vertical PDU already');
+  // No free slot: nothing changes.
+  const q = M.createEmptyProject(1);
+  M.addDeviceType(q, M.TYPE_TEMPLATES.find((x) => x.label === 'PDU')).id = 'pdu';
+  M.updateRackType(q, 'rack-47', { pduSlots: ['left'] });
+  place(q, 'pdu', 'one', 'r1', 0, 'side');
+  place(q, 'pdu', 'two', 'r1', 1, 'side');
+  const before = JSON.stringify(q);
+  assert.equal(M.makeVerticalPdu(q, 'pdu'), 'two finds no free PDU slot in Rack A01');
+  assert.equal(JSON.stringify(q), before);
+});
+
+test('asking what a change of type or ports would unplug leaves the plan’s power cords as they are', () => {
+  const p = powerProject(true);
+  const a = p.devices.find((d) => d.loc.rack === 'r1' && d.loc.at === 0);
+  place(p, 'compute-node', 'cn-1', 'r1', 10);
+  place(p, 'compute-node', 'cn-2', 'r1', 12);
+  cord(p, 'p-1', 'cn-1', 'psu1', a.id, '1');
+  cord(p, 'p-2', 'cn-2', 'psu2', a.id, '2');
+  const blank = M.addDeviceType(p, { label: 'Shelf', height: 2, ports: [], inlets: [] });
+  const before = JSON.stringify(p);
+  // A shelf has no inlets: the cord of cn-1 would go, and the plan is asked only.
+  assert.deepEqual(C.typeChangeImpact(p, 'cn-1', blank.id), []);
+  assert.equal(JSON.stringify(p), before);
+  assert.deepEqual(p.powerCords.map((c) => c.inlet.inlet), ['psu1', 'psu2']);
+  assert.deepEqual(C.portChangeImpact(p, 'compute-node', []), []);
+  assert.equal(JSON.stringify(p), before);
+  // The change itself unplugs it.
+  assert.equal(M.setDeviceType(p, 'cn-1', blank.id), null);
+  assert.deepEqual(p.powerCords.map((c) => c.id), ['p-2']);
+});
+
+test('a PDU type made a rack device is no rack type’s default PDU; Fill PDU slots takes the type given when the default is none', () => {
+  const p = powerProject();
+  assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: 't-pdu' }), null);
+  assert.equal(M.updateRackType(p, 'rack-42', { defaultPdu: 't-pdu' }), null);
+  const other = M.addDeviceType(p, PDU_3P);
+  assert.equal(M.updateDeviceType(p, 't-pdu', { pdu: null }), null);
+  assert.deepEqual(p.rackTypes.map((t) => t.defaultPdu), [null, null, null]);
+  assert.equal(M.addRack(p, 'row1').id.length > 0, true);
+  assert.deepEqual(p.devices, [], 'a new rack gets no PDU of a type that is none');
+  // A plan that still names a rack device as the default: the type given fills the slots.
+  p.rackTypes[0].defaultPdu = 't-pdu';
+  assert.deepEqual(M.fillableRacks(p, ['r1', 'r2']), []);
+  assert.deepEqual(M.fillableRacks(p, ['r1', 'r2'], other.id), ['r1', 'r2']);
+  assert.deepEqual(M.fillPduSlots(p, ['r1'], other.id).map((d) => [d.type, d.loc.rack, d.loc.at]), [[other.id, 'r1', 0], [other.id, 'r1', 1]]);
+  assert.deepEqual(M.fillPduSlots(p, ['r2']), []);
+});
+
+test('the first floor of a plan gets its default PDUs in racks r1, r2, …, or none when asked for empty racks', () => {
+  const shell = () => {
+    const p = M.newProjectShell();
+    M.addDeviceType(p, PDU_3P).id = 't-pdu';
+    assert.equal(M.updateRackType(p, p.rackTypes[0].id, { defaultPdu: 't-pdu' }), null);
+    return p;
+  };
+  const p = shell();
+  M.addFirstFloor(p, { racks: 2 });
+  assert.deepEqual(p.floors[0].rows[0].racks.map((r) => r.id), ['r1', 'r2']);
+  assert.deepEqual(p.devices.map((d) => `${d.name} ${d.loc.rack} P${d.loc.at + 1}`), ['pdu-a01-a r1 P1', 'pdu-a01-b r1 P2', 'pdu-a02-a r2 P1', 'pdu-a02-b r2 P2']);
+  const q = shell();
+  M.addFirstFloor(q, { racks: 2, empty: true });
+  assert.deepEqual(q.devices, []);
+  // Floors and rows added later fill their racks, unless asked not to.
+  assert.equal(M.addFloor(q, { racks: 1 }).rows[0].racks.length, 1);
+  assert.equal(q.devices.length, 2);
+  M.addRow(q, 'f1', { racks: 3, empty: true });
+  assert.equal(q.devices.length, 2);
+  assert.ok(q.devices.every((d) => M.rackById(q, d.loc.rack)), 'every PDU hangs in a rack of the plan');
+});
+
+test('groupOutlets puts outlets into a new fuse or meter group, or into one there is', () => {
+  const pdu = PDU_3P.pdu;
+  const all = M.expandOutlets({ pdu }).map((o) => o.name);
+  const show = (list) => list.map((g) => `${g.name} ${M.formatOutletList(g.outlets, all)}${g.phase ? ` ${g.ratingA} A ${g.phase}` : ''}`);
+  assert.deepEqual(show(pdu.fuses), ['CB1 1-5 16 A L1', 'CB2 6-10 16 A L1', 'CB3 11-15 16 A L2', 'CB4 16-20 16 A L2', 'CB5 21-25 16 A L3', 'CB6 26-30 16 A L3']);
+  // A new group takes the rating and phase of the group of its first outlet; the outlets leave their groups.
+  const fresh = M.groupOutlets(pdu, 'fuses', ['12', '4', '3'], null);
+  assert.deepEqual(show(fresh.fuses), ['CB1 1-2, 5 16 A L1', 'CB2 6-10 16 A L1', 'CB3 11, 13-15 16 A L2', 'CB4 16-20 16 A L2', 'CB5 21-25 16 A L3', 'CB6 26-30 16 A L3', 'CB7 3-4, 12 16 A L1']);
+  assert.deepEqual(fresh.meters, pdu.meters, 'the meter groups stay');
+  assert.equal(M.pduProblem(fresh), null);
+  // Into a group there is; a group left without outlets is gone.
+  const joined = M.groupOutlets(pdu, 'fuses', ['1', '2', '3', '4', '5'], 1);
+  assert.deepEqual(show(joined.fuses).slice(0, 2), ['CB2 1-10 16 A L1', 'CB3 11-15 16 A L2']);
+  assert.equal(joined.fuses.length, 5);
+  const metered = M.groupOutlets(pdu, 'meters', ['1', '2', '11'], null);
+  assert.deepEqual(show(metered.meters), ['M1 3-10', 'M2 12-20', 'M3 21-30', 'M4 1-2, 11']);
+  assert.deepEqual(metered.fuses, pdu.fuses);
+  assert.deepEqual(pdu.fuses[0].outlets, ['1', '2', '3', '4', '5'], 'the block given stays as it is');
+  // Nothing to do, or not possible.
+  assert.equal(M.groupOutlets(pdu, 'fuses', ['1', '2', '3', '4', '5'], null), 'CB1 is these outlets already');
+  assert.equal(M.groupOutlets(pdu, 'fuses', ['2'], 0), 'CB1 holds this outlet already');
+  assert.equal(M.groupOutlets(pdu, 'fuses', ['99'], null), 'Pick outlets in the strip first');
+  assert.equal(M.groupOutlets(pdu, 'fuses', ['1'], 9), 'Unknown fuse group');
+  assert.equal(M.groupOutlets(Object.assign({}, pdu, { metering: 'outlet', meters: [] }), 'meters', ['1'], null), 'Only a PDU that measures per group has meter groups');
+  const full = M.cleanPdu(Object.assign({}, pdu, { outlets: [{ name: '', first: 1, count: 96, connector: 'c13' }], fuses: Array.from({ length: 48 }, (_, i) => ({ name: `F${i + 1}`, outlets: [String(2 * i + 1), String(2 * i + 2)], ratingA: 16 })) }));
+  assert.equal(M.groupOutlets(full, 'fuses', ['1'], null), 'A PDU type has at most 48 fuse groups');
+});
+
+test('outlet lists read back as written when outlet names hold dashes', () => {
+  const pdu = M.cleanPdu({ outlets: [{ name: 'L1-', first: 1, count: 3, connector: 'c13' }, { name: 'L2-', first: 1, count: 3, connector: 'c13' }] });
+  const all = M.expandOutlets({ pdu }).map((o) => o.name);
+  assert.deepEqual(all, ['L1-1', 'L1-2', 'L1-3', 'L2-1', 'L2-2', 'L2-3']);
+  const text = M.formatOutletList(['L1-1', 'L1-2', 'L1-3', 'L2-2'], all);
+  assert.equal(text, 'L1-1-L1-3, L2-2');
+  assert.deepEqual(M.parseOutletList(text, all), { names: ['L1-1', 'L1-2', 'L1-3', 'L2-2'] });
+  assert.deepEqual(M.parseOutletList('L1-2–L2-1 L2-3', all), { names: ['L1-2', 'L1-3', 'L2-1', 'L2-3'] });
+  assert.deepEqual(M.parseOutletList('L1-3-L1-1', all), { error: '“L1-3-L1-1” runs backwards: put the first outlet first' });
+  assert.deepEqual(M.parseOutletList('L1-1-L3-1', all), { error: '“L1-1-L3-1” is no outlet of this PDU' });
+  assert.deepEqual(M.parseOutletList('L1-', all), { error: '“L1-” is no outlet of this PDU' });
+  // The fuse groups of such a PDU say their outlets in a way that reads back.
+  assert.deepEqual(pdu.fuses.map((f) => M.parseOutletList(M.formatOutletList(f.outlets, all), all).names), pdu.fuses.map((f) => f.outlets));
+
+  // A range that would read as one outlet, or as another range, is written name by name.
+  const odd = ['a', 'b', 'a-b', 'c', 'b-c'];
+  assert.equal(M.formatOutletList(['a', 'b'], odd), 'a, b');
+  assert.equal(M.formatOutletList(['a-b', 'c'], odd), 'a-b, c');
+  assert.equal(M.formatOutletList(['a', 'b', 'a-b', 'c', 'b-c'], odd), 'a-b-c');
+  for (let i = 0; i < odd.length; i++) {
+    for (let j = i; j < odd.length; j++) {
+      const run = odd.slice(i, j + 1);
+      assert.deepEqual(M.parseOutletList(M.formatOutletList(run, odd), odd), { names: run }, run.join(' '));
+    }
+  }
 });

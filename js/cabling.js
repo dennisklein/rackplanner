@@ -664,6 +664,8 @@
   /** How far below the top of its rack a device's ports are, in metres: the middle of the device. */
   function dropM(ctx, d) {
     const pos = ctx.racks.get(d.loc.rack);
+    // A vertical PDU has its network ports halfway down the rack.
+    if (d.loc.kind === 'pdu') return (M.rackUnits(ctx.project, pos.rack) / 2) * UNIT_M;
     if (d.loc.kind === 'side') {
       const units = M.rackUnits(ctx.project, pos.rack);
       const slots = Math.max(1, M.rackSideSlots(ctx.project, pos.rack));
@@ -1319,9 +1321,11 @@
   function portChangeAfter(project, typeId, newPorts) {
     const type = M.typeOf(project, typeId);
     if (!type || type.variable) return null;
+    // The plan's cables and power cords stay as they are: the change is tried on copies.
     const work = Object.assign({}, project, {
       deviceTypes: project.deviceTypes.map((t) => (t.id === typeId ? Object.assign({}, t, { ports: M.cleanPorts(newPorts) }) : t)),
       cables: M.clone(project.cables),
+      powerCords: M.clone(project.powerCords || []),
     });
     M.remapPorts(work, typeId, type.ports || []);
     return new Map(work.cables.map((c) => [c.id, c]));
@@ -1343,9 +1347,11 @@
 
   /** Cables that would lose an end if device `deviceId` got the type `typeId`, as model.setDeviceType does it. */
   function typeChangeImpact(project, deviceId, typeId) {
+    // The device's power cords move with its inlets, so they are tried on copies too.
     const work = Object.assign({}, project, {
       devices: project.devices.map((d) => (d.id === deviceId ? M.clone(d) : d)),
       cables: M.clone(project.cables),
+      powerCords: M.clone(project.powerCords || []),
     });
     if (M.setDeviceType(work, deviceId, typeId)) return [];
     const after = new Map(work.cables.map((c) => [c.id, c]));
