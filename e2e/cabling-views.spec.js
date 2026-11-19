@@ -121,7 +121,7 @@ test('a new cable joins the network of the cables where it goes, which the hint 
   await clickDevice(page, 'cn-012');
   await page.click('#cab-dev-unplug');
   await page.click('#confirm-ok');
-  expect(await cableAt(page, 'cn-012', 'ib0')).toBeNull();
+  await expect.poll(() => cableAt(page, 'cn-012', 'ib0')).toBeNull();
   // InfiniBand in focus: the ports still decide.
   await page.click('#networks [data-net-focus="n-ib"]');
   const ib = await plan(page, (p, a, RP) => RP.model.nextCableLabel(p, 'n-ib'));
@@ -233,7 +233,7 @@ test('a breakout cable takes its head where the head plugs in, whichever port is
   await clickDevice(page, 'gpu-srv-03');
   await page.click('#cab-dev-unplug');
   await page.click('#confirm-ok');
-  expect(await cableAt(page, 'ib-leaf-b02', 'p5')).toBeNull();
+  await expect.poll(() => cableAt(page, 'ib-leaf-b02', 'p5')).toBeNull();
   await page.click('.cab-card[data-cab-type="dac-osfp-2x"]');
   // The server's QSFP56 port first: it is a leg.
   await (await port(page, 'gpu-srv-03', 'ib0')).click();

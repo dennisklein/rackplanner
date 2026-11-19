@@ -1194,7 +1194,7 @@ test('a saved plan that needed fixing says what was fixed and keeps a backup', a
   await page.click('#btn-plans');
   await page.click('.plan-item:has-text("Hall 2, fixed") [data-plan-act="del"]');
   await page.click('#confirm-ok');
-  expect(await backup()).toBeNull();
+  await expect.poll(backup).toBeNull();
 });
 
 test('a saved plan with a warning that changes nothing says so once and keeps no backup', async ({ page }) => {

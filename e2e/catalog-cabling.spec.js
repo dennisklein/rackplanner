@@ -300,11 +300,11 @@ test('deleting devices deletes their cables; confirmations count them', async ({
   await page.click('#insp-del-rack');
   await expect(page.locator('#confirm-body')).toContainText(/It holds 15 devices and \d+ cables, which are deleted with it/);
   await page.click('#confirm-ok');
+  await expect.poll(() => cableCount(page)).toBeLessThan(before);
   expect(await plan(page, (p) => {
     const ids = new Set(p.devices.map((d) => d.id));
     return p.cables.every((c) => [c.a].concat(c.b).every((e) => !e || ids.has(e.device)));
   })).toBe(true);
-  expect(await cableCount(page)).toBeLessThan(before);
 });
 
 test('duplicating cabled devices copies the cables between them', async ({ page }) => {
