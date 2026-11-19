@@ -1634,3 +1634,188 @@ test('the inventory CSV writes a PDU as PDU P1 with its power grid, and reads bo
   const wrong = [lines[0], cells('pdu-b01-a').map((c, i) => (i === head.indexOf('Position') ? 'U40' : i === head.length - 1 ? '' : c)).join(',')].join('\r\n');
   assert.match(IO.importCSV(wrong, ex).warnings.join(' '), /A vertical PDU goes in a PDU slot/);
 });
+
+// ------------------------------------------------------------- power CSVs
+
+const P = require('../js/power.js');
+const csvLines = (text) => text.trim().split('\r\n');
+const withoutIds = (cords) => cords.map((c) => Object.assign({}, c, { id: '' }));
+
+test('the power cord schedule has a line per cord with both ends, and reads back as it was written', () => {
+  const ex = M.createExampleProject();
+  const dev = (name) => ex.devices.find((d) => d.name === name);
+  const cordOf = (name, inlet) => ex.powerCords.find((c) => c.inlet.device === dev(name).id && c.inlet.inlet === inlet);
+  // One cord with everything written: a type, a length, a color of its own and a note.
+  assert.equal(P.updateCord(ex, cordOf('core-sw-02', 'psu1').id, { type: 'c14-c13', lengthM: 2.5, color: '#0f0', notes: 'spare, "B" side' }), null);
+  const csv = IO.exportCordsCSV(ex);
+  const lines = csvLines(csv);
+  assert.equal(lines[0], IO.CORD_CSV_COLUMNS.join(','));
+  assert.equal(lines[0], 'Label,Grid,Cord type,Length (m),Estimated,Floor,Row,Rack,Device,Position,Inlet,PDU,PDU slot,Outlet,Fuse,Phase,Meter,Draw (W),Draw grid down (W),Color,Notes,Device ID,PDU ID');
+  assert.equal(lines.length - 1, ex.powerCords.length);
+  // By rack, PDU slot and outlet: picked types are marked, estimated lengths say so, the color is the grid's.
+  assert.equal(lines[1], `P-0001,Grid A,C14–C13 cord (auto),1,yes,Ground floor,Row B,Rack B01,core-sw-01,U4,psu1,pdu-b01-a,P1,1,CB1,L1,M1,175,350,Grid A,,${dev('core-sw-01').id},${dev('pdu-b01-a').id}`);
+  assert.equal(lines[2], `P-0003,Grid A,C14–C13 cord,2.5,no,Ground floor,Row B,Rack B01,core-sw-02,U5,psu1,pdu-b01-a,P1,2,CB1,L1,M1,175,175,#00ff00,"spare, ""B"" side",${dev('core-sw-02').id},${dev('pdu-b01-a').id}`);
+  assert.deepEqual([IO.isCordsCSV(csv), IO.isCablesCSV(csv)], [true, false]);
+  assert.deepEqual([IO.isCordsCSV(IO.toCSV(ex)), IO.isCordsCSV(IO.exportCablesCSV(ex)), IO.isCordsCSV('')], [false, false, false]);
+  // A part of the plan: the cords given, in the schedule's order.
+  const part = csvLines(IO.exportCordsCSV(ex, [cordOf('gpu-srv-01', 'psu2'), cordOf('core-sw-01', 'psu1')]));
+  assert.deepEqual(part.slice(1).map((l) => l.split(',')[8]), ['core-sw-01', 'gpu-srv-01']);
+
+  // Read back into the plan without its cords: the same cords, by rack, slot and outlet.
+  const sorted = (p) => withoutIds(P.sortCords(p, p.powerCords));
+  const empty = () => Object.assign(JSON.parse(JSON.stringify(ex)), { powerCords: [] });
+  const p = empty();
+  assert.deepEqual(IO.importCordsCSV(p, csv), { added: 33, warnings: [] });
+  assert.deepEqual(sorted(p), sorted(ex));
+  // A second time every inlet and outlet is taken.
+  const again = IO.importCordsCSV(p, csv);
+  assert.equal(again.added, 0);
+  assert.equal(again.warnings.length, 33);
+  assert.equal(again.warnings[0], 'Skipped cord P-0001: core-sw-01 psu1 already has cord P-0001.');
+  // Without the ID columns the names find the devices; the PDU is the one of the device's rack.
+  const cut = csvLines(csv).map((l) => l.split(',').slice(0, -2).join(',')).join('\r\n');
+  const q = empty();
+  assert.deepEqual(IO.importCordsCSV(q, cut), { added: 33, warnings: [] });
+  assert.deepEqual(sorted(q), sorted(ex));
+});
+
+test('a power cord schedule needs Device, Inlet, PDU and Outlet; lines that break a rule are left out with the reason', () => {
+  const ex = M.createExampleProject();
+  ex.powerCords = [];
+  const csv = [
+    'Cord,Device,Inlet,PDU,Outlet,Cord type,Length,Estimated,Colour,Note',
+    ',core-sw-01,PSU1,pdu-b01-a,1,,,,,',
+    'P-0002,core-sw-01,psu2,PDU-B01-B,1,C14–C13 cord,"2,5",no,#ABC,mine',
+    ',core-sw-02,psu1,pdu-b01-a,2,c14-c13,3,yes,Grid A,',
+    ',core-sw-02,psu2,pdu-b01-b,2,C14–C13 cord (auto),long,,,',
+    'P-9,nope,psu1,pdu-b01-a,3,,,,,',
+    'P-10,gpu-srv-01,psu1,pdu-b01-a,3,,,,,',
+    'P-11,pp-b01-1,psu1,pdu-b01-a,3,,,,,',
+    'P-12,core-sw-01,psu9,pdu-b01-a,3,,,,,',
+    'P-13,sw-mgmt-b01,psu1,pdu-b01-a,1,,,,,',
+    'P-14,sw-mgmt-b01,psu1,pdu-b01-a,4,Garden hose,,,,',
+    ',sw-mgmt-b01,psu1,pdu-b01-a,31,,,,,',
+  ].join('\n');
+  const names = new Set(ex.devices.map((d) => d.name));
+  for (const n of ['core-sw-01', 'core-sw-02', 'sw-mgmt-b01', 'gpu-srv-01', 'pp-b01-1', 'pdu-b01-a', 'pdu-b01-b']) assert.ok(names.has(n), `the example has ${n}`);
+  assert.equal(IO.isCordsCSV(csv), true);
+  const { added, warnings } = IO.importCordsCSV(ex, csv);
+  assert.equal(added, 4);
+  const id = (name) => ex.devices.find((d) => d.name === name).id;
+  assert.deepEqual(withoutIds(ex.powerCords), [
+    // Without a label: the next of the series, after the labels that lines further down have.
+    { id: '', label: 'P-0015', type: null, lengthM: null, color: null, notes: '', inlet: { device: id('core-sw-01'), inlet: 'psu1' }, outlet: { device: id('pdu-b01-a'), outlet: '1' } },
+    { id: '', label: 'P-0002', type: 'c14-c13', lengthM: 2.5, color: '#aabbcc', notes: 'mine', inlet: { device: id('core-sw-01'), inlet: 'psu2' }, outlet: { device: id('pdu-b01-b'), outlet: '1' } },
+    // A type by its id; a length that is estimated is not kept; a grid's name is no color of the cord's own.
+    { id: '', label: 'P-0016', type: 'c14-c13', lengthM: null, color: null, notes: '', inlet: { device: id('core-sw-02'), inlet: 'psu1' }, outlet: { device: id('pdu-b01-a'), outlet: '2' } },
+    { id: '', label: 'P-0017', type: null, lengthM: null, color: null, notes: '', inlet: { device: id('core-sw-02'), inlet: 'psu2' }, outlet: { device: id('pdu-b01-b'), outlet: '2' } },
+  ]);
+  assert.deepEqual(warnings, [
+    'Line 5: its length “long” is not a number of metres, so it is estimated.',
+    'Skipped cord P-9: there is no device nope.',
+    'Skipped cord P-10: gpu-srv-01 and pdu-b01-a are in different racks: a power cord stays in its rack.',
+    'Skipped cord P-11: pp-b01-1 has no inlet psu1.',
+    'Skipped cord P-12: core-sw-01 has no inlet psu9.',
+    'Skipped cord P-13: Outlet 1 of pdu-b01-a already has cord P-0015.',
+    'Skipped cord P-14: unknown cord type “Garden hose”.',
+    'Skipped line 12: pdu-b01-a has no outlet 31.',
+  ]);
+  assert.throws(() => IO.importCordsCSV(ex, 'Device,Inlet,PDU\na,b,c'), /needs “Device”, “Inlet”, “PDU” and “Outlet” columns/);
+  assert.throws(() => IO.importCordsCSV(ex, 'Device,Inlet,PDU,Outlet'), /no power cords/);
+
+  // Two devices of one name: the place tells them apart, and a line that gives none is skipped.
+  const twin = ex.devices.find((d) => d.name === 'gpu-srv-01');
+  twin.name = 'core-sw-01';
+  const twins = IO.importCordsCSV(ex, 'Rack,Device,Inlet,PDU,Outlet\nRack B02,core-sw-01,psu1,pdu-b02-a,1\n,core-sw-01,psu2,pdu-b02-b,1');
+  assert.deepEqual(twins, { added: 1, warnings: ['Skipped line 3: 2 devices are named core-sw-01: give their floor, row and rack.'] });
+  assert.equal(ex.powerCords[4].inlet.device, twin.id);
+});
+
+test('the PDU outlet plan lists every outlet, the load CSV every scenario, and the cord order list counts by type, length and color', () => {
+  const ex = M.createExampleProject();
+  const rackOf = (name) => ex.devices.find((d) => d.name === name).loc.rack;
+  const outlets = csvLines(IO.exportOutletsCSV(ex));
+  assert.equal(outlets[0], 'Rack,PDU,PDU slot,Grid,Outlet,Connector,Fuse,Rating (A),Phase,Meter,Device,Inlet,Draw (W),Draw grid down (W),Cord label');
+  assert.equal(outlets.length - 1, 6 * 30);
+  assert.equal(outlets[1], 'Rack B01,pdu-b01-a,P1,Grid A,1,C13,CB1,16,L1,M1,core-sw-01,psu1,175,350,P-0001');
+  assert.equal(outlets[3], 'Rack B01,pdu-b01-a,P1,Grid A,3,C13,CB1,16,L1,M1,,,0,0,', 'a free outlet has its line');
+  assert.equal(outlets.filter((l) => l.endsWith(',0,0,')).length, 180 - 33);
+  const one = csvLines(IO.exportOutletsCSV(ex, new Set([rackOf('pdu-b02-a')])));
+  assert.equal(one.length - 1, 60);
+  assert.ok(one.slice(1).every((l) => l.startsWith('Rack B02,pdu-b02-')));
+
+  const load = csvLines(IO.exportLoadCSV(ex));
+  assert.equal(load[0], 'Level,Grid,Rack,PDU,Phase,Fuse,Rating,Unit,All up,Grid A down,Grid B down,Worst,Use at worst (%),Check');
+  // Grid, then its PDUs, each with its phases and their fuse groups.
+  assert.deepEqual(load.slice(1, 6), [
+    'Grid,Grid A,,,,,,W,10575,0,20650,20650,,',
+    'PDU,Grid A,Rack B01,pdu-b01-a,,,22080,W,675,0,850,850,4,',
+    'Phase,Grid A,Rack B01,pdu-b01-a,L1,,32,A,2.3,0,3,3,10,',
+    'Fuse,Grid A,Rack B01,pdu-b01-a,L1,CB1,16,A,1.5,0,2.3,2.3,14,',
+    'Fuse,Grid A,Rack B01,pdu-b01-a,L1,CB2,16,A,0.8,0,0.8,0.8,5,',
+  ]);
+  assert.ok(load.includes('Phase,Grid A,Rack B01,pdu-b01-a,L3,,32,A,0,0,0,0,0,Phases not balanced'));
+  assert.deepEqual(load.map((l) => l.split(',')[0]).reduce((n, k) => Object.assign(n, { [k]: (n[k] || 0) + 1 }), {}), { Level: 1, Grid: 2, PDU: 6, Phase: 18, Fuse: 36 });
+  // A lower limit, a PDU without a grid and a part of the plan.
+  P.setPowerSettings(ex, { limitPct: 10 });
+  const b01 = new Set([rackOf('pdu-b01-a')]);
+  assert.ok(csvLines(IO.exportLoadCSV(ex, b01)).includes('Fuse,Grid A,Rack B01,pdu-b01-a,L1,CB1,16,A,1.5,0,2.3,2.3,14,Over 10 %'));
+  assert.equal(P.setGrid(ex, ex.devices.find((d) => d.name === 'pdu-b01-b').id, null), null);
+  const part = csvLines(IO.exportLoadCSV(ex, b01));
+  assert.equal(part.length - 1, 2 * (1 + 1 + 3 + 6));
+  assert.deepEqual(part.filter((l) => l.startsWith('Grid,')).map((l) => l.split(',')[1]), ['Grid A', 'No grid']);
+  // A PDU without a grid always has power: it carries the whole load when Grid A is down.
+  assert.ok(part.includes('PDU,No grid,Rack B01,pdu-b01-b,,,22080,W,175,350,175,350,2,'));
+
+  const order = csvLines(IO.exportCordOrderCSV(M.createExampleProject()));
+  assert.equal(order[0], 'Cord type,Length (m),Color,Count,Total (m)');
+  assert.deepEqual(order.slice(1, 4), ['C14–C13 cord,1,Grid A,5,5', 'C14–C13 cord,1,Grid B,3,3', 'C14–C13 cord,1.5,Grid A,1,1.5']);
+  assert.equal(order.slice(1).reduce((n, l) => n + Number(l.split(',')[3]), 0), 33);
+  const few = M.createExampleProject();
+  assert.deepEqual(csvLines(IO.exportCordOrderCSV(few, few.powerCords.slice(0, 1))), ['Cord type,Length (m),Color,Count,Total (m)', 'C14–C13 cord,1,Grid A,1,1']);
+});
+
+test('a PDU outlet plan is no power cord schedule: reading it is refused, and the other power CSVs are none either', () => {
+  const ex = M.createExampleProject();
+  const outlets = IO.exportOutletsCSV(ex);
+  const cords = IO.exportCordsCSV(ex);
+  assert.equal(IO.isOutletsCSV(outlets), true);
+  assert.equal(IO.isCordsCSV(outlets), false, 'it has Device, Inlet, PDU and Outlet columns, and is written only');
+  assert.equal(IO.isCordsCSV(cords), true);
+  assert.equal(IO.isOutletsCSV(cords), false);
+  assert.equal(IO.isCordsCSV('Device,Inlet,PDU,Outlet\ncore-sw-01,psu1,pdu-b01-a,7'), true, 'the four columns alone are a cord schedule');
+  for (const csv of [IO.exportLoadCSV(ex), IO.exportCordOrderCSV(ex), IO.toCSV(ex), IO.exportCablesCSV(ex)]) {
+    assert.equal(IO.isCordsCSV(csv), false);
+    assert.equal(IO.isOutletsCSV(csv), false);
+  }
+  const before = JSON.stringify(ex);
+  assert.throws(() => IO.importCordsCSV(ex, outlets), { message: IO.OUTLET_PLAN_NOTE });
+  assert.match(IO.OUTLET_PLAN_NOTE, /^This is a PDU outlet plan, which is written only\./);
+  assert.equal(JSON.stringify(ex), before);
+});
+
+test('a grid named like a color, such as A01 or ABC, is no color of its own for the cords of a schedule', () => {
+  const ex = M.createExampleProject();
+  ['A01', 'B02'].forEach((name, i) => (ex.powerGrids[i].name = name));
+  const own = ex.powerCords[0];
+  assert.equal(P.updateCord(ex, own.id, { color: '#abc' }), null);
+  const csv = IO.exportCordsCSV(ex);
+  const colors = new Set(csvLines(csv).slice(1).map((l) => l.split(',')[19]));
+  assert.deepEqual([...colors].sort(), ['#aabbcc', 'A01', 'B02']);
+  const read = (text, grids) => {
+    const p = Object.assign(JSON.parse(JSON.stringify(ex)), { powerCords: [] });
+    (grids || []).forEach((name, i) => (p.powerGrids[i].name = name));
+    assert.deepEqual(IO.importCordsCSV(p, text), { added: 33, warnings: [] });
+    return p;
+  };
+  const p = read(csv);
+  assert.deepEqual(p.powerCords.filter((c) => c.color).map((c) => [c.label, c.color]), [[own.label, '#aabbcc']]);
+  assert.deepEqual(withoutIds(P.sortCords(p, p.powerCords)), withoutIds(P.sortCords(ex, ex.powerCords)));
+  // Also when the grids have other names in the plan the file is read into: the cell is the line's Grid.
+  assert.deepEqual(read(csv, ['Grid A', 'Grid B']).powerCords.filter((c) => c.color).length, 1);
+  // A color without its "#" is none; a grid named like one with "#" is still the grid.
+  const bare = csv.replace('#aabbcc', 'aabbcc');
+  assert.equal(read(bare).powerCords.filter((c) => c.color).length, 0);
+  const hashed = csv.replace(/A01/g, '#a01');
+  assert.deepEqual(read(hashed, ['#A01', 'B02']).powerCords.filter((c) => c.color).map((c) => c.color), ['#aabbcc']);
+});

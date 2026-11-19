@@ -2,16 +2,16 @@
  * Rackplanner: reading and writing plans.
  *
  * Validates untrusted plan files (all schema versions), serializes plans,
- * exports and imports CSV inventories and cable schedules, and packs plans
- * into share links. No DOM access; shared by the browser app and the Node
- * tests.
+ * exports and imports CSV inventories, cable schedules and power cord
+ * schedules, and packs plans into share links. No DOM access; shared by
+ * the browser app and the Node tests.
  */
 (function (root, factory) {
   'use strict';
-  // Only the cable CSVs need cabling.js, so it is looked up when they run.
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./model.js'), () => require('./cabling.js'));
-  else (root.RP = root.RP || {}).io = factory(root.RP.model, () => root.RP.cabling);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (M, cabling) {
+  // Only the cable CSVs need cabling.js and only the power CSVs power.js, so they are looked up when those run.
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./model.js'), () => require('./cabling.js'), () => require('./power.js'));
+  else (root.RP = root.RP || {}).io = factory(root.RP.model, () => root.RP.cabling, () => root.RP.power);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (M, cabling, power) {
   'use strict';
 
   const L = M.LIMITS;
@@ -1300,17 +1300,18 @@
   }
 
   /**
-   * Which column holds what: { label: 0, type: 2, … }. Aliases are tried
-   * in rank order over all keys, and a column fills one key only, so
-   * "Cable" is the label, or the type next to a "Label" or "Cable ID".
+   * Which column holds what, by the aliases of `headers`: { label: 0,
+   * type: 2, … }. Aliases are tried in rank order over all keys, and a
+   * column fills one key only, so "Cable" is the label, or the type next
+   * to a "Label" or "Cable ID".
    */
-  function cableColumns(header) {
+  function columnsOf(header, headers) {
     const col = {};
     const keys = header.map((h) => headerKey(String(h == null ? '' : h)));
     const used = new Set();
-    const ranks = Math.max(...Object.values(CABLE_HEADERS).map((a) => a.length));
+    const ranks = Math.max(...Object.values(headers).map((a) => a.length));
     for (let rank = 0; rank < ranks; rank++) {
-      for (const [name, aliases] of Object.entries(CABLE_HEADERS)) {
+      for (const [name, aliases] of Object.entries(headers)) {
         if (col[name] !== undefined || rank >= aliases.length) continue;
         const i = keys.findIndex((k, j) => !used.has(j) && k === headerKey(aliases[rank]));
         if (i < 0) continue;
@@ -1319,6 +1320,72 @@
       }
     }
     return col;
+  }
+  const cableColumns = (header) => columnsOf(header, CABLE_HEADERS);
+
+  const lower = (v) => String(v || '').trim().toLowerCase();
+
+  /**
+   * Finds the devices that the lines of a schedule name. find(name, id,
+   * place, within) gives { device, byId } for the device with the id;
+   * else { device } when one device has the name in the place the line
+   * gives ({ floor, row, rack, position }, where given; the name as
+   * written before another case), with `off` the part of the place no
+   * such device is in; { many } when that leaves more than one. Of
+   * several with the name, those that `within` holds for come first.
+   */
+  function deviceFinder(project) {
+    const byId = new Map(project.devices.map((d) => [d.id, d]));
+    const byName = new Map();
+    for (const d of M.sortedDevices(project)) {
+      const k = lower(d.name);
+      if (!byName.has(k)) byName.set(k, []);
+      byName.get(k).push(d);
+    }
+    const racks = new Map(M.allRacks(project).map((r) => [r.rack.id, r]));
+    const places = {
+      floor: (d) => racks.get(d.loc.rack).floor.name,
+      row: (d) => racks.get(d.loc.rack).row.name,
+      rack: (d) => racks.get(d.loc.rack).rack.name,
+      position: (d) => positionText(project, d),
+    };
+    const samePlace = (x, y) => lower(x).replace(/\s+/g, '').replace(/–/g, '-') === lower(y).replace(/\s+/g, '').replace(/–/g, '-');
+    function find(name, id, place, within) {
+      const hit = byId.get(id);
+      if (hit) return { device: hit, byId: true };
+      let list = byName.get(lower(name)) || [];
+      if (within) {
+        const near = list.filter(within);
+        if (near.length) list = near;
+      }
+      let off = null;
+      for (const [k, at] of Object.entries(places)) {
+        const v = place[k];
+        if (!v || !list.length) continue;
+        const here = list.filter((d) => samePlace(at(d), v));
+        if (here.length) list = here;
+        else off = off || `${k} ${v}`;
+      }
+      const exact = list.filter((d) => d.name === name);
+      if (exact.length) list = exact;
+      return list.length > 1 ? { many: list.length } : { device: list[0] || null, off };
+    }
+    return { find, places };
+  }
+
+  // An entry of a catalog by name as written, then by name in any case, then by id: an entry's name wins over another one's id.
+  function findIn(list, v) {
+    for (const same of [(x) => x.name === v, (x) => lower(x.name) === lower(v), (x) => x.id === v, (x) => lower(x.id) === lower(v)]) {
+      const hit = list.find(same);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  // What a cell names in a catalog: { auto: true } to pick, else { item } (null when the catalog has no such entry).
+  function lookup(list, v) {
+    if (!v) return { auto: true };
+    const item = findIn(list, v);
+    return item || !lower(v).endsWith(AUTO.trim()) ? { item } : { auto: true };
   }
 
   /** True when CSV text is a cable schedule (it has A and B device columns) rather than a device inventory. */
@@ -1346,52 +1413,22 @@
     const col = cableColumns(rows[0]);
     if (['aDevice', 'aPort', 'bDevice', 'bPort'].some((k) => col[k] === undefined)) throw new Error('The CSV needs “A device”, “A port”, “B device” and “B port” columns.');
     const warnings = [];
-    const lower = (v) => String(v || '').trim().toLowerCase();
     const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
     // A plain "Length" column without a metres one holds metres when it holds anything but "estimated" and "set".
     if (col.lengthM === undefined && col.lengthKind !== undefined && rows.slice(1).some((r) => !['', 'estimated', 'set'].includes(lower(get(r, 'lengthKind'))))) {
       col.lengthM = col.lengthKind;
       delete col.lengthKind;
     }
-    const byId = new Map(project.devices.map((d) => [d.id, d]));
-    const byName = new Map();
-    for (const d of M.sortedDevices(project)) {
-      const k = lower(d.name);
-      if (!byName.has(k)) byName.set(k, []);
-      byName.get(k).push(d);
-    }
-    const racks = new Map(M.allRacks(project).map((r) => [r.rack.id, r]));
-    const places = {
-      floor: (d) => racks.get(d.loc.rack).floor.name,
-      row: (d) => racks.get(d.loc.rack).row.name,
-      rack: (d) => racks.get(d.loc.rack).rack.name,
-      position: (d) => positionText(project, d),
-    };
-    const samePlace = (x, y) => lower(x).replace(/\s+/g, '').replace(/–/g, '-') === lower(y).replace(/\s+/g, '').replace(/–/g, '-');
-    /**
-     * The device a line's end names: { device, byId } for the device with
-     * its device ID; else { device } when one device has the name in the
-     * place the line gives (its floor, row, rack and position, where given;
-     * the name as written before another case), with `off` the part of the
-     * place no such device is in; { many } when that leaves more than one.
-     */
-    const findDevice = (row, side) => {
-      const name = get(row, `${side}Device`);
-      const id = byId.get(get(row, `${side}DeviceId`));
-      if (id) return { device: id, byId: true };
-      let list = byName.get(lower(name)) || [];
-      let off = null;
-      for (const [k, at] of Object.entries(places)) {
-        const v = get(row, side + k[0].toUpperCase() + k.slice(1));
-        if (!v || !list.length) continue;
-        const here = list.filter((d) => samePlace(at(d), v));
-        if (here.length) list = here;
-        else off = off || `${k} ${v}`;
-      }
-      const exact = list.filter((d) => d.name === name);
-      if (exact.length) list = exact;
-      return list.length > 1 ? { many: list.length } : { device: list[0] || null, off };
-    };
+    const finder = deviceFinder(project);
+    const places = finder.places;
+    // The device a line's end names (see deviceFinder).
+    const findDevice = (row, side) =>
+      finder.find(get(row, `${side}Device`), get(row, `${side}DeviceId`), {
+        floor: get(row, `${side}Floor`),
+        row: get(row, `${side}Row`),
+        rack: get(row, `${side}Rack`),
+        position: get(row, `${side}Position`),
+      });
     // A port by its name as written, else the one port of the device with that name in another case.
     const portNames = new Map();
     const portOf = (d, port) => {
@@ -1401,21 +1438,6 @@
       const other = names.filter((n) => lower(n) === lower(port));
       return other.length === 1 ? other[0] : port;
     };
-    // By name as written, then by name in any case, then by id: an entry's name wins over another one's id.
-    const findIn = (list, v) => {
-      for (const same of [(x) => x.name === v, (x) => lower(x.name) === lower(v), (x) => x.id === v, (x) => lower(x.id) === lower(v)]) {
-        const hit = list.find(same);
-        if (hit) return hit;
-      }
-      return null;
-    };
-    // { auto: true } to pick, else { item } (null when the catalog has no such entry).
-    const lookup = (list, v) => {
-      if (!v) return { auto: true };
-      const item = findIn(list, v);
-      return item || !lower(v).endsWith(AUTO.trim()) ? { item } : { auto: true };
-    };
-
     // Lines become cables: { line, rows, lines, at }, breakout legs gathered under their head.
     const cables = [];
     const breakouts = new Map();
@@ -1558,6 +1580,254 @@
     return csvText([['Part'].concat(head)].concat(...parts.map((x) => lines(x.cables, x.name))));
   }
 
+  // ---------------------------------------------------------- power CSVs
+
+  const CORD_CSV_COLUMNS = ['Label', 'Grid', 'Cord type', 'Length (m)', 'Estimated', 'Floor', 'Row', 'Rack', 'Device', 'Position', 'Inlet']
+    .concat(['PDU', 'PDU slot', 'Outlet', 'Fuse', 'Phase', 'Meter', 'Draw (W)', 'Draw grid down (W)', 'Color', 'Notes', 'Device ID', 'PDU ID']);
+  const tenth = (n) => Math.round(n * 10) / 10;
+
+  /**
+   * The power cord schedule: one line per cord of `cords` (default: all),
+   * by rack, PDU slot and outlet. A line has the cord's grid, type (with
+   * "(auto)" when it is picked) and length, whether the length is
+   * estimated, the place of its device, the PDU with its slot, outlet,
+   * fuse group, phase and meter group, what the cord draws with all grids
+   * up and at most with one grid down, and its color: the name of its
+   * grid, or its own as #rrggbb.
+   */
+  function exportCordsCSV(project, cords) {
+    const P = power();
+    const load = P.loads(project);
+    const rows = [CORD_CSV_COLUMNS];
+    for (const r of P.scheduleRows(project, P.sortCords(project, cords || project.powerCords || [], load.ctx), load)) {
+      const c = r.cord;
+      const pos = r.pos;
+      rows.push(
+        [c.label, r.grid ? r.grid.name : '', r.type ? r.type.name + (r.typeAuto ? AUTO : '') : '', r.lengthM === null ? '' : r.lengthM, r.lengthAuto ? 'yes' : 'no']
+          .concat(pos ? [pos.floor.name, pos.row.name, pos.rack.name] : ['', '', ''])
+          .concat([r.device ? r.device.name : '', r.device ? positionText(project, r.device) : '', c.inlet.inlet])
+          .concat([r.pdu ? r.pdu.name : '', r.slot, c.outlet.outlet, r.fuse ? r.fuse.name : '', r.fuse ? r.fuse.phase : '', r.meter ? r.meter.name : ''])
+          .concat([tenth(r.drawW), tenth(r.downW), r.colorName, c.notes || '', c.inlet.device, c.outlet.device])
+      );
+    }
+    return csvText(rows);
+  }
+
+  const CORD_HEADERS = {
+    label: ['label', 'cord label', 'cord id', 'cord'],
+    // "Cord" comes last for the type, so that alone it is the label.
+    type: ['cord type', 'type', 'cord model', 'cord'],
+    lengthM: ['length (m)', 'length m', 'length', 'metres', 'meters', 'cord length', 'cord length (m)'],
+    estimated: ['estimated'],
+    floor: ['floor'],
+    row: ['row'],
+    rack: ['rack'],
+    device: ['device', 'device name'],
+    position: ['position'],
+    inlet: ['inlet'],
+    pdu: ['pdu', 'pdu name'],
+    slot: ['pdu slot', 'slot'],
+    outlet: ['outlet'],
+    color: ['color', 'colour'],
+    notes: ['notes', 'note', 'comment', 'comments'],
+    deviceId: ['device id'],
+    pduId: ['pdu id'],
+  };
+
+  /** What reading a PDU outlet plan says: the plan is written only. */
+  const OUTLET_PLAN_NOTE = 'This is a PDU outlet plan, which is written only. To add power cords, open a power cord schedule CSV (Export, Power cord schedule).';
+
+  /**
+   * True when CSV text is a PDU outlet plan (exportOutletsCSV): a line per
+   * outlet, free ones too, with Connector and Rating columns, which no
+   * cord schedule has.
+   */
+  function isOutletsCSV(text) {
+    const rows = parseCSV(String(text || ''));
+    const keys = new Set((rows[0] || []).map((h) => headerKey(String(h))));
+    return ['pdu', 'outlet', 'connector', 'ratinga'].every((k) => keys.has(k));
+  }
+
+  /** True when CSV text is a power cord schedule: it has Device, Inlet, PDU and Outlet columns, and is no PDU outlet plan, which has them too. */
+  function isCordsCSV(text) {
+    const rows = parseCSV(String(text || ''));
+    const col = rows.length ? columnsOf(rows[0], CORD_HEADERS) : {};
+    return ['device', 'inlet', 'pdu', 'outlet'].every((k) => col[k] !== undefined) && !isOutletsCSV(text);
+  }
+
+  /**
+   * Adds the cords of a power cord schedule (the columns of
+   * exportCordsCSV; Device, Inlet, PDU and Outlet are required) to
+   * `project`. A device is found by its Device ID, else by name in the
+   * place the line gives; a PDU by its PDU ID, else by name, in the
+   * device's rack first. An empty Cord type, or "… (auto)" that is not a
+   * name in the catalog, leaves the type to be picked; a length counts
+   * unless Estimated says yes; a Color like #rrggbb is the cord's own, any
+   * other (the name of a grid, also one that reads as a color, like A01)
+   * is that of its grid. Grid, fuse, phase, meter and draw are not read:
+   * they follow from the PDU. A line that breaks a rule (another rack, an
+   * inlet or outlet taken) is left out with a warning. Returns
+   * { added, warnings }.
+   */
+  function importCordsCSV(project, text) {
+    const P = power();
+    if (isOutletsCSV(text)) throw new Error(OUTLET_PLAN_NOTE);
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error('The CSV has no power cords: it needs a header row and at least one cord.');
+    const col = columnsOf(rows[0], CORD_HEADERS);
+    if (['device', 'inlet', 'pdu', 'outlet'].some((k) => col[k] === undefined)) throw new Error('The CSV needs “Device”, “Inlet”, “PDU” and “Outlet” columns.');
+    const warnings = [];
+    const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
+    const finder = deviceFinder(project);
+    const ctx = M.cordContext(project);
+    // An inlet or outlet by its name as written, else the one of the device with that name in another case.
+    const names = new Map();
+    const nameOf = (d, kind, name) => {
+      const k = `${kind}:${d.type}`;
+      if (!names.has(k)) names.set(k, (kind === 'inlet' ? M.expandInlets : M.expandOutlets)(M.typeOf(project, d.type)).map((x) => x.name));
+      const list = names.get(k);
+      if (list.includes(name)) return name;
+      const other = list.filter((n) => lower(n) === lower(name));
+      return other.length === 1 ? other[0] : name;
+    };
+    if (!Array.isArray(project.powerCords)) project.powerCords = [];
+    // Labels given further down the file are taken too, so that a line without one doesn't get theirs.
+    const given = new Set(rows.slice(1).map((r) => get(r, 'label').slice(0, 40).trim()).filter(Boolean));
+    // A grid may be named like a color (A01, ABC): a Color is the cord's own only with its "#", and when it is no grid's name.
+    const gridNames = new Set((project.powerGrids || []).map((g) => lower(g.name)));
+    const ownColor = (text, grid) => (text.startsWith('#') && lower(text) !== lower(grid) && !gridNames.has(lower(text)) ? M.normalizeHex(text) : null);
+    let added = 0;
+    rows.slice(1).forEach((r, i) => {
+      const label = get(r, 'label').slice(0, 40).trim();
+      const what = label ? `cord ${label}` : `line ${i + 2}`;
+      const skip = (why) => void warnings.push(`Skipped ${what}: ${why}.`);
+      const notes = [];
+      const place = { floor: get(r, 'floor'), row: get(r, 'row'), rack: get(r, 'rack') };
+      const found = (name, f) => {
+        if (f.many) return void skip(`${f.many} devices are named ${name}: give their floor, row and rack`);
+        const d = f.device;
+        if (!d) return void skip(`there is no device ${name || 'without a name'}`);
+        if (f.off) notes.push(`${d.name} is not in ${f.off}, so it is the one in rack ${finder.places.rack(d)}`);
+        else if (f.byId && name && lower(name) !== lower(d.name)) notes.push(`${name} is taken to be ${d.name}, the device with its ID`);
+        return d;
+      };
+      const name = get(r, 'device');
+      const d = found(name, finder.find(name, get(r, 'deviceId'), Object.assign({ position: get(r, 'position') }, place)));
+      if (!d) return;
+      const slot = parsePosition(get(r, 'slot'));
+      const pduName = get(r, 'pdu');
+      const pdu = found(
+        pduName,
+        finder.find(pduName, get(r, 'pduId'), Object.assign({ position: slot && slot.kind === 'pdu' ? `PDU P${slot.at + 1}` : '' }, place), (x) => x.loc.rack === d.loc.rack)
+      );
+      if (!pdu) return;
+      const typeText = get(r, 'type');
+      const type = lookup(project.cordTypes || [], typeText);
+      if (!type.auto && !type.item) return skip(`unknown cord type “${typeText}”`);
+      const metres = get(r, 'lengthM');
+      let lengthM = null;
+      if (metres !== '' && !['yes', 'y', 'true', '1', 'estimated'].includes(lower(get(r, 'estimated')))) {
+        lengthM = readMetres(metres);
+        if (lengthM === null) notes.push(`its length “${metres}” is not a number of metres, so it is estimated`);
+      }
+      if (project.powerCords.length >= L.powerCords) return skip(`a plan holds ${L.powerCords} power cords`);
+      const cord = P.draftCord({
+        inlet: { device: d.id, inlet: nameOf(d, 'inlet', get(r, 'inlet')) },
+        outlet: { device: pdu.id, outlet: nameOf(pdu, 'outlet', get(r, 'outlet')) },
+        type: type.item ? type.item.id : null,
+        lengthM,
+        label,
+        color: ownColor(get(r, 'color'), get(r, 'grid')),
+        notes: get(r, 'notes'),
+      });
+      const refused = M.cordProblem(project, cord, ctx);
+      if (refused) return skip(refused);
+      if (!cord.label) cord.label = M.nextCordLabel(project, given);
+      project.powerCords.push(cord);
+      M.claimCord(ctx, cord);
+      added++;
+      for (const n of notes) warnings.push(`${label ? `Cord ${label}` : `Line ${i + 2}`}: ${n}.`);
+    });
+    return { added, warnings };
+  }
+
+  /**
+   * The PDU outlet plan: one line per outlet of every PDU (of the racks
+   * `rackIds`, a Set; all without one), free outlets too, with its
+   * connector, fuse group and rating, phase and meter group, and the
+   * device, inlet and cord on it with what it draws.
+   */
+  function exportOutletsCSV(project, rackIds) {
+    const P = power();
+    const load = P.loads(project);
+    const ctx = load.ctx;
+    const rows = [['Rack', 'PDU', 'PDU slot', 'Grid', 'Outlet', 'Connector', 'Fuse', 'Rating (A)', 'Phase', 'Meter', 'Device', 'Inlet', 'Draw (W)', 'Draw grid down (W)', 'Cord label']];
+    for (const pdu of P.pdus(project, rackIds)) {
+      const pos = ctx.racks.get(pdu.loc.rack);
+      const grid = ctx.grids.get(pdu.grid);
+      const head = [pos ? pos.rack.name : '', pdu.name, `P${pdu.loc.at + 1}`, grid ? grid.name : ''];
+      for (const o of P.outletsOf(project, pdu, ctx)) {
+        const conn = M.powerConnectorById(o.connector);
+        rows.push(
+          head
+            .concat([o.name, conn ? conn.label : o.connector, o.fuse ? o.fuse.name : '', o.fuse ? o.fuse.ratingA : '', o.fuse ? o.fuse.phase : '', o.meter ? o.meter.name : ''])
+            .concat([o.device ? o.device.name : '', o.inlet || '', o.cord ? tenth(P.cordW(load, o.cord.id)) : 0, o.cord ? tenth(P.cordDownW(load, o.cord.id)) : 0, o.cord ? o.cord.label : ''])
+        );
+      }
+    }
+    return csvText(rows);
+  }
+
+  /**
+   * The power load: for every grid its PDUs (of the racks `rackIds`, a
+   * Set; all without one), their phases and fuse groups, each with its
+   * rating, the load in every scenario (a column per grid that is down),
+   * the worst of them, its share of the rating and the check that fails.
+   * Grids and PDUs are in watts, phases and fuse groups in amperes.
+   */
+  function exportLoadCSV(project, rackIds) {
+    const P = power();
+    const load = P.loads(project);
+    const scens = load.scenarios;
+    const over = `Over ${Math.round(load.limit * 100)} %`;
+    const rows = [['Level', 'Grid', 'Rack', 'PDU', 'Phase', 'Fuse', 'Rating', 'Unit'].concat(scens.map((x) => x.short), ['Worst', 'Use at worst (%)', 'Check'])];
+    const pdus = load.pdus.filter((x) => !rackIds || rackIds.has(x.pdu.loc.rack));
+    const groups = (project.powerGrids || []).map((g) => ({ name: g.name, pdus: pdus.filter((x) => x.grid === g) }));
+    groups.push({ name: 'No grid', pdus: pdus.filter((x) => !x.grid) });
+    for (const g of groups) {
+      if (!g.pdus.length) continue;
+      const w = scens.map((x) => g.pdus.reduce((n, y) => n + (y.total.w[x.id] || 0), 0));
+      rows.push(['Grid', g.name, '', '', '', '', '', 'W'].concat(w.map(tenth), [tenth(Math.max(...w)), '', '']));
+      for (const x of g.pdus) {
+        const pos = load.ctx.racks.get(x.pdu.loc.rack);
+        const line = (level, phase, fuse, rating, unit, v, check) =>
+          rows.push(
+            [level, g.name, pos ? pos.rack.name : '', x.pdu.name, phase, fuse, rating, unit]
+              .concat(scens.map((y) => tenth(unit === 'A' ? v.a[y.id] : v.w[y.id] || 0)))
+              .concat([tenth(unit === 'A' ? v.worstA : v.worstW), Math.round(v.use * 100), check])
+          );
+        line('PDU', '', '', tenth(x.capacityW), 'W', x.total, x.total.over ? over : '');
+        const high = Math.max(...x.phases.map((ph) => ph.value.worstA));
+        for (const ph of x.phases) {
+          // As the check of the same name: a phase with less than half the load of the highest.
+          const idle = x.phases.length > 1 && high > 0 && ph.value.worstA < high / 2;
+          line('Phase', ph.phase, '', ph.value.ratingA, 'A', ph.value, ph.value.over ? over : idle ? 'Phases not balanced' : '');
+          for (const f of ph.fuses) line('Fuse', ph.phase, f.fuse.name, f.fuse.ratingA, 'A', f.value, f.value.over ? over : '');
+        }
+      }
+    }
+    return csvText(rows);
+  }
+
+  /** The cord order list of `cords` (default: all): one line per cord type, length and color with the number of cords; a color is the name of a grid, or a cord's own as #rrggbb. */
+  function exportCordOrderCSV(project, cords) {
+    const rows = [['Cord type', 'Length (m)', 'Color', 'Count', 'Total (m)']];
+    for (const x of power().orderList(project, cords || project.powerCords || [])) {
+      rows.push([x.name, x.lengthM === null ? '' : x.lengthM, x.colorName, x.count, x.lengthM === null ? '' : Math.round(x.lengthM * x.count * 100) / 100]);
+    }
+    return csvText(rows);
+  }
+
   // ----------------------------------------------------------- share links
 
   function toBase64Url(bytes) {
@@ -1616,6 +1886,15 @@
     isCablesCSV,
     importCablesCSV,
     exportOrderCSV,
+    CORD_CSV_COLUMNS,
+    exportCordsCSV,
+    isCordsCSV,
+    isOutletsCSV,
+    OUTLET_PLAN_NOTE,
+    importCordsCSV,
+    exportOutletsCSV,
+    exportLoadCSV,
+    exportCordOrderCSV,
     readMetres,
     encodeShare,
     decodeShare,
