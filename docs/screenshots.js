@@ -1,5 +1,6 @@
-// Takes the README screenshots from the example plan, in the Racks and the
-// Cabling workspace, and the banner that links to the intro video. Run with
+// Takes the README screenshots from the example plan, in the Racks, the
+// Cabling and the Power workspace, and the banner that links to the intro
+// video. Run with
 // `npm run screenshots`, or name some of them:
 // `npm run screenshots -- intro-video intro-video-dark`. PORT=… serves the
 // app on another port than 4180.
@@ -155,6 +156,63 @@ async function catalogPorts(browser) {
   await page.close();
 }
 
+/** The Power workspace on Row B, where the example has its PDUs, in one of its views. */
+async function openPower(browser, colorScheme, view) {
+  const page = await openApp(browser, colorScheme);
+  await page.click('.ws-switch [data-workspace="power"]');
+  await page.click('#btn-row-next');
+  if (view) await page.click(`#pow-toggle [data-pow-view="${view}"]`);
+  // Without the toast that named the row.
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  return page;
+}
+
+/** The power elevation of Row B from the rear at 100%, with a GPU server selected and its four cords drawn bold. */
+async function powerElevation(browser, colorScheme, name) {
+  const page = await openPower(browser, colorScheme);
+  const id = await page.evaluate(() => window.RP.app.project().devices.find((d) => d.name === 'gpu-srv-01').id);
+  const dev = page.locator(`.scene .pw-dev[data-dev="${id}"]`);
+  await page.click('#btn-zoom-reset');
+  // Rack B02 is in the middle: scroll to it, with the top of the racks in view.
+  await dev.evaluate((g) => {
+    const canvas = document.querySelector('#canvas');
+    const r = g.getBoundingClientRect();
+    const box = canvas.getBoundingClientRect();
+    canvas.scrollLeft += r.left + r.width / 2 - (box.left + box.width / 2);
+    canvas.scrollTop = 0;
+  });
+  // On its name, clear of the inlets.
+  await dev.click({ position: { x: 40, y: 8 } });
+  await shot(page, name);
+  await page.close();
+}
+
+/** The outlet map of Rack B02, with Grid A down. */
+async function outletMap(browser) {
+  const page = await openPower(browser, 'light', 'outlets');
+  await page.selectOption('#om-rack', { label: 'Rack B02' });
+  await page.locator('.om-scen button', { hasText: 'Grid A down' }).click();
+  await shot(page, 'outlet-map');
+  await page.close();
+}
+
+/** The cord schedule of Row B with a cord selected. */
+async function powerSchedule(browser) {
+  const page = await openPower(browser, 'light', 'schedule');
+  // On its label cell, clear of the checkbox.
+  await page.locator('#ps-body tr', { hasText: 'P-0008' }).first().locator('td').nth(1).click();
+  await shot(page, 'power-schedule');
+  await page.close();
+}
+
+/** The load of Row B, with a fuse group selected. */
+async function powerLoad(browser) {
+  const page = await openPower(browser, 'light', 'load');
+  await page.locator('.ld-fuse button.sc-dev').first().click();
+  await shot(page, 'power-load');
+  await page.close();
+}
+
 /** The PNG export of Row B, as the app downloads it. */
 async function sheet(browser) {
   const page = await openApp(browser);
@@ -236,6 +294,11 @@ const SHOTS = {
   'connect-series': connectSeries,
   fabric,
   'catalog-ports': catalogPorts,
+  'power-elevation': (browser) => powerElevation(browser, 'light', 'power-elevation'),
+  'power-elevation-dark': (browser) => powerElevation(browser, 'dark', 'power-elevation-dark'),
+  'outlet-map': outletMap,
+  'power-schedule': powerSchedule,
+  'power-load': powerLoad,
   'intro-video': (browser) => introVideo(browser, 'light', 'intro-video'),
   'intro-video-dark': (browser) => introVideo(browser, 'dark', 'intro-video-dark'),
 };

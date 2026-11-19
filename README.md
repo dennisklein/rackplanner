@@ -25,6 +25,13 @@ lengths estimated from where the racks stand. It shows the racks from the
 rear with every cable run, each switch's ports, a cable schedule with the
 list of what to order, and the fabric of each network.
 
+The **Power** workspace connects the power: vertical PDUs hang in the racks'
+PDU slots, each fed by a power grid, and cords run from the inlets of the
+devices to their outlets. It shows the cords from the rear in the colors of
+their grids, each PDU's outlets with their fuse and meter groups, a cord
+schedule with the list of what to order, and the load of every fuse group,
+phase and PDU, with all grids up and with one grid down.
+
 **[Open Rackplanner](https://dennisklein.github.io/rackplanner/)**: it starts
 with an example plan of two floors, which you can explore, keep editing or
 swap for empty racks. It works with a mouse, the keyboard or touch, in a
@@ -60,8 +67,10 @@ It runs as is on any static host.
 | Rows | 1 to 8 per floor |
 | Racks | 1 to 16 per row, 19″, 10U to 60U high, numbered from the top (U1) down |
 | Side slots | 0 to 4 vertical 1U slots per rack, on the right, depending on its height |
+| PDU slots | 0 to 4 per rack, at the rear on its left and right, for vertical PDUs |
 
-Every rack has a **rack type**: its height, number of side slots, power budget
+Every rack has a **rack type**: its height, number of side slots, PDU slots
+(and the PDU type that new racks get in them), power budget
 and maximum load. New plans come with a 47U rack (the default, 12 kW, 1200 kg),
 a 42U rack and a 48U high-density rack. For cable lengths a rack type also
 has a width and depth (600 or 800 mm by 1200 mm), the way from its top unit
@@ -78,15 +87,25 @@ up to the cable tray (0.5 m) and the slack a cable gets at each end
 | Storage node | 4U | server, 24 × 3.5″ bays | `bmc`, `eth0` RJ45, `eth1` SFP28, `ib0`–`ib1` QSFP56, `sas0`–`sas3` Mini-SAS HD, at the rear |
 | Storage enclosure | 4U | JBOD, 2 drawers | `mgmt` RJ45, `sas-a` and `sas-b` Mini-SAS HD, at the rear |
 
+Each of them has two C14 power **inlets**, `psu1` and `psu2`.
+
 The catalog editor adds more, from templates (1U server, GPU server, patch
-panel, PDU, UPS, blanking panel, generic device) or from scratch: pick a
-name, height (1U to 20U), a drawing style, typical power draw and weight,
-and on the **Ports** tab its ports.
+panel, PDU, UPS, blanking panel, generic device and three vertical PDUs) or
+from scratch: pick a name, height (1U to 20U), a drawing style, typical
+power draw and weight, and on the **Ports** tab its ports and its inlets.
 **Reserved space** is always available too: a hatched placeholder of any height
 that keeps units free for planned equipment and can carry the power it will draw.
 
 The side slots take 1U devices only. Devices there are drawn rotated, which
 makes a 1U PDU look like a vertical power strip.
+
+A **vertical PDU** (0U) is a device type of its own kind: it hangs in a PDU
+slot, in the channel beside the units, and takes no units and no side slot.
+Its type has outlets in fuse groups and meter groups (the **Outlets** tab),
+and each PDU is fed by a **power grid**. The slots are P1, P2, … ; a rack
+type says on which side each one is. **Fill PDU slots**, on a rack, a row or
+a floor, hangs a PDU in every free slot, on the grids in turn, named by rack
+and slot (`pdu-a01-a`, `pdu-a01-b`). See [Planning the power](#planning-the-power).
 
 A device can be mounted **back to front**, as switches often are so that
 their ports face the servers' rear. The rack then shows its rear side, with
@@ -108,8 +127,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   free slot of the row, and its **Rack** and **Position** fields pick another.
   The list button beside **Catalog** makes the list compact, one line per
   device type without drawings, so that more types fit on a small screen.
-  Drag the top edge of the Clusters list (or the Networks list in Cabling),
-  or press the arrow keys on it, to share the panel between the two lists;
+  Drag the top edge of the Clusters list (the Networks list in Cabling, the
+  Power grids list in Power), or press the arrow keys on it, to share the panel between the two lists;
   double-click it to reset.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
   (a named color). It suggests both from the nearest device of the same type,
@@ -139,8 +158,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   its serial number, asset tag, IP address, owner and notes. Power and
   weight come from its type unless you enter its own values. **Type**
   swaps the model of that one device where it is, keeping its name,
-  clusters, fields and the cables on ports the new type has in the same
-  place; it asks before it unplugs the others. A serial number, asset tag
+  clusters, fields and the cables and power cords on ports and inlets the
+  new type has in the same place; it asks before it unplugs the others, and
+  names them. A serial number, asset tag
   or IP address that another device has too is flagged there, with a
   button for each device that has it; the plan overview counts them and
   selects their devices.
@@ -250,7 +270,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   video.
 - **Back and Forward** in the browser go through the rows, the floor map and
   the workspaces you showed. The address names them, as in
-  `index.html#row=row3&ws=cabling`, so a bookmark opens the plan there.
+  `index.html#row=row3&ws=cabling` or `ws=power`, so a bookmark opens the
+  plan there.
 
 <p>
   <img src="docs/screenshots/floor-map.png" width="49%" alt="The floor map of the ground floor: two rows of three racks, each drawn small with its devices and a power meter, with totals per row.">
@@ -262,19 +283,20 @@ Rear**); otherwise they ask how it is **Mounted**.
 | <kbd>?</kbd> | Help: every shortcut of the workspace shown |
 | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | Search |
 | <kbd>[</kbd> <kbd>]</kbd> | Previous, next row |
-| <kbd>C</kbd> | Racks or Cabling workspace |
+| <kbd>C</kbd> | Next workspace: Racks, Cabling, Power |
+| <kbd>P</kbd> | Power workspace |
 | <kbd>M</kbd> | Floor map on or off (Racks) |
 | <kbd>B</kbd> | Bare devices on or off: names only, without drawn fronts (Racks) |
 | <kbd>V</kbd>, <kbd>Shift</kbd>+<kbd>V</kbd> | Next, previous view, in a plan with more than one |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move the selected devices to the next free position (Racks) |
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack (Racks) |
-| <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling, add or remove a cable, or in the schedule select a range of cables |
-| <kbd>Ctrl</kbd>+click | In Cabling, add or remove a cable |
-| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device shown in the row; in Cabling, the cables shown |
+| <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling and Power, add or remove a cable or cord, or in the schedule select a range |
+| <kbd>Ctrl</kbd>+click | In Cabling and Power, add or remove a cable or cord |
+| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device shown in the row; in Cabling, the cables shown; in Power, the cords |
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
 | <kbd>Enter</kbd> on a device type | Place one: the placement dialog picks its rack and position (Racks) |
-| <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling, edit the selected cable's label |
-| <kbd>Del</kbd> or <kbd>Backspace</kbd> | Delete; several devices that take cables, or 10 devices or more, ask first; in Cabling, delete the selected cables or unplug the selected port |
+| <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling and Power, edit the label of the selected cable or cord |
+| <kbd>Del</kbd> or <kbd>Backspace</kbd> | Delete; several devices that take cables or power cords, or 10 devices or more, ask first; in Cabling, delete the selected cables or unplug the selected port; in Power, unplug the selected cords |
 | <kbd>Tab</kbd> | Walk through rack labels and devices, top to bottom (Racks) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo, redo |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |
@@ -285,7 +307,8 @@ Rear**); otherwise they ask how it is **Mounted**.
 On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
 <kbd>[</kbd> and <kbd>]</kbd> also work where the keyboard types them with
 <kbd>AltGr</kbd> or <kbd>Option</kbd>.
-In Cabling, the zoom keys work in the elevation and the fabric.
+In Cabling, the zoom keys work in the elevation and the fabric, in Power in
+the elevation.
 On a touch screen, pinch the drawing with two fingers to zoom it. The racks
 open at 100% there, so that a unit is big enough to tap.
 
@@ -296,8 +319,8 @@ open at 100% there, so that a unit is big enough to tap.
   <img src="docs/screenshots/cabling-elevation.png" alt="The Cabling workspace on Row A seen from the rear at 100%: compute node cn-004 is selected, its three cables are drawn bold from its rear ports into the cable managers, up to the two switches at the top of the rack and to the BMC switch in its side slot, each far end named; the tray above the racks leads to an exit to Row B. On the left the cable types and networks, on the right the node's mounting, slack, ports and where each one goes.">
 </picture>
 
-The **Racks | Cabling** switch in the top bar (or <kbd>C</kbd>) changes the
-workspace. The floor tabs and the row picker stay; the left panel lists cable
+The **Racks | Cabling | Power** switch in the top bar changes the workspace
+(<kbd>C</kbd> steps through the three). The floor tabs and the row picker stay; the left panel lists cable
 types and networks instead of devices and clusters, and the bar above the
 drawing switches between four views:
 
@@ -467,6 +490,126 @@ its front ports at the rack's rear. A change that would unplug cables names
 them before it applies, and moving or reversing a device keeps its cables
 plugged in.
 
+## Planning the power
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/power-elevation-dark.png">
+  <img src="docs/screenshots/power-elevation.png" alt="The Power workspace on Row B seen from the rear at 100%: GPU server gpu-srv-01 is selected, its four cords are drawn bold from its inlets into the channels at both sides of the rack and along them to outlets 5 and 20 of the two PDUs, red for Grid A and blue for Grid B, each far end named. On the left the cord types and the power grids, on the right the server's inlets and where each one goes.">
+</picture>
+
+Power cabling is planned in three steps: hang PDUs in the racks, connect
+the inlets of the devices to their outlets, and check the load.
+
+**PDUs** are placed in the Racks workspace. Drag a vertical PDU type onto a
+rack (the placement dialog asks for its PDU slot and its power grid), or
+select a rack, a row or a floor and use **Fill PDU slots**. The PDUs are
+drawn in the channels at both sides of the rack, in the color of their grid,
+and the rack's line says how many of its PDU slots are taken (**PDU 2/2**).
+The inspector of a PDU sets its **Power grid** and has **Open in Power**.
+A rack type sets its PDU slots and the default PDU type on the catalog's
+**Rack types** tab; a PDU type sets its phases, voltage, current, outlets,
+fuse groups and metering on its **Outlets** tab. There the PDU is drawn as
+a strip: a drag across its outlets picks them (a click picks one,
+<kbd>Ctrl</kbd>-click one more, <kbd>Shift</kbd>-click all up to it; with
+the keyboard, the arrow keys and <kbd>Space</kbd>), and **Group them** puts
+them into a new fuse or meter group, or into one there is. The outlets of a
+group can be typed as a list too, like `1-5, 21`. A 1U PDU type of an older
+plan becomes a vertical one with **Make vertical PDU**, which moves its
+devices from the side slots into PDU slots.
+
+The **Power** workspace (<kbd>P</kbd>) lists cord types and power grids in
+the left panel, and the bar above the drawing switches between four views:
+
+- **Elevation**: the row from the **Rear** (the default) or the **Front**.
+  Every device shows its inlets, in the color of the grid that feeds them
+  once they have a cord; every PDU its outlets. From the rear, cords run
+  from the inlet into the channel at the side and along it to the outlet,
+  in the color of their grid. The front shows the devices and the PDUs
+  without cords. A click selects a device, a PDU or a cord; the selection is
+  drawn bold, with the far ends named.
+- **Outlet map**: the PDUs of a rack drawn large, outlets from the top down
+  in their fuse groups, each with the device and inlet on it, what it draws
+  and its meter group. A bar per fuse group shows its load against its
+  rating, with a tick at the limit. The switch above picks the scenario:
+  **All grids up**, or one grid down, where the PDUs of that grid have no
+  power and the others carry more.
+- **Schedule**: every cord as a table, for the row, the floor or the plan,
+  grouped by PDU, device, grid or cord type, in groups that fold. Filter it
+  by text and select cords with the checkboxes (or <kbd>Shift</kbd>- and
+  <kbd>Ctrl</kbd>-click). The list of what to order is underneath, by cord
+  type, length and color.
+- **Load**: every grid with its PDUs, their phases and fuse groups: the
+  rating, the load with all grids up, the highest load with one grid down
+  and the use at worst, with what is over the limit flagged.
+
+<p>
+  <img src="docs/screenshots/outlet-map.png" width="49%" alt="The outlet map of Rack B02 with Grid A down: the PDU on Grid A has no power, and the PDU on Grid B carries the whole load of the GPU servers on its fuse groups.">
+  <img src="docs/screenshots/power-load.png" width="49%" alt="The Load view of Row B: Grid A with its PDUs, phases and fuse groups, each with rating, load with all grids up, load with one grid down and a bar of the use at worst; fuse group CB1 of pdu-b01-a is selected and the panel on the right lists its load per scenario and its outlets.">
+</p>
+
+**Connect** in the elevation: click an inlet and then a free outlet of a PDU
+in the same rack (or the outlet first), or drag from one to the other.
+<kbd>Esc</kbd> cancels. In the outlet map, a click on a free outlet starts
+the same. The cord takes the type picked in the left panel: **Auto** picks
+the first cord type whose plugs fit the outlet and the inlet, and a stock
+length that reaches. A cord gets the next label of the series `P-0001`. A
+cord stays in its rack, and an inlet or an outlet takes one cord: anything
+else is refused, with the reason. **Connect series**, in the schedule or in
+the inspector of a device, gives every free inlet an outlet at once: inlet 1
+on the first PDU of the rack, inlet 2 on the second and so on, each on the
+fuse group with the least load, and shows the cords it will make first. An
+inlet goes to the grid that feeds its device the least, so a device that
+has a cord already gets its other inlet on another grid; an inlet that
+finds no free outlet there is left out, and listed with the reason.
+
+**Power grids** are the feeds (Grid A, Grid B, …), listed in the left panel
+with the number of cords on each. Add one with **+**, click one to rename
+it, pick its color, give it a note or delete it (its PDUs then have no
+grid); the eye hides a grid's cords in the elevation. A cord has the color
+of its grid unless it is given its own.
+
+The inspector shows what is selected: a device with its inlets and where
+each one goes, a PDU with its grid and the load of its phases and fuse
+groups, a fuse group with its load in every scenario and its outlets, a cord
+with its label, type, length, color and notes, or several cords. With
+nothing selected it shows the checks of the row and the plan's settings.
+
+**Load.** A device's power divides equally over its inlets that have a cord
+to a PDU with power. With all grids up that is every corded inlet; with one
+grid down, the cords to the PDUs of the other grids carry its share too, so
+a server with one cord on each of two grids draws half on each, and all of
+it on one when the other is down. A PDU without a grid always has power.
+Amperes are watts divided by the PDU's voltage and the plan's **power
+factor** (1 by default). A fuse group is held against its rating, a phase
+against the PDU's current per phase, and a PDU against its capacity (phases
+× voltage × current × power factor), each at its worst scenario; above the
+plan's **limit** (80 % by default) it gets a warning. Limit and power factor
+are set in the inspector when nothing is selected.
+
+**Checks** flag what needs a look, in the inspector of the row, the
+schedule's Check column and the Load view: a fuse group, phase or PDU over
+the limit, an outlet or a cord over its rating, a plug that does not fit, a
+cord shorter than it needs to be or longer than the longest stock length,
+a device whose corded inlets are all on one grid (**No redundancy**), a PDU
+without a grid, an inlet without a cord in a rack that has PDUs, a device
+type that draws power but has no inlets, and, as a note, phases that are
+not balanced. For a type without inlets the left panel offers **Add
+psu[1-2] C14**.
+
+A cord's length is estimated like a cable's: the height between the inlet
+(the middle of the device) and the outlet (outlets are spread evenly along
+the PDU), 0.3 m across to the channel and 0.15 m of slack at each end,
+rounded up to the next stock length of the cord type. Type a length into the
+cord's inspector to decide it.
+
+Moving a device or a PDU within its rack keeps its cords, and their
+estimated lengths follow. Moving one to another rack unplugs its cords,
+after asking. Deleting devices deletes their cords, and a copy of devices
+with their PDUs copies the cords between them; the questions and messages
+count power cords next to cables. The Cabling workspace, its cables and their CSVs do not show
+power cords. The design, with the data model, the rules and the checks, is
+in [docs/power](docs/power/README.md).
+
 ## Saving, sharing and exporting
 
 Plans are saved in the browser's `localStorage` as you work. **Plans** lists
@@ -501,22 +644,26 @@ closing the tab asks first.
 - **PNG image** and **SVG drawing** of the current row, with cluster legend and
   title block, always in the light theme. In Cabling they give the cabling
   elevation from the side shown, or the fabric of the network shown (from
-  the port map or the schedule, the row's Racks sheet). They use the
+  the port map or the schedule, the row's Racks sheet). In Power they give
+  the row's power cabling from the rear, with a legend of the grids, in
+  every view. They use the
   clusters of the view shown, and the legend names that view when the plan
   has more than one. Like bare mode, they keep what is hidden on screen:
-  hidden clusters are drawn as taken space, and the elevation leaves out
-  hidden networks. The Export menu says how many are hidden; printing does
-  the same.
+  hidden clusters are drawn as taken space, the cabling elevation leaves
+  out hidden networks and the power elevation the cords of hidden grids.
+  The Export menu says how many are hidden; printing does the same.
 - **Print or PDF**: one sheet per row, for the current row, floor or the whole
-  plan, on A4, A3, Letter, Legal or Tabloid, with its **Racks** or its
-  cabling (**Cabling front**, **Cabling rear**). The title block names the site,
+  plan, on A4, A3, Letter, Legal or Tabloid, with its **Racks**, its
+  cabling (**Cabling front**, **Cabling rear**) or its power cabling
+  (**Power rear**). The title block names the site,
   floor and row, author, revision, date and sheet number; fill these in on the
   plan overview (click the empty sheet to see it).
 - **CSV inventory** of every device with floor, row, rack, position, type,
-  cluster, serial number, asset tag, IP address, owner, power, weight, notes
-  and, last, the device's ID. A plan with more than one view, or with one
-  view not named Default, has a column per view (`Cluster: Lustre`,
-  `Cluster: InfiniBand`).
+  cluster, serial number, asset tag, IP address, owner, power, weight, power
+  grid, notes and, last, the device's ID. A plan with more than one view, or
+  with one view not named Default, has a column per view (`Cluster: Lustre`,
+  `Cluster: InfiniBand`). A vertical PDU has the position `PDU P1` and the
+  name of its grid in **Power grid**.
 - **Cable schedule (CSV)**: one line per cable of the plan, and per leg of a
   breakout cable, with label, network, type, length and whether it is
   estimated, both ends with floor, row, rack, position, device, port and
@@ -529,6 +676,26 @@ closing the tab asks first.
   length to buy come last, by type, as **Length to decide** (or **Type to
   decide**, under **No cable type**) without a length, and the export says
   how many there are.
+- **Power cord schedule (CSV)**: one line per power cord of the plan, with
+  label, grid, cord type, length and whether it is estimated, the floor,
+  row, rack, name, position and inlet of its device, the PDU with its slot,
+  outlet, fuse group, phase and meter group, what the cord draws with all
+  grids up and at most with one grid down, its color, notes and, last, the
+  IDs of the device and the PDU. A cord type that was picked is marked
+  `(auto)`, as in the cable schedule.
+- **PDU outlet plan (CSV)**: one line per outlet of every PDU, free outlets
+  too, with connector, fuse group and rating, phase, meter group, and the
+  device, inlet, draw and cord label on it: what it takes to set up a PDU
+  and its monitoring.
+- **Power load (CSV)**: every grid, PDU, phase and fuse group with its
+  rating, the load in each scenario (a column per grid that is down), the
+  worst of them, its share of the rating and the check that fails. Grids
+  and PDUs are in watts, phases and fuse groups in amperes.
+- **Cord order list (CSV)**: the power cords by type, length and color,
+  with counts and totals. The Power workspace has buttons for the same
+  files of what it shows: **Schedule (CSV)** and **Order list (CSV)** for
+  the row, floor or plan of the schedule, **Load (CSV)** for that of the
+  Load view, and **Outlet plan (CSV)** for the rack of the outlet map.
 - **Plan file (.json)**, which **Open** reads back as a new plan. You can also
   copy the plan as JSON and paste it into Open on another machine. It is the
   format that keeps the whole plan: the CSVs leave out the catalogs (a
@@ -541,12 +708,12 @@ closing the tab asks first.
   plans make long links, so send the file instead if a chat program cuts it off.
 
 <p align="center">
-  <a href="docs/screenshots/sheet.png"><img src="docs/screenshots/sheet.png" width="560" alt="Row B exported as a PNG drawing sheet: three 48U racks with patch panels, core switches, GPU servers, hatched reserved space and vertical PDUs in the side slots, a cluster legend and a title block."></a>
+  <a href="docs/screenshots/sheet.png"><img src="docs/screenshots/sheet.png" width="560" alt="Row B exported as a PNG drawing sheet: three 48U racks with patch panels, core switches, GPU servers, hatched reserved space and a vertical PDU in the channel at each side, red for Grid A and blue for Grid B, a cluster legend and a title block."></a>
   <br><em>Row B of the example, exported as a PNG</em>
 </p>
 
 **Open** also imports a **CSV inventory**, into a new plan or added to the
-current one. It needs Rack, Position (`U12`, `U12-13` or `Side V1`) and Name or
+current one. It needs Rack, Position (`U12`, `U12-13`, `Side V1` or `PDU P1`) and Name or
 Type columns; Floor, Row, Height, Cluster and the other columns of the export
 are used when present. A line whose Device ID is a device of the plan it
 is added to changes that device instead: its place (where it fits), name,
@@ -554,7 +721,7 @@ clusters and the other columns the CSV has; a device keeps its type. Into a
 new plan, devices keep the IDs the CSV gives. A `Cluster` column fills the view shown, a
 `Cluster: <view>` column the view of that name. A new plan from a CSV with
 only `Cluster: <view>` columns has just those views and shows the first. Missing floors, rows, racks,
-views and clusters are created by name (a cluster only for a device placed or changed, a view only when one is), and unknown types become generic types of the given height. Comma,
+views and clusters are created by name (a cluster only for a device placed or changed, a view only when one is), and unknown types become generic types of the given height. A type in a PDU slot that the catalog does not have becomes a vertical PDU type, from the template of its name when there is one, and a **Power grid** column names the grid of a PDU, which is created by name. Comma,
 semicolon and tab separators all work.
 
 **Open** also reads a **cable schedule CSV**, like the export or made by
@@ -566,6 +733,18 @@ name as written, or in another case when the device has one such port. A plain L
 column holds metres; a length it cannot read is estimated. Networks it
 names are created, and the lines of a breakout cable (with a Leg like `1/2`,
 or a breakout cable type) share its label and A end.
+
+**Open** reads a **power cord schedule CSV** in the same way and adds its
+cords to the current plan. It needs Device, Inlet, PDU and Outlet columns;
+the device is found by its Device ID, else by name and the place given, the
+PDU by its PDU ID, else by name, in the rack of the device first. An empty
+Cord type, or one marked `(auto)`, is picked again; a length counts unless
+**Estimated** says yes; a **Color** like `#2b6cd4` is the cord's own, and
+any other leaves it the color of its grid. Grid, fuse, phase, meter and draw
+are not read: they follow from the PDU. A line that breaks a rule (the PDU
+is in another rack, the inlet or the outlet has a cord) is left out and
+listed after the import. A **PDU outlet plan** is written only: Open
+refuses it, and says to open a cord schedule.
 
 Imported files are checked: devices that overlap or don't fit are skipped, and
 everything that needed fixing is listed after the import.
@@ -584,34 +763,41 @@ in its own window.
 index.html           page shell, icons and dialogs
 css/app.css          styles, light and dark themes, print layout
 css/cabling.css      styles of the Cabling workspace
+css/power.css        styles of the Power workspace and of PDUs in the catalog and the inspectors
 css/fonts.css        the bundled web fonts
 fonts/               Barlow, Barlow Condensed, IBM Plex Mono (SIL OFL 1.1)
-js/model.js          data model: floors, rows, racks, catalogs, ports, cables, placement rules, stats, search
+js/model.js          data model: floors, rows, racks, catalogs, ports, cables, PDU slots, inlets, power cords, placement rules, stats, search
 js/cabling.js        connecting ports, cable lengths, picking cable types and transceivers, checks, order list, fabric
-js/io.js             plan files (all versions), CSV export and import, cable schedule CSV, share links
+js/power.js          power grids, connecting inlets to outlets, cord lengths, loads per scenario, checks, order list
+js/io.js             plan files (all versions), CSV export and import, cable and power CSVs, share links
 js/render.js         SVG drawing of a row, device fronts and rears, sheet geometry, hit testing
 js/cabling-render.js SVG drawing of the cabling elevation, the port map and the fabric
+js/power-render.js   SVG drawing of the power elevation
 js/library.js        plans saved in the browser
 js/cabling-ui.js     the Cabling workspace: its panel, views, inspectors, connecting and dialogs
+js/power-ui.js       the Power workspace: its panel, views, inspectors, connecting and dialogs
 js/app.js            UI state, undo history, navigation, drag and drop, dialogs, export
 sw.js                service worker for offline use
 manifest.webmanifest, icon.svg   installable web app
-test/                unit tests for model, io, library, renderers and cabling
+test/                unit tests for model, io, library, renderers, cabling and power
 e2e/                 browser tests (Playwright) and their static server
 docs/                README screenshots and the script that takes them
 docs/cabling/        the design of the cabling
+docs/power/          the design of the power cabling
 media/               the intro video: its animation, player page and the script that records it
 ```
 
-`model.js`, `cabling.js`, `io.js`, `render.js`, `cabling-render.js` and
-`library.js` have no DOM access and run in Node as well as in the browser.
+`model.js`, `cabling.js`, `power.js`, `io.js`, `render.js`,
+`cabling-render.js`, `power-render.js` and `library.js` have no DOM access
+and run in Node as well as in the browser.
 
 ## Data model
 
 A plan is one JSON document, and a plan file is that document as is. Floors
 hold rows and rows hold racks as nested arrays, and views hold their
-clusters. Devices, cables, the four catalogs, views and networks are flat
-lists at the top level and point at each other by id.
+clusters. Devices, cables, power cords, the five catalogs, views, networks
+and power grids are flat lists at the top level and point at each other by
+id.
 
 ```mermaid
 erDiagram
@@ -627,6 +813,13 @@ erDiagram
     CABLE }o..o| CABLE_TYPE : "type, or picked"
     CABLE }o..o| NETWORK : "carries"
     CABLE }o..o{ TRANSCEIVER : "optics at an end"
+    DEVICE_TYPE ||--o{ INLET_GROUP : "inlets"
+    DEVICE_TYPE ||--o| PDU_BLOCK : "pdu, a vertical PDU"
+    RACK_TYPE }o..o| DEVICE_TYPE : "default PDU"
+    DEVICE }o..o| POWER_GRID : "a PDU is fed by"
+    POWER_CORD }o..|| DEVICE : "inlet of a device"
+    POWER_CORD }o..|| DEVICE : "outlet of a PDU"
+    POWER_CORD }o..o| CORD_TYPE : "type, or picked"
 
     FLOOR {
         string id PK "f1, or random"
@@ -651,6 +844,8 @@ erDiagram
         string name "47U rack"
         int units "10 to 60"
         int sideSlots "0 to 4"
+        string[] pduSlots "left or right, 0 to 4"
+        string defaultPdu FK "PDU type of new racks, or null"
         number powerW "budget, 0 = none"
         number weightKg "budget, 0 = none"
         int widthMm "600"
@@ -663,9 +858,10 @@ erDiagram
         string type FK "device type or reserved"
         map groups "view id to cluster id"
         string loc_rack FK "loc.rack"
-        string loc_kind "loc.kind: u or side"
-        int loc_at "loc.at: top unit or side slot"
+        string loc_kind "loc.kind: u, side or pdu"
+        int loc_at "loc.at: top unit, side slot or PDU slot"
         int height "reserved space only"
+        string grid FK "PDUs only, or null"
         string name "cn-013"
         bool reversed "mounted back to front"
         number slackM "null = the type's value"
@@ -688,7 +884,25 @@ erDiagram
         number powerW "per device"
         number weightKg "per device"
         PortGroup[] ports "up to 32 groups"
+        InletGroup[] inlets "up to 4 groups, 8 inlets"
+        PduBlock pdu "vertical PDUs only"
         number slackM "per cable end"
+    }
+    INLET_GROUP {
+        string name "psu"
+        int first "1; none for a single inlet"
+        int count "2; none for a single inlet"
+        string connector "c14, c20, ..."
+    }
+    PDU_BLOCK {
+        int spanU "length along the rack, 42"
+        int phases "1 or 3"
+        number voltageV "per phase, 230"
+        number maxA "per phase, 32"
+        OutletGroup[] outlets "name, first, count, connector"
+        FuseGroup[] fuses "name, outlets, ratingA, phase"
+        string metering "outlet, group or inlet"
+        MeterGroup[] meters "name, outlets"
     }
     PORT_GROUP {
         string name "swp, eth, bmc"
@@ -748,22 +962,52 @@ erDiagram
         string color "#rrggbb"
         string firstLabel "IB-0001"
     }
+    POWER_GRID {
+        string id PK "random"
+        string name "Grid A"
+        string color "#rrggbb"
+        string note "UPS 1, room 0.12"
+    }
+    CORD_TYPE {
+        string id PK "c14-c13, or random"
+        string name "C14–C13 cord"
+        string outlet "the PDU's connector, c13"
+        string inlet "the device's connector, c14"
+        number maxA "10"
+        number[] lengthsM "stock lengths; empty = made to length"
+    }
+    POWER_CORD {
+        string id PK "random"
+        string inlet_device FK "inlet.device"
+        string inlet_inlet "inlet.inlet"
+        string outlet_device FK "outlet.device, a PDU"
+        string outlet_outlet "outlet.outlet"
+        string type FK "null = picked from the plugs and length"
+        number lengthM "null = estimated"
+        string color "null = the color of its grid"
+        string label "P-0001"
+        string notes
+    }
 ```
 
 Solid lines are arrays nested in their parent, dashed lines are ids. The three
 `loc_` fields are one object in the file, for example
-`"loc": { "rack": "r1", "kind": "u", "at": 5 }`, and a cable's ends are the
-objects `a` and `b`. Besides the nine lists (`floors`, `rackTypes`,
-`deviceTypes`, `cableTypes`, `transceivers`, `views`, `networks`,
-`devices`, `cables`), the top level holds `app` (`"rackplanner"`),
-`version` (5), the plan's `name`, `info` with the site, author and revision
-for the title block, and `meta`. `meta` is an object for other tools and
+`"loc": { "rack": "r1", "kind": "u", "at": 5 }`, a cable's ends are the
+objects `a` and `b`, and a power cord's the objects `inlet` and `outlet`.
+Besides the twelve lists (`floors`, `rackTypes`, `deviceTypes`,
+`cableTypes`, `transceivers`, `cordTypes`, `views`, `networks`,
+`powerGrids`, `devices`, `cables`, `powerCords`), the top level holds `app`
+(`"rackplanner"`), `version` (6), the plan's `name`, `info` with the site,
+author and revision for the title block, `powerSettings` (`powerFactor`,
+0.5 to 1, and `limitPct`, 10 to 100) and `meta`. `meta` is an object for other tools and
 later versions: it is kept as it is (`"example": true` marks the example
 plan), and so are top-level keys the app does not read: up to 64 KB for
 `meta` and as much for those keys.
 A plan has 1 to 6 floors, 1 to 8 views with up to 1000 clusters each,
-1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks
-and 20 000 cables. A device type has up to 32 port groups and 1024 ports. A
+1 to 20 rack types, up to 60 device types, 50 cable types, 50 transceivers, 30 networks,
+20 000 cables, 12 power grids, 30 cord types and 20 000 power cords. A device
+type has up to 32 port groups and 1024 ports, and up to 8 inlets; a PDU type
+up to 96 outlets and 48 fuse groups. A
 device's name keeps up to 80 characters (the names of copies and series are
 cut before their number to fit), its serial number, asset tag, IP address
 and owner up to 120, and the notes of a device or cable up to 2000. A
@@ -792,6 +1036,10 @@ Where a device sits:
   the app). Each slot holds one 1U device. A slot runs along 12U plus a 1U gap,
   so a rack type has at most (units − 1) / 13 side slots, rounded down, and
   never more than 4.
+- With `"kind": "pdu"`, `at` is a PDU slot of the rack type, counted from 0
+  (P1 in the app). Each slot holds one vertical PDU, and only a vertical PDU
+  (a device type with a `pdu` block, of height 0) goes there. PDU slots are
+  apart from the units and the side slots.
 - Reserved space has the built-in type `reserved`, which is not stored in
   `deviceTypes`. Each reservation stores its own `height`. It counts as 0 W
   and 0 kg unless it has its own `powerW` or `weightKg`, such as the power
@@ -817,6 +1065,45 @@ Connector ids are read in any letter case. A port group, cable type or
 transceiver whose connector this version does not know, such as one a newer
 version added, keeps it as it is: nothing plugs into it, its cables stay, and
 opening the plan warns about it.
+
+A device type's `inlets` are groups like its ports, with a power connector
+(`c14`, `c20`, `c6`, `c16`, `nema-5-15`, `nema-l6-30`, `schuko`). A type
+with a `pdu` block is a vertical PDU: it has no inlets of its own, and its
+`outlets` are groups too (`c13`, `c19`, `c5`, `c15` and the three that are
+both). Every outlet is in one fuse group, which has a rating and a phase,
+and, unless the PDU meters at each outlet or at its inlet only, in one meter
+group. A rack type's `pduSlots` lists the side of each slot, seen from the
+front; `defaultPdu` names the PDU type that new racks of the type get in
+their slots.
+
+```json
+"deviceTypes": [
+  { "id": "pdu-3p-30", "label": "0U PDU 3P 30", "height": 0, "inlets": [],
+    "pdu": { "spanU": 42, "phases": 3, "voltageV": 230, "maxA": 32,
+      "outlets": [{ "name": "", "first": 1, "count": 4, "connector": "c13" }, { "name": "", "first": 5, "count": 1, "connector": "c19" }],
+      "fuses": [{ "name": "CB1", "outlets": ["1", "2", "3", "4", "5"], "ratingA": 16, "phase": "L1" }],
+      "metering": "group", "meters": [{ "name": "M1", "outlets": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"] }] } }
+],
+"rackTypes": [{ "id": "rack-48", "name": "48U high-density rack", "units": 48, "pduSlots": ["left", "right"], "defaultPdu": "pdu-3p-30" }],
+"powerGrids": [{ "id": "pg-a", "name": "Grid A", "color": "#d1453b", "note": "UPS 1, room 0.12" }],
+"powerSettings": { "powerFactor": 1, "limitPct": 80 },
+"devices": [
+  { "id": "ex-44", "type": "pdu-3p-30", "name": "pdu-b01-a", "grid": "pg-a", "loc": { "rack": "r4", "kind": "pdu", "at": 0 } }
+],
+"powerCords": [
+  { "id": "pc-1", "label": "P-0001", "type": null, "lengthM": null, "color": null, "notes": "",
+    "inlet": { "device": "ex-40", "inlet": "psu1" }, "outlet": { "device": "ex-44", "outlet": "1" } }
+]
+```
+
+(The PDU type is cut short here: it has 30 outlets in six fuse groups and
+three meter groups.) A power cord runs from an inlet of a device to an
+outlet of a PDU in the same rack. `type: null` picks the cord type from the two plugs and the
+length, `lengthM: null` estimates the length, and `color: null` is the color
+of the PDU's grid. A plan never holds a cord between two racks, a second
+cord on an inlet or an outlet, or a cord on a device, inlet or outlet that
+does not exist; nor a PDU outside a PDU slot, or an outlet in two fuse
+groups. Imports drop these with a warning.
 
 A cable's `a` end is one port. Its `b` end is one port too, or for a
 breakout cable (a type with 2 to 8 `legs`) a list of one end per leg, with
@@ -875,20 +1162,26 @@ What a change does to the rest of the plan:
 
 | Change | Effect |
 | --- | --- |
-| Deleting a floor, row or rack | Deletes the devices in it and their cables. A plan keeps at least one floor, a floor one row, a row one rack. |
-| Deleting a device type | Deletes its devices and their cables. |
-| Deleting a device | Deletes its cables. A breakout cable only loses its legs there, unless it has none left or loses its head. |
+| Deleting a floor, row or rack | Deletes the devices in it, their cables and their power cords. A plan keeps at least one floor, a floor one row, a row one rack. |
+| Deleting a device type | Deletes its devices, their cables and their power cords. |
+| Deleting a device | Deletes its cables and its power cords (those on its outlets, for a PDU). A breakout cable only loses its legs there, unless it has none left or loses its head. |
 | Deleting a rack type | Refused while a rack uses it. The last rack type always stays. |
 | Deleting a cable type or transceiver | Refused while a cable names it. A transceiver named at an end where it cannot apply (on a cable of a type that is not fiber, or at a port that is not a cage) does not count, and the end forgets it. |
 | Changing a cable to a type that is not fiber | The transceivers chosen at its ends go. |
 | Deleting a cluster | Its devices stay where they are, without a cluster in its view. |
 | Deleting a view | Its clusters go with it; devices, cables and networks stay. A plan keeps at least one view. |
 | Deleting a network | Its cables stay, without a network. |
+| Deleting a power grid | Its PDUs stay, without a grid; their cords take the color of no grid. |
+| Deleting a cord type | Refused while a power cord names it. |
 | Moving or reversing a device | Its cables stay plugged in; estimated lengths follow. |
-| Changing a device's type | Refused when the new type does not fit where the device is. Its cables move to the ports at the same place in the new type's port groups, as for a change of a type's ports; the others are unplugged. Its name, clusters and fields stay. |
-| Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series. The copies have no serial number, asset tag or IP address. |
+| Moving a device or a PDU within its rack | Its power cords stay plugged in; estimated lengths follow. |
+| Moving a device or a PDU to another rack | Its power cords are unplugged, as a cord stays in its rack. The app asks first and names them. |
+| Changing a rack's type, or the PDU slots of a rack type | Refused while a PDU would lose its slot. |
+| Changing a type's inlets or outlets | Inlets and outlets keep their cords by group and place in the group; the others are unplugged. An outlet keeps its fuse and meter group by name. |
+| Changing a device's type | Refused when the new type does not fit where the device is. Its cables move to the ports at the same place in the new type's port groups, as for a change of a type's ports, and its power cords to the inlets at the same place; the others are unplugged. The app asks first and names them. Its name, clusters and fields stay. |
+| Duplicating devices, a rack, a row or a floor | Cables between the copied devices are copied, with labels that continue their series, and so are power cords whose device and PDU are both copied. The copies have no serial number, asset tag or IP address. |
 | Changing a type's ports | Ports keep their cables by group and place in the group; a group that takes the place of another takes its cables only when their plugs fit it. The catalog names the cables a change would unplug before it applies. |
-| A new plan from this layout | No devices, so no clusters, cables or networks; the catalogs and the views (empty) stay. |
+| A new plan from this layout | No devices, so no clusters, cables, networks, power grids or power cords; the catalogs and the views (empty) stay. |
 
 **Open** reads plan files of every version. Version 1 counted units from the
 bottom, and versions 1 and 2 had a single list of racks, which becomes one row.
@@ -898,6 +1191,11 @@ gets the standard cable types and transceivers and no networks or cables.
 Versions 1 to 4 had one list of clusters and a `cluster` per device: they
 become one view, `Default`. A version 5 file without views gets an empty
 `Default` view, with a warning for each cluster of a device that it drops.
+Versions 1 to 5 had no power cabling: each rack type gets two PDU slots,
+left and right (none below 20 units), without a default PDU; the standard
+device types get their standard inlets; and the plan gets the standard cord
+types, the power settings and no grids or cords. Devices stay where they
+are, a 1U PDU in a side slot too.
 Each of these changes is a step from one version
 to the next in `js/io.js`, and a file goes through the steps from its own
 version on before it is read as a current one. The steps keep the standard
@@ -937,7 +1235,7 @@ paste it into **Open**.
 ## Tests
 
 ```sh
-npm test             # unit tests: placement, catalogs, cabling, import, CSV, drawing (no dependencies)
+npm test             # unit tests: placement, catalogs, cabling, power, import, CSV, drawing (no dependencies)
 npm ci               # once, for the browser tests and screenshots
 npm run test:e2e     # browser tests: drive the app in Chromium via Playwright
 npm run screenshots  # retake the README screenshots and the intro video banner
@@ -954,7 +1252,11 @@ the Cabling workspace connecting ports by clicks and drags, breakout cables,
 Connect series, the cable inspector, networks and labels, the schedule and
 its order list, the elevation from both sides, the port map, the fabric,
 cable schedule export and import, the ports, cable type and transceiver
-catalogs, devices mounted back to front and the length settings. If Chromium
+catalogs, devices mounted back to front and the length settings, and for
+power the PDU slots, vertical PDU types, inlets and cord types in Racks and
+the catalog, and in the Power workspace connecting inlets to outlets, the
+power grids, the inspectors, the outlet map, the schedule, the Load view,
+the power CSVs and reading a cord schedule back. If Chromium
 is missing, install it with `npx playwright install chromium`. The app itself
 has no dependencies; Playwright is only needed for these tests and the
 screenshots.
