@@ -288,14 +288,14 @@ test('toCSV lists devices by floor, row and rack, top to bottom, and neutralises
   add('switch-qsfp', 'side', 0, 'leaf');
   add('reserved', 'u', 10, 'later', { height: 3 });
   const csv = IO.toCSV(p).trim().split('\r\n');
-  assert.equal(csv[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
+  assert.equal(csv[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Power grid,Notes,Device ID');
   // The device's id comes last.
   assert.deepEqual(csv.slice(1).map((l) => l.slice(l.lastIndexOf(',') + 1)), M.sortedDevices(p).map((d) => d.id));
   const lines = csv.map((l) => l.slice(0, l.lastIndexOf(',')));
-  assert.equal(lines[1], "Floor 1,Row A,Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,S1,,,,999,25,");
-  assert.equal(lines[2], 'Floor 1,Row A,Rack A01,U10-12,3,Reserved space,later,,,,,,0,0,');
-  assert.equal(lines[3], 'Floor 1,Row A,Rack A01,U47,1,48-port switch,"sw, ""core""",,,,,,150,6,');
-  assert.equal(lines[4], 'Floor 1,Row A,Rack A01,Side V1,1,24-port switch,leaf,,,,,,350,9,');
+  assert.equal(lines[1], "Floor 1,Row A,Rack A01,U5-6,2,Compute node,'=cmd(),Alpha,S1,,,,999,25,,");
+  assert.equal(lines[2], 'Floor 1,Row A,Rack A01,U10-12,3,Reserved space,later,,,,,,0,0,,');
+  assert.equal(lines[3], 'Floor 1,Row A,Rack A01,U47,1,48-port switch,"sw, ""core""",,,,,,150,6,,');
+  assert.equal(lines[4], 'Floor 1,Row A,Rack A01,Side V1,1,24-port switch,leaf,,,,,,350,9,,');
 });
 
 test('version 5 files keep their views; ids and names that clash are made unique', () => {
@@ -416,7 +416,7 @@ test('CSVs have a cluster column per view, and read them back into the views of 
   p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-1', groups: { v1: 'c1', [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
   p.devices.push(M.newDevice({ type: 'compute-node', name: 'cn-2', groups: { [ib.id]: 'c2' }, loc: { rack: 'r1', kind: 'u', at: 3 } }));
   const lines = IO.toCSV(p).trim().split('\r\n');
-  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
+  assert.equal(lines[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Default,Cluster: InfiniBand,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Power grid,Notes,Device ID');
   assert.match(lines[1], /,cn-1,Alpha,HDR,/);
   assert.match(lines[2], /,cn-2,,HDR,/);
 
@@ -440,7 +440,7 @@ test('a plan whose one view has another name than Default names it in the CSV, a
   p.views[0].clusters.push({ id: 'c1', name: 'MDS', color: '#2f6fdb' });
   p.devices.push(M.newDevice({ type: 'compute-node', name: 'mds-1', groups: { v1: 'c1' }, loc: { rack: 'r1', kind: 'u', at: 1 } }));
   const csv = IO.toCSV(p);
-  assert.equal(csv.split('\r\n')[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Lustre,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Notes,Device ID');
+  assert.equal(csv.split('\r\n')[0], 'Floor,Row,Rack,Position,Height (U),Type,Name,Cluster: Lustre,Serial number,Asset tag,IP address,Owner,Power (W),Weight (kg),Power grid,Notes,Device ID');
   const back = IO.importCSV(csv).project;
   assert.deepEqual(back.views.map((v) => [v.name, v.clusters.map((c) => c.name)]), [['Lustre', ['MDS']]]);
   M.renameView(p, 'v1', 'Default');
@@ -509,7 +509,7 @@ test('a CSV line with the Device ID of a device of the plan changes that device'
     line('ex-11').replace('U8-9', 'U1'),
     line('ex-11'),
     // A new device keeps the id the line gives it.
-    'Ground floor,Row A,Rack A01,U44,1,48-port switch,sw-new,,,,,,,,,new-1',
+    'Ground floor,Row A,Rack A01,U44,1,48-port switch,sw-new,,,,,,,,,,new-1',
   ].join('\r\n');
   const { project: p, warnings, added, updated } = IO.importCSV(edited, ex);
   assert.deepEqual([added, updated], [1, 1]);
@@ -1532,6 +1532,24 @@ test('racks made up for a file without floors, or with a flat list of racks, hol
   r = IO.normalizeProject(raw);
   assert.deepEqual(r.warnings, []);
   assert.deepEqual(r.project.devices.map((d) => [d.name, d.loc]), [['mine', { rack: 'r2', kind: 'pdu', at: 0 }]]);
+});
+
+test('a rack that a CSV adds holds the PDUs the CSV lists, not the default ones of its rack type', () => {
+  const p = M.createEmptyProject(2);
+  const type = M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
+  assert.equal(M.updateRackType(p, 'rack-47', { defaultPdu: type.id }), null);
+  const csv = ['Rack,Position,Type,Name,Power grid', 'Rack A09,PDU P1,0U PDU 3P 30,left-one,Grid A', 'Rack A09,PDU P2,0U PDU 3P 30,right-one,Grid B', 'Rack A09,U1,48-port switch,sw-1,', 'Rack A10,U1,48-port switch,sw-2,'].join('\n');
+  const { project: q, warnings, added } = IO.importCSV(csv, p);
+  assert.deepEqual(warnings, []);
+  assert.equal(added, 4);
+  const grid = (d) => (q.powerGrids.find((g) => g.id === d.grid) || { name: '' }).name;
+  assert.deepEqual(q.devices.map((d) => [d.name, M.locateRack(q, d.loc.rack).rack.name, d.loc.kind, d.loc.at, grid(d)]), [
+    ['left-one', 'Rack A09', 'pdu', 0, 'Grid A'],
+    ['right-one', 'Rack A09', 'pdu', 1, 'Grid B'],
+    ['sw-1', 'Rack A09', 'u', 1, ''],
+    ['sw-2', 'Rack A10', 'u', 1, ''],
+  ]);
+  assert.equal(q.rackTypes[0].defaultPdu, type.id, 'racks added by hand still get their PDUs');
 });
 
 test('a vertical PDU is never turned: one a file says is mounted back to front reads as it hangs', () => {

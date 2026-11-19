@@ -884,7 +884,7 @@
     ['Floor', 'Row', 'Rack', 'Position', 'Height (U)', 'Type', 'Name']
       .concat(clusterColumns(project))
       .concat(M.FIELDS.map((f) => f.csv))
-      .concat(['Power (W)', 'Weight (kg)', 'Notes', 'Device ID']);
+      .concat(['Power (W)', 'Weight (kg)', 'Power grid', 'Notes', 'Device ID']);
 
   function csvCell(value) {
     let s = String(value == null ? '' : value);
@@ -894,8 +894,9 @@
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
 
-  /** "U5-6" or "Side V1", as the CSVs write a device's position. */
+  /** "U5-6", "Side V1" or "PDU P1", as the CSVs write a device's position. */
   function positionText(project, d) {
+    if (d.loc.kind === 'pdu') return `PDU P${d.loc.at + 1}`;
     return d.loc.kind === 'side' ? `Side V${d.loc.at + 1}` : M.formatPosition(project, d.loc, d.type, d.height).replace('–', '-');
   }
 
@@ -911,7 +912,7 @@
         [pos.floor.name, pos.row.name, pos.rack.name, positionText(project, d), M.deviceHeight(project, d), type.label, d.name]
           .concat(project.views.map((v) => (M.clusterOf(project, d, v.id) || { name: '' }).name))
           .concat(M.FIELDS.map((f) => d[f.key] || ''))
-          .concat([M.powerOf(project, d), M.weightOf(project, d), d.notes || '', d.id])
+          .concat([M.powerOf(project, d), M.weightOf(project, d), (M.gridOf(project, d) || { name: '' }).name, d.notes || '', d.id])
       );
     }
     return csvText(rows);
@@ -972,16 +973,19 @@
     owner: ['owner', 'contact', 'tenant'],
     powerW: ['powerw', 'power', 'watts'],
     weightKg: ['weightkg', 'weight', 'kg'],
+    grid: ['powergrid', 'grid', 'feed'],
     notes: ['notes', 'note', 'comment', 'comments', 'description'],
     id: ['device id'],
   };
   const headerKey = (h) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-  /** "U5-6", "U5", "5" → { kind: 'u', at: 5 }; "Side V2", "V2" → { kind: 'side', at: 1 }. */
+  /** "U5-6", "U5", "5" → { kind: 'u', at: 5 }; "Side V2", "V2" → { kind: 'side', at: 1 }; "PDU P1", "P1" → { kind: 'pdu', at: 0 }. */
   function parsePosition(text) {
     const t = String(text || '').trim();
     let m = /^(?:side\s*)?v\s*(\d+)$/i.exec(t) || /^side\s*(\d+)$/i.exec(t);
     if (m) return { kind: 'side', at: parseInt(m[1], 10) - 1 };
+    m = /^(?:pdu\s*)?p\s*(\d+)$/i.exec(t) || /^pdu\s*(\d+)$/i.exec(t);
+    if (m) return { kind: 'pdu', at: parseInt(m[1], 10) - 1 };
     m = /^u?\s*(\d+)(?:\s*[-–]\s*u?\s*\d+)?$/i.exec(t);
     if (m) return { kind: 'u', at: parseInt(m[1], 10) };
     return null;
@@ -1067,17 +1071,28 @@
         else {
           rack = row.racks.find((r) => lower(r.name) === lower(rackName)) || null;
           if (!rack && row.racks.length >= L.racks) warnings.push(`A row holds ${L.racks} racks; skipped devices in ${rackName}.`);
-          else if (!rack) rack = M.addRack(work, row.id, { name: rackName });
+          // A rack made for the CSV holds what the CSV lists: its PDUs, not the default ones of its type.
+          else if (!rack) rack = M.addRack(work, row.id, { name: rackName, empty: true });
         }
       }
       rackCache.set(key, rack);
       return rack;
     }
-    function findType(label, height) {
+    function findType(label, height, pdu) {
       const l = lower(label);
       if (l === lower(M.RESERVED.label) || l === M.RESERVED.id) return M.RESERVED;
       let t = work.deviceTypes.find((x) => lower(x.label) === l || lower(x.id) === l);
       if (t) return t;
+      if (pdu) {
+        // In a PDU slot: a vertical PDU type, with the outlets of the template of its name, else of the first.
+        if (!l) t = work.deviceTypes.find(M.isPduType);
+        if (t) return t;
+        const named = M.TYPE_TEMPLATES.find((x) => M.isPduType(x) && lower(x.label) === l);
+        const tpl = named || M.TYPE_TEMPLATES.find(M.isPduType);
+        t = M.addDeviceType(work, Object.assign(M.clone(tpl), label ? { label } : {}));
+        if (t) warnings.push(`Added the vertical PDU type ${t.label} to the catalog${named ? '' : `, with the outlets of ${tpl.label}`}.`);
+        return t;
+      }
       if (!height) return null;
       if (!l) t = work.deviceTypes.find((x) => x.face === 'generic' && x.height === height);
       if (t) return t;
@@ -1109,6 +1124,16 @@
       // Cut to the length the plan keeps, so later lines find the cluster an earlier one created.
       return clusterCols.map(({ view, index }) => ({ view, cluster: findCluster(view, String(r[index] == null ? '' : r[index]).trim().slice(0, L.name).trim()) }));
     }
+    // The grid of a PDU's line by name; a name the plan does not have yet makes a grid.
+    function findGrid(name) {
+      if (!name) return null;
+      let g = work.powerGrids.find((x) => lower(x.name) === lower(name));
+      if (!g && work.powerGrids.length < L.powerGrids) {
+        g = Object.assign(M.cleanPowerGrid({ name }, work), { id: M.uid('pg') });
+        work.powerGrids.push(g);
+      }
+      return g ? g.id : null;
+    }
     function findGroups(r) {
       const groups = {};
       for (const x of clustersIn(r)) if (x.cluster) groups[x.view.id] = x.cluster;
@@ -1122,14 +1147,14 @@
     let updated = 0;
     // What a line can change of a device, as the plan keeps it.
     const fields = ['notes'].concat(M.FIELDS.map((f) => f.key));
-    const state = (d) => JSON.stringify([d.loc, d.height, d.name, Object.entries(d.groups || {}).sort(), fields.map((k) => d[k] || ''), d.powerW == null ? null : d.powerW, d.weightKg == null ? null : d.weightKg]);
+    const state = (d) => JSON.stringify([d.loc, d.height, d.name, Object.entries(d.groups || {}).sort(), fields.map((k) => d[k] || ''), d.grid || null, d.powerW == null ? null : d.powerW, d.weightKg == null ? null : d.weightKg]);
     function updateDevice(r, d, what, pos, height) {
       const type = M.typeOf(work, d.type);
       const label = get(r, 'type');
       if (label && lower(label) !== lower(type.label) && lower(label) !== lower(type.id)) {
         return void warnings.push(`Skipped ${what}: device ID “${d.id}” is ${d.name}, a ${type.label}, not ${label}; a device keeps its type.`);
       }
-      if (!type.variable && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
+      if (!type.variable && !M.isPduType(type) && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
       const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
       if (!rack) return;
       const loc = { rack: rack.id, kind: pos.kind, at: pos.at };
@@ -1146,6 +1171,7 @@
         else delete d.groups[x.view.id];
       }
       for (const k of fields) if (col[k] !== undefined) d[k] = get(r, k);
+      if (col.grid !== undefined && M.isPduType(type)) d.grid = findGrid(get(r, 'grid').slice(0, 60));
       const power = get(r, 'powerW');
       const weight = get(r, 'weightKg');
       if (power !== '') d.powerW = Number(power) !== type.powerW ? Number(power) : null;
@@ -1168,9 +1194,9 @@
       if (lineIds.has(id)) return void warnings.push(`Skipped ${what}: device ID “${id}” is on an earlier line too.`);
       if (id) lineIds.add(id);
       if (planDevices.has(id)) return void updateDevice(r, planDevices.get(id), what, pos, height);
-      const type = findType(label, height);
+      const type = findType(label, height, pos.kind === 'pdu');
       if (!type) return void warnings.push(`Skipped ${what}: unknown device type “${label}” and no height to create it.`);
-      if (!type.variable && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
+      if (!type.variable && !M.isPduType(type) && height && height !== type.height) warnings.push(`${what}: ${type.label} is ${type.height}U, not ${height}U as the CSV says.`);
       // Names are cut to the length the plan keeps, so later lines find what earlier ones created.
       const rack = findRack(...['floor', 'row', 'rack'].map((k) => get(r, k).slice(0, 60)));
       if (!rack) return;
@@ -1181,6 +1207,7 @@
       if (power !== '' && Number(power) !== type.powerW) d.powerW = Number(power);
       if (weight !== '' && Number(weight) !== type.weightKg) d.weightKg = Number(weight);
       if (type.variable) d.height = height || 1;
+      if (M.isPduType(type)) d.grid = findGrid(get(r, 'grid').slice(0, 60));
       devices.push(d);
     });
     work.devices = work.devices.concat(devices);
