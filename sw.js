@@ -35,6 +35,7 @@ const SHELL = [
   'js/io.js',
   'js/render.js',
   'js/cabling-render.js',
+  'js/power-render.js',
   'js/library.js',
   'js/cabling-ui.js',
   'js/app.js',
