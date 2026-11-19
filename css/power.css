@@ -51,6 +51,11 @@
 @media (min-width: 561px) {
   #pow-toggle { --seg-pad: 9px; }
 }
+/* Up to 1180 px the panels leave the bar little room: both view switches
+   get narrower, so neither wraps onto a line of its own. */
+@media (min-width: 561px) and (max-width: 1180px) {
+  #cab-toggle, #pow-toggle { --seg-pad: 8px; }
+}
 #app.is-power .scene .pw-dev:not(.is-reserved), #app.is-power .scene .pw-pdu { cursor: pointer; }
 #app.is-power .scene:focus:not(:focus-visible) { outline: none; }
 .scene .pw-dev, .scene .pw-pdu { outline: none; }
