@@ -447,3 +447,61 @@ test('the number of a cluster reads at 4.5:1 on every default cluster color, on 
     }
   }
 });
+
+// ------------------------------------------------------------ PDU slots
+
+/** The example with a vertical PDU type, two grids, and a PDU in each slot of Rack A01. */
+function pduProject() {
+  const p = M.createExampleProject();
+  const type = M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
+  p.powerGrids.push({ id: 'ga', name: 'Grid A', color: '#d1453b', note: '' }, { id: 'gb', name: 'Grid B', color: '#2b6cd4', note: '' });
+  const pdus = M.fillPduSlots(p, ['r1'], type.id);
+  return { p, type, pdus };
+}
+
+test('the sheet draws PDU slots in the side channels and vertical PDUs as dashed strips in their grid color', () => {
+  const { p, type, pdus } = pduProject();
+  assert.deepEqual(pdus.map((d) => [d.name, d.loc.at, d.grid]), [['pdu-a01-a', 0, 'ga'], ['pdu-a01-b', 1, 'gb']]);
+  const out = R.renderScene(p, { rowId: 'row1', theme: 'light', interactive: true, date: '2026-01-01' });
+  assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);
+  // Six slots in three racks; the two taken ones are covered by their PDUs.
+  assert.equal(out.body.split('class="pdu-slot"').length - 1, 6);
+  for (const d of pdus) {
+    const node = new RegExp(`<g class="dev is-pdu[^"]*"[^>]*data-id="${d.id}"[^>]*>`).exec(out.body);
+    assert.ok(node, `${d.name} is drawn`);
+    assert.ok(node[0].includes(`aria-label="${d.name}, 0U PDU 3P 30, Rack A01 · PDU slot P${d.loc.at + 1}, Grid ${d.loc.at ? 'B' : 'A'}"`), node[0]);
+  }
+  assert.ok(out.body.includes('#d1453b') && out.body.includes('#2b6cd4'), 'grid colors');
+  assert.ok(out.body.includes('stroke-dasharray'), 'dashed: the PDUs hang at the rear');
+  assert.ok(out.body.includes('PDU 2/2'), 'the rack label counts its PDUs');
+  assert.equal(out.width, R.sheetWidth(3, true));
+  // P1 hangs in the left channel and P2 in the right one, outside the rails, inside the frame.
+  const racks = R.rowLayout(p, 'row1').racks;
+  const r1 = racks[0];
+  const left = R.locRect(p, pdus[0].loc, type.id);
+  const right = R.locRect(p, pdus[1].loc, type.id);
+  assert.ok(left.x >= r1.x && left.x + left.w <= r1.bayX, 'left of the bay');
+  assert.ok(right.x >= r1.sideX && right.x + right.w <= r1.x + G.RACK_W, 'right of the side slots');
+  assert.ok(left.h > 40 * G.U && left.h <= 47 * G.U, 'over the length of the rack');
+  // A second slot on one side goes inside the first.
+  M.updateRackType(p, 'rack-47', { pduSlots: ['left', 'left', 'right'] });
+  const outer = R.pduRect(R.rowLayout(p, 'row1').racks[0], 0);
+  const inner = R.pduRect(R.rowLayout(p, 'row1').racks[0], 1);
+  assert.ok(outer.x < inner.x && outer.x + outer.w <= inner.x, 'the first slot of a side is the outer one');
+});
+
+test('a PDU type drops onto the nearest PDU slot of the rack under the pointer, other types never do', () => {
+  const { p, type } = pduProject();
+  const r2 = R.rowLayout(p, 'row1').racks[1];
+  const mid = r2.y + 200;
+  assert.deepEqual(R.locateDrop(p, 'row1', type.id, r2.x + 4, mid), { rack: 'r2', kind: 'pdu', at: 0 });
+  assert.deepEqual(R.locateDrop(p, 'row1', type.id, r2.x + G.RACK_W - 4, mid), { rack: 'r2', kind: 'pdu', at: 1 });
+  assert.deepEqual(R.locateDrop(p, 'row1', type.id, r2.bayX + 20, mid), { rack: 'r2', kind: 'pdu', at: 0 }, 'over the bay: the nearer side');
+  const over = R.locateDrop(p, 'row1', 'compute-node', r2.x + 4, mid);
+  assert.ok(!over || over.kind !== 'pdu');
+  assert.equal(M.canPlace(p, 'compute-node', { rack: 'r2', kind: 'pdu', at: 0 }).ok, false);
+  // Ghosts and the selection outline follow the strip.
+  const ghost = R.renderGhosts(p, [{ typeId: type.id, loc: { rack: 'r2', kind: 'pdu', at: 0 }, name: 'pdu-a02-a' }], true, { theme: 'light', rowId: 'row1' });
+  assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${ghost}</svg>`);
+  assert.ok(ghost.length > 0);
+});

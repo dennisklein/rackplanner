@@ -1600,7 +1600,7 @@ test.describe('offline', () => {
     // the page needs is precached: the planner opens offline from then on.
     await page.evaluate(() => navigator.serviceWorker.ready);
     const precached = await page.evaluate(async () => {
-      const keys = await (await caches.open('rackplanner-v5')).keys();
+      const keys = await (await caches.open('rackplanner-v6')).keys();
       return keys.map((r) => new URL(r.url).pathname);
     });
     const scripts = await page.evaluate(() => [...document.scripts].filter((s) => s.src).map((s) => new URL(s.src).pathname));
@@ -1611,7 +1611,7 @@ test.describe('offline', () => {
     expect(await page.evaluate(() => document.fonts.check('600 12px "IBM Plex Mono"'))).toBe(true);
     await page.evaluate(() => navigator.serviceWorker.ready);
     const cached = await page.evaluate(async () => {
-      const keys = await (await caches.open('rackplanner-v5')).keys();
+      const keys = await (await caches.open('rackplanner-v6')).keys();
       return keys.map((r) => new URL(r.url).pathname);
     });
     expect(cached).toEqual(expect.arrayContaining(['/index.html', '/js/app.js', '/js/cabling.js', '/js/io.js', '/css/fonts.css', '/fonts/ibm-plex-mono-latin-600-normal.woff2']));

@@ -42,6 +42,7 @@
   const MX = 34;
   const RW = 2 * (FRAME + MGR + RAIL) + BAY;
   const SLOT_LEN = 12 * U; // a side-mounted device along 12 units
+  const PDU_STRIP = 10; // a vertical PDU: a strip on the frame post of its side, more of them outside it
   const TITLE_Y = 36;
   const TRAY_Y = 66;
   const HEAD = 74; // above each rack: its name tape and the far ends of selected cables
@@ -259,13 +260,15 @@
       // from the rear. A side device's cables whose lane is in the other
       // manager run down a lane outside the slot instead, and over the tray
       // to the other manager, rather than across the bay.
+      // A vertical PDU hangs on the side of its slot (`left`: on the left as seen), and runs its cables the same way.
       const slotLeft = side === 'rear';
-      L.sideLaneX = (lane) => {
-        if (onLeft(lane) === slotLeft) return L.laneX(lane);
-        const list = slotLeft ? rightNets : leftNets;
+      L.sideLaneX = (lane, left) => {
+        const inLeft = left === undefined ? slotLeft : left;
+        if (onLeft(lane) === inLeft) return L.laneX(lane);
+        const list = inLeft ? rightNets : leftNets;
         const k = Math.max(0, list.indexOf(lane));
         const step = list.length > 1 ? Math.min(1.5, 3 / (list.length - 1)) : 0;
-        return slotLeft ? L.lmX + 1.5 + k * step : L.rmX + MGR - 1.5 - k * step;
+        return inLeft ? L.lmX + 1.5 + k * step : L.rmX + MGR - 1.5 - k * step;
       };
       return L;
     });
@@ -338,6 +341,37 @@
         if (!type) continue;
         const cluster = M.clusterOf(project, d, o.view);
         const sc = R.schemeFor(cluster ? cluster.color : null, t);
+        if (d.loc.kind === 'pdu') {
+          // A strip down the frame post of its slot's side, its network ports on this side stacked from its top.
+          const sides = M.rackPduSlots(project, l.rack);
+          const right = sides[d.loc.at] === 'right';
+          const left = right !== (side === 'front');
+          const same = sides.map((x, i) => i).filter((i) => (sides[i] === 'right') === right);
+          const out = same.length - 1 - Math.max(0, same.indexOf(d.loc.at));
+          const x0 = left ? l.x - 1 - out * (PDU_STRIP + 1) : l.x + RW - PDU_STRIP + 1 + out * (PDU_STRIP + 1);
+          const span = Math.max(1, Math.min(l.units, type.pdu.spanU));
+          const y0 = l.uTop + ((l.units - span) / 2) * U;
+          const rect = { x: x0, y: y0, w: PDU_STRIP, h: span * U };
+          const ports = M.expandPorts(type)
+            .filter((p) => p.side === side)
+            .map((p, i) => ({ name: p.name, connector: p.connector, group: p.group, index: p.index, x: 1.5, y: 8 + i * 9, w: PDU_STRIP - 3, h: 5.5, exit: 'down' }));
+          const toAbs = (p) => ({ x: x0 + p.x, y: y0 + p.y, w: p.w, h: p.h });
+          const tf = `translate(${r1(x0)} ${r1(y0)})`;
+          const dev = { d, type, rect, tf, toAbs, ports, onSide: true, left, rack: l, rows2: false, dense: false, top: rect.y, bottom: rect.y + rect.h };
+          devRects.set(d.id, rect);
+          devices.push(dev);
+          devById.set(d.id, dev);
+          const cx = PDU_STRIP / 2 + 2.6;
+          const cy = r1(rect.h / 2);
+          s += `<g class="dev is-pdu" data-dev="${esc(d.id)}" transform="${tf}"${ports.length ? '' : ' opacity="0.55"'}>`;
+          s += `<rect x="0.5" y="0.5" width="${PDU_STRIP - 1}" height="${r1(rect.h - 1)}" rx="2" fill="${sc.face}" stroke="${sc.edge}" stroke-width="1"/>`;
+          s += text(cx, cy, R.fitText(d.name, F.unit, rect.h - 24 - ports.length * 18, measure), F.unit, sc.text, ` transform="rotate(-90 ${cx} ${cy})" text-anchor="middle"`) + `</g>`;
+          for (const p of ports) {
+            const a = toAbs(p);
+            anchors.set(`${d.id}|${p.name}`, { dev, pt: p, abs: a, cx: a.x + a.w / 2, cy: a.y + a.h / 2 });
+          }
+          continue;
+        }
         const hU = M.deviceHeight(project, d);
         const own = d.reversed ? flip(side) : side;
         const onSide = d.loc.kind === 'side';
@@ -424,7 +458,7 @@
     }
 
     /** Where lane `lane` (see laneKey) runs for a device's cables. */
-    const laneOf = (dev, lane) => (dev.onSide ? dev.rack.sideLaneX(lane) : dev.rack.laneX(lane));
+    const laneOf = (dev, lane) => (dev.onSide ? dev.rack.sideLaneX(lane, dev.left) : dev.rack.laneX(lane));
     /**
      * Where the cable of an end on the other side of the rack meets the
      * device: at its edge facing the lane, along the first unit (a side
@@ -763,7 +797,7 @@
         const ladder = [y0];
         for (let k = 6; k <= r.h; k += 6) ladder.push(y0 - k, y0 + k);
         const along = ladder.filter((y) => y >= r.y - 8 && y <= r.y + r.h - 8);
-        const toBay = side === 'rear';
+        const toBay = E.dev.left === undefined ? side === 'rear' : E.dev.left;
         const inX = toBay ? r.x + r.w + 14 : r.x - 14 - lw;
         const outX = toBay ? r.x - 14 - lw : r.x + r.w + 14;
         const inner = along.map((y) => [inX, y]);
@@ -1339,7 +1373,7 @@
     const where = (d) => {
       const r = ctx.racks.get(d.loc.rack);
       const [a, b] = M.deviceSpan(project, d);
-      const at = d.loc.kind === 'side' ? `V${d.loc.at + 1}` : a === b ? `U${a}` : `U${a}–${b}`;
+      const at = d.loc.kind === 'side' ? `V${d.loc.at + 1}` : d.loc.kind === 'pdu' ? `P${d.loc.at + 1}` : a === b ? `U${a}` : `U${a}–${b}`;
       return r ? `${shortRack(r.rack.name)} · ${at}` : at;
     };
     /** Interactive boxes are buttons for the keyboard too, named by `label`. */

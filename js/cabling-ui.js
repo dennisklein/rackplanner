@@ -144,7 +144,7 @@
       let w = k.where.get(d.id);
       if (w) return w;
       const pos = k.ctx.racks.get(d.loc.rack);
-      const at = d.loc.kind === 'side' ? `V${d.loc.at + 1}` : M.formatSpan(...M.deviceSpan(project(), d));
+      const at = d.loc.kind === 'side' ? `V${d.loc.at + 1}` : d.loc.kind === 'pdu' ? `P${d.loc.at + 1}` : M.formatSpan(...M.deviceSpan(project(), d));
       w = { pos, at, short: `${shortRack(pos.rack.name)} · ${at}`, full: `${pos.rack.name} · ${at}` };
       k.where.set(d.id, w);
       return w;
@@ -690,7 +690,7 @@
       let used = 0;
       for (const name of ports.keys()) if (idx.has(`${d.id}|${name}`)) used++;
       const w = where(d);
-      const meta = [type.label, `${w.at}${d.loc.kind === 'side' ? ' (side slot)' : ''}`, ports.size ? portSummary(d) : 'no ports'].join(' · ');
+      const meta = [type.label, `${w.at}${d.loc.kind === 'side' ? ' (side slot)' : d.loc.kind === 'pdu' ? ' (PDU slot)' : ''}`, ports.size ? portSummary(d) : 'no ports'].join(' · ');
       return (
         `<section class="pm-card${current ? ' is-current' : ''}${faded ? ' is-faded' : ''}" data-pm-dev="${esc(d.id)}">` +
         `<header class="pm-head"><span class="sw" style="--c:${cl ? cl.color : 'var(--unassigned)'}"></span>` +
@@ -3196,7 +3196,10 @@
         `<div class="insp-sub">${esc(`${w.pos.floor.name} · ${w.pos.row.name} · ${used} of ${plural(ports.length, 'port')} cabled`)}</div></div>` +
         (type.face === 'reserved'
           ? ''
-          : `<section class="insp-sec"><h3 id="cab-mount-label">${M.portsSide(type) ? 'Ports at' : 'Mounted'}</h3>${mountField(d, M.portsSide(type))}<div class="field-grid">` +
+          : `<section class="insp-sec">` +
+            // A vertical PDU hangs one way in its slot: it is not turned.
+            (M.isPduType(type) ? `<h3>Cables</h3>` : `<h3 id="cab-mount-label">${M.portsSide(type) ? 'Ports at' : 'Mounted'}</h3>${mountField(d, M.portsSide(type))}`) +
+            `<div class="field-grid">` +
             `<div class="field"><label for="cab-dev-slack">Slack per cable (m)</label><input id="cab-dev-slack" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${d.slackM == null ? '' : d.slackM}" placeholder="${type.slackM || 0} (type)"></div>` +
             `</div></section>`) +
         `<section class="insp-sec"><h3>Ports</h3>` +

@@ -15,6 +15,7 @@
   const CR = window.RP.cablingRender;
   const IO = window.RP.io;
   const R = window.RP.render;
+  const P = window.RP.power;
   const G = R.geometry;
 
   const PREFS_KEY = 'rackplanner.prefs.v1';
@@ -1268,9 +1269,10 @@
     const devs = M.devicesWithin(project, rowId);
     const n = devs.length;
     const cables = cablesGoingWith(idSet(devs));
+    const cords = cordsGoingWith(idSet(devs));
     const ok = await confirmDialog({
       title: `Delete ${pos.row.name}?`,
-      body: `This deletes its ${listAnd([plural(pos.row.racks.length, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable')])}. Undo brings everything back.`,
+      body: `This deletes its ${listAnd([plural(pos.row.racks.length, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable'), cords && plural(cords, 'power cord')])}. Undo brings everything back.`,
       ok: 'Delete row',
     });
     if (!ok) return;
@@ -1285,10 +1287,11 @@
     const devs = M.devicesWithin(project, floorId);
     const n = devs.length;
     const cables = cablesGoingWith(idSet(devs));
+    const cords = cordsGoingWith(idSet(devs));
     const racks = floor.rows.reduce((a, r) => a + r.racks.length, 0);
     const ok = await confirmDialog({
       title: `Delete ${floor.name}?`,
-      body: `This deletes ${listAnd([plural(floor.rows.length, 'row'), plural(racks, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable')])}. Undo brings everything back.`,
+      body: `This deletes ${listAnd([plural(floor.rows.length, 'row'), plural(racks, 'rack'), n && plural(n, 'device'), cables && plural(cables, 'cable'), cords && plural(cords, 'power cord')])}. Undo brings everything back.`,
       ok: 'Delete floor',
     });
     if (!ok) return;
@@ -1306,7 +1309,7 @@
       const names = removed.map((r) => r.name).join(', ');
       const ok = await confirmDialog({
         title: removed.length === 1 ? `Remove ${names}?` : `Remove ${removed.length} racks?`,
-        body: `${names} ${removed.length === 1 ? 'holds' : 'hold'} ${devicesAndCables(lost)}, which ${lost.length === 1 && !cablesGoingWith(idSet(lost)) ? 'is' : 'are'} removed too. Undo brings everything back.`,
+        body: `${names} ${removed.length === 1 ? 'holds' : 'hold'} ${devicesAndCables(lost)}, which ${lost.length === 1 && !cablesGoingWith(idSet(lost)) && !cordsGoingWith(idSet(lost)) ? 'is' : 'are'} removed too. Undo brings everything back.`,
         ok: removed.length === 1 ? 'Remove rack' : 'Remove racks',
       });
       if (!ok) return;
@@ -1535,6 +1538,42 @@
     return { rack, kind, at: parseInt(at, 10) };
   }
 
+  /** A position for a select: "Side slot V1", "P1 · left" or the units. */
+  const slotLabel = (l, typeId, height) =>
+    l.kind === 'side' ? `Side slot V${l.at + 1}` : l.kind === 'pdu' ? M.formatPduSlot(project, l.rack, l.at) : M.formatPosition(project, l, typeId, height);
+  /** "side slot" or "PDU slot": the slots a device at `loc` goes in. */
+  const slotNoun = (loc) => (loc.kind === 'pdu' ? 'PDU slot' : 'side slot');
+  /** The catalog's first vertical PDU type: what Fill PDU slots puts into racks whose type names none. */
+  const firstPduType = () => (project.deviceTypes.find(M.isPduType) || { id: null }).id;
+
+  /** Power grid chips for a PDU: None, the plan's grids and one that adds a grid. */
+  function gridChips(name, selected) {
+    const chip = (value, label, color, cls) =>
+      `<label class="chip${cls || ''}"><input type="radio" name="${name}" id="${esc(`${name}-${value || 'none'}`)}" value="${esc(value)}"${selected === value ? ' checked' : ''}>` +
+      `<span>${color ? `<i class="sw" style="--c:${color}"></i>` : ''}${esc(label)}</span></label>`;
+    const grids = project.powerGrids || [];
+    return (
+      chip('', 'None', null) +
+      grids.map((g) => chip(g.id, g.name, g.color)).join('') +
+      (grids.length < M.LIMITS.powerGrids ? chip('__new', '+ New grid', null, ' chip-new') : '')
+    );
+  }
+
+  /** The load of PDU `d` per phase, at worst, against the limit: meters for its inspector. */
+  function pduLoadSection(d) {
+    const load = P.loads(project);
+    const row = load.pdus.find((x) => x.pdu.id === d.id);
+    if (!row) return '';
+    const worst = load.scenarios.find((s) => s.id === row.total.worst);
+    const meters = row.phases
+      .map((ph) => meterHTML(ph.phase, ph.value.worstA, ph.value.ratingA, `${P.fmtA(ph.value.worstA)} of ${P.fmtA(ph.value.ratingA)}`, ph.value.over))
+      .join('');
+    return (
+      `<section class="insp-sec" id="insp-pdu-load"><h3>Load per phase</h3>${meters}` +
+      `<p class="sec-hint">${esc(`${P.fmtKw(row.total.worstW)} of ${P.fmtKw(row.capacityW)} at worst${worst && worst.grid ? ` (${worst.name})` : ''}. The limit is ${Math.round(load.limit * 100)} % of a rating.`)}</p></section>`
+    );
+  }
+
   /** <option>s for every rack, grouped by floor and row. */
   function rackOptions(selectedId) {
     let s = '';
@@ -1703,16 +1742,18 @@
     const slotOpts = M.validLocs(project, d.type, d.loc.rack, d.id, d.height)
       .map((l) => {
         const cur = l.kind === d.loc.kind && l.at === d.loc.at;
-        const label = l.kind === 'side' ? `Side slot V${l.at + 1}` : M.formatPosition(project, l, d.type, d.height);
-        return `<option value="${locKey(l)}"${cur ? ' selected' : ''}>${label}</option>`;
+        return `<option value="${locKey(l)}"${cur ? ' selected' : ''}>${esc(slotLabel(l, d.type, d.height))}</option>`;
       })
       .join('');
     const hide = hiddenFn();
     const hidden = !!hide && hide(d);
     const canUp = !!M.nudgeTarget(project, d, -1);
     const canDown = !!M.nudgeTarget(project, d, 1);
+    // A vertical PDU stays one: it changes among the PDU types, and other devices among the rest.
+    const pdu = M.isPduType(type);
     const typeOpts = M.placeableTypes(project)
-      .map((t) => `<option value="${esc(t.id)}"${t.id === d.type ? ' selected' : ''}>${esc(t.label)} · ${t.variable ? 'any height' : `${t.height}U`}</option>`)
+      .filter((t) => M.isPduType(t) === pdu)
+      .map((t) => `<option value="${esc(t.id)}"${t.id === d.type ? ' selected' : ''}>${esc(t.label)} · ${pdu ? esc(t.spec || 'PDU') : t.variable ? 'any height' : `${t.height}U`}</option>`)
       .join('');
     const fields = M.FIELDS.map(
       (f) =>
@@ -1722,13 +1763,19 @@
 
     el.inspector.innerHTML =
       `<div class="insp-head">` +
-      `<div class="kicker"><span class="sw" style="--c:${cluster ? cluster.color : 'var(--unassigned)'}"></span>${esc(type.label)} · ${hU}U</div>` +
+      `<div class="kicker"><span class="sw" style="--c:${cluster ? cluster.color : 'var(--unassigned)'}"></span>${esc(type.label)} · ${pdu ? 'vertical PDU' : `${hU}U`}</div>` +
       `<label for="insp-name" class="sr-only">Device name</label>` +
       `<input id="insp-name" class="name-input" type="text" value="${esc(d.name)}" spellcheck="false" autocomplete="off" maxlength="${M.NAME_MAX}">` +
       `<p class="warn-note name-clash" id="insp-name-dup" role="status" hidden></p>` +
       `<div class="insp-where">${esc(M.formatDeviceLoc(project, d))}</div>` +
       `<div class="insp-sub">${esc(`${pos.floor.name} · ${pos.row.name}`)}</div>` +
       `</div>` +
+      (pdu
+        ? `<section class="insp-sec"><h3 id="insp-grid-label">Power grid</h3>` +
+          `<div class="chips" role="radiogroup" aria-labelledby="insp-grid-label">${gridChips('insp-grid', d.grid || '')}</div>` +
+          (d.grid ? '' : `<p class="sec-hint">Without a grid it has power in every scenario.</p>`) +
+          `</section>`
+        : '') +
       `<section class="insp-sec"><h3 id="insp-cluster-label">${esc(clusterHeading())}</h3>` +
       `<div class="chips" role="radiogroup" aria-labelledby="insp-cluster-label">${clusterChips('insp-cluster', clusterIdOf(d), true)}</div>` +
       (hidden ? `<p class="sec-hint">${esc(cluster ? cluster.name : 'Unassigned')} is hidden in the racks. <button type="button" class="btn-link" id="insp-show-cluster">Show</button></p>` : '') +
@@ -1739,13 +1786,14 @@
       `<div class="field"><label for="insp-slot">Slot</label><select id="insp-slot">${slotOpts}</select></div>` +
       (type.variable ? `<div class="field"><label for="insp-height">Height (U)</label><input id="insp-height" type="number" min="1" max="${M.rackUnits(project, d.loc.rack)}" step="1" value="${hU}" inputmode="numeric"></div>` : '') +
       `</div>` +
-      (type.face === 'reserved' ? '' : mountRadios('insp-mount', !!d.reversed, 'insp-mount-label', M.portsSide(type))) +
+      (type.face === 'reserved' || pdu ? '' : mountRadios('insp-mount', !!d.reversed, 'insp-mount-label', M.portsSide(type))) +
       (d.loc.kind === 'u'
         ? `<div class="nudge"><button type="button" class="btn sm" id="insp-up"${canUp ? '' : ' disabled'} title="Next free position above (↑)">${icon('up')}Move up</button>` +
           `<button type="button" class="btn sm" id="insp-down"${canDown ? '' : ' disabled'} title="Next free position below (↓)">${icon('down')}Move down</button></div>`
         : '') +
       `<p class="sec-hint hint-touch">To move it in the drawing, tap it again, then tap a free slot.</p>` +
       `</section>` +
+      (pdu ? pduLoadSection(d) : '') +
       `<section class="insp-sec"><h3>Details</h3><div class="field-grid">` +
       `<div class="field span2"><label for="insp-type">Type</label><select id="insp-type">${typeOpts}</select></div>${fields}` +
       `<div class="field"><label for="insp-power">Power (W)</label><input id="insp-power" type="number" min="0" step="10" inputmode="decimal" value="${d.powerW == null ? '' : d.powerW}" placeholder="${type.powerW} (type)"></div>` +
@@ -1784,11 +1832,28 @@
         commit((p) => M.setClusterOf(p, M.deviceById(p, id), view, r.value || null), { label: `Set the cluster of ${d.name}` });
       })
     );
+    $$('input[name="insp-grid"]', el.inspector).forEach((r) =>
+      r.addEventListener('change', () => {
+        if (r.value !== '__new') return void commit((p) => void P.setGrid(p, id, r.value || null), { label: `Set the power grid of ${d.name}` });
+        // A new grid with the next free name and color; the Power workspace renames it.
+        const made = commitAdd(
+          (p) => {
+            const g = P.addGrid(p, {});
+            if (g) P.setGrid(p, id, g.id);
+            return g;
+          },
+          (g) => `Added ${g.name} for ${d.name}`
+        );
+        if (made) toast(`Added ${made.name} for ${d.name}`, { action: 'Undo', onAction: undo });
+      })
+    );
     $('#insp-rack').addEventListener('change', (e) => {
       const rackId = e.target.value;
       const cur = M.deviceById(project, id);
       const near = cur.loc.kind === 'u' ? cur.loc.at : Math.ceil(M.rackUnits(project, rackId) / 2);
-      const loc = M.nearestLoc(project, cur.type, rackId, near, id, cur.loc.kind === 'side', cur.height);
+      // A PDU keeps its slot number where that is free.
+      const same = { rack: rackId, kind: cur.loc.kind, at: cur.loc.at };
+      const loc = pdu && M.canPlace(project, cur.type, same, id).ok ? same : M.nearestLoc(project, cur.type, rackId, near, id, cur.loc.kind === 'side', cur.height);
       if (!loc) {
         toast(`${M.rackById(project, rackId).name} has no free space for ${cur.name}`, { warn: true });
         renderInspector();
@@ -1838,22 +1903,32 @@
 
   /**
    * Gives device `id` the type `typeId` where it is, in one undo step.
-   * Asks first when cables would be unplugged; says why when the type
-   * does not fit there.
+   * Asks first when cables or power cords would be unplugged, and names
+   * them; says why when the type does not fit there.
    */
   async function changeDeviceType(id, typeId) {
     const d = M.deviceById(project, id);
     const to = M.typeOf(project, typeId);
     if (!d || !to) return;
     const lost = C.typeChangeImpact(project, id, typeId);
-    if (lost.length) {
+    const cords = P.typeChangeImpact(project, id, typeId);
+    const unplugged = listAnd([lost.length && plural(lost.length, 'cable'), cords.length && plural(cords.length, 'power cord')]);
+    if (unplugged) {
       const shown = lost.slice(0, 6).map((c) => c.label || 'one without a label');
+      const end = M.isPdu(project, d) ? 'outlet' : 'inlet';
       const ok = await confirmDialog({
-        title: `Unplug ${plural(lost.length, 'cable')}?`,
+        title: `Unplug ${unplugged}?`,
         body:
-          `${to.label} has no port in the place of the ${lost.length === 1 ? 'port' : 'ports'} of ${d.name} that ${lost.length === 1 ? 'this cable is' : 'these cables are'} plugged into: ` +
-          `${shown.join(', ')}${lost.length > shown.length ? ` and ${lost.length - shown.length} more` : ''}. Undo plugs them back in.`,
-        ok: lost.length === 1 ? 'Unplug the cable' : `Unplug ${lost.length} cables`,
+          (lost.length
+            ? `${to.label} has no port in the place of the ${lost.length === 1 ? 'port' : 'ports'} of ${d.name} that ${lost.length === 1 ? 'this cable is' : 'these cables are'} plugged into: ` +
+              `${shown.join(', ')}${lost.length > shown.length ? ` and ${lost.length - shown.length} more` : ''}. `
+            : '') +
+          (cords.length
+            ? `${lost.length ? 'It' : to.label} has no ${end} in the place of the ${cords.length === 1 ? end : `${end}s`} of ${d.name} that ${cords.length === 1 ? 'this power cord is' : 'these power cords are'} plugged into: ` +
+              `${cordNames(cords)}. `
+            : '') +
+          `Undo plugs them back in.`,
+        ok: !cords.length ? (lost.length === 1 ? 'Unplug the cable' : `Unplug ${lost.length} cables`) : !lost.length ? (cords.length === 1 ? 'Unplug the cord' : `Unplug ${cords.length} cords`) : 'Unplug them',
       });
       if (!ok) return renderInspector();
     }
@@ -1862,7 +1937,7 @@
       toast(`Can’t change the type: ${err}`, { warn: true });
       return renderInspector();
     }
-    toast(`Changed ${d.name} to ${to.label}${lost.length ? `; unplugged ${plural(lost.length, 'cable')}` : ''}`, { action: 'Undo', onAction: undo });
+    toast(`Changed ${d.name} to ${to.label}${unplugged ? `; unplugged ${unplugged}` : ''}`, { action: 'Undo', onAction: undo });
   }
 
   /** Buttons that select devices `devs`: "cn-002, cn-003 and 4 more". */
@@ -1888,8 +1963,11 @@
     const clusters = new Set(devs.map((d) => clusterIdOf(d)));
     const owners = new Set(devs.map((d) => d.owner || ''));
     const same = clusters.size === 1 ? [...clusters][0] : undefined;
-    // Reserved space faces no way: only devices are mounted one way or the other.
-    const mountable = devs.filter((d) => M.typeOf(project, d.type).face !== 'reserved');
+    // Reserved space faces no way, and a vertical PDU hangs one way: only devices in rack units and side slots are mounted one way or the other.
+    const mountable = devs.filter((d) => {
+      const t = M.typeOf(project, d.type);
+      return t.face !== 'reserved' && !M.isPduType(t);
+    });
     const mounts = new Set(mountable.map((d) => !!d.reversed));
     const sorted = M.sortedDevices(Object.assign({}, project, { devices: devs }));
     const power = devs.reduce((a, d) => a + M.powerOf(project, d), 0);
@@ -1999,6 +2077,30 @@
     );
   }
 
+  /** The Fill PDU slots button for the racks `rackIds`; disabled, with why, when it would add nothing. */
+  function fillPduButton(rackIds) {
+    const fallback = firstPduType();
+    const n = M.fillableRacks(project, rackIds, fallback).length;
+    const title = n
+      ? 'A PDU in each free PDU slot: of the rack type’s default PDU type, else the first vertical PDU type of the catalog'
+      : fallback
+        ? 'No PDU slot is free'
+        : 'The catalog has no vertical PDU type';
+    return `<button type="button" class="btn" id="insp-fill-pdu"${n ? '' : ' disabled'} title="${esc(title)}">${icon('plus')}Fill PDU slots</button>`;
+  }
+
+  /** Puts a PDU into each free PDU slot of the racks `rackIds` (see M.fillPduSlots), in one undo step; `where` names them. */
+  function fillPdus(rackIds, where) {
+    const made = commitAdd(
+      (p) => {
+        const added = M.fillPduSlots(p, rackIds, firstPduType());
+        return added.length ? added : null;
+      },
+      (added) => `Added ${plural(added.length, 'PDU')} to ${where}`
+    );
+    if (made) toast(`Added ${plural(made.length, 'PDU')} to ${where}: ${nameRange(made.map((d) => d.name))}`, { action: 'Undo', onAction: undo });
+  }
+
   function contentsList(devs) {
     return devs
       .map((d) => {
@@ -2032,7 +2134,7 @@
       `<div class="kicker">${icon('rack', 'ic-sm')}Rack · ${esc(pos.floor.name)} · ${esc(pos.row.name)}</div>` +
       `<label for="insp-rack-name" class="sr-only">Rack name</label>` +
       `<input id="insp-rack-name" class="name-input" type="text" value="${esc(rack.name)}" spellcheck="false" autocomplete="off" maxlength="60">` +
-      `<div class="insp-where">${esc(`19″ · ${rt.units}U · ${plural(rt.sideSlots, 'side slot')} · position ${pos.index + 1} of ${n}`)}</div>` +
+      `<div class="insp-where">${esc(`19″ · ${rt.units}U · ${plural(rt.sideSlots, 'side slot')} · ${plural(rt.pduSlots.length, 'PDU slot')} · position ${pos.index + 1} of ${n}`)}</div>` +
       `</div>` +
       `<section class="insp-sec"><h3><label for="insp-rack-type">Rack type</label></h3>` +
       `<div class="inline"><select id="insp-rack-type">${typeOpts}</select><button type="button" class="btn sm" id="insp-rack-types">${icon('book')}Types</button></div></section>` +
@@ -2054,6 +2156,7 @@
       `</section>` +
       `<div class="insp-actions">` +
       `<button type="button" class="btn" id="insp-dup-rack"${rowFull ? ` disabled title="${esc(pos.row.name)} is full"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate rack</button>` +
+      fillPduButton([rack.id]) +
       `<button type="button" class="btn" id="insp-rack-select"${devs.length ? '' : ' disabled'}>${icon('select')}Select devices</button>` +
       `<button type="button" class="btn danger-text" id="insp-clear-rack"${devs.length ? '' : ' disabled'}>${icon('trash')}Empty rack</button>` +
       `<button type="button" class="btn danger-text" id="insp-del-rack"${n <= 1 ? ' disabled title="A row needs at least one rack"' : ''}>${icon('trash')}Delete rack</button>` +
@@ -2088,6 +2191,7 @@
     });
     $('#insp-dup-rack').addEventListener('click', () => duplicateStructure('rack', id));
     $('#insp-rack-select').addEventListener('click', () => selectDevices(devs.map((d) => d.id)));
+    $('#insp-fill-pdu').addEventListener('click', () => fillPdus([id], rack.name));
     $('#insp-clear-rack').addEventListener('click', async () => {
       const ok = await confirmDialog({
         title: `Empty ${rack.name}?`,
@@ -2130,6 +2234,7 @@
       `<button type="button" class="btn" id="row-open">${icon('rack')}Show elevation</button>` +
       `<button type="button" class="btn" id="row-add"${pos.floor.rows.length >= M.LIMITS.rows ? ' disabled' : ''}>${icon('plus')}Add row after</button>` +
       `<button type="button" class="btn" id="row-dup"${pos.floor.rows.length >= M.LIMITS.rows ? ` disabled title="${esc(pos.floor.name)} is full"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate row</button>` +
+      fillPduButton(row.racks.map((r) => r.id)) +
       `<button type="button" class="btn" id="row-select"${devs.length ? '' : ' disabled'}>${icon('select')}Select devices</button>` +
       `<button type="button" class="btn danger-text" id="row-del"${pos.floor.rows.length <= 1 ? ' disabled title="A floor needs at least one row"' : ''}>${icon('trash')}Delete row</button>` +
       `</div>`;
@@ -2151,6 +2256,7 @@
     $('#row-open').addEventListener('click', () => setRow(id, { view: 'sheet' }));
     $('#row-add').addEventListener('click', () => addRowTo(pos.floor.id, pos.rowIndex + 1));
     $('#row-dup').addEventListener('click', () => duplicateStructure('row', id));
+    $('#insp-fill-pdu').addEventListener('click', () => fillPdus(row.racks.map((r) => r.id), row.name));
     $('#row-select').addEventListener('click', () => {
       setRow(id, { view: 'sheet', render: false });
       selectDevices(devs.map((d) => d.id));
@@ -2184,6 +2290,7 @@
       `<div class="insp-actions">` +
       `<button type="button" class="btn" id="floor-map">${icon('map')}Floor map</button>` +
       `<button type="button" class="btn" id="floor-add-row"${floor.rows.length >= M.LIMITS.rows ? ' disabled' : ''}>${icon('plus')}Add row</button>` +
+      fillPduButton(floor.rows.flatMap((r) => r.racks.map((x) => x.id))) +
       `<button type="button" class="btn" id="floor-dup"${project.floors.length >= M.LIMITS.floors ? ` disabled title="${FULL.floor}"` : ' title="Duplicate (Ctrl+D)"'}>${icon('copy')}Duplicate floor</button>` +
       `<button type="button" class="btn danger-text" id="floor-del"${project.floors.length <= 1 ? ' disabled title="A plan needs at least one floor"' : ''}>${icon('trash')}Delete floor</button>` +
       `</div>`;
@@ -2197,6 +2304,7 @@
     $('#floor-map').addEventListener('click', () => setRow(currentRow().floor.id === id ? ui.rowId : floor.rows[0].id, { view: 'map' }));
     $('#floor-add-row').addEventListener('click', () => addRowTo(id));
     $('#floor-dup').addEventListener('click', () => duplicateStructure('floor', id));
+    $('#insp-fill-pdu').addEventListener('click', () => fillPdus(floor.rows.flatMap((r) => r.racks.map((x) => x.id)), floor.name));
     $('#floor-del').addEventListener('click', () => deleteFloor(id));
   }
 
@@ -2280,7 +2388,32 @@
 
   // -------------------------------------------------------------- actions
 
-  function moveDevice(id, loc, opts) {
+  /** "P-0001 (cn-001 psu1 to pdu-a01-a outlet 7)" for power cords: up to five, then how many more. */
+  function cordNames(cords) {
+    const name = (c) => {
+      const dev = M.deviceById(project, c.inlet.device);
+      const pdu = M.deviceById(project, c.outlet.device);
+      return `${c.label || 'a cord'} (${dev ? dev.name : '?'} ${c.inlet.inlet} to ${pdu ? pdu.name : '?'} outlet ${c.outlet.outlet})`;
+    };
+    return listAnd(cords.slice(0, 5).map(name).concat(cords.length > 5 ? `${cords.length - 5} more` : []));
+  }
+
+  /**
+   * Asks before a move (`moves`: [{ id, loc }]) takes a device or a PDU to
+   * another rack than the far ends of its power cords, which stay within
+   * one rack: the move unplugs them. True to go on.
+   */
+  async function okToUnplug(moves) {
+    const cords = M.cordsBrokenBy(project, moves);
+    if (!cords.length) return true;
+    return confirmDialog({
+      title: `Unplug ${plural(cords.length, 'power cord')}?`,
+      body: `A power cord stays within one rack. This move unplugs ${cordNames(cords)}. Undo brings ${cords.length > 1 ? 'them' : 'it'} back.`,
+      ok: 'Move and unplug',
+    });
+  }
+
+  async function moveDevice(id, loc, opts) {
     const d = M.deviceById(project, id);
     if (!d) return false;
     const check = M.canPlace(project, d.type, loc, id, d.height);
@@ -2289,28 +2422,48 @@
       render();
       return false;
     }
+    if (!(await okToUnplug([{ id, loc }]))) {
+      render();
+      return false;
+    }
     ui.selection = { kind: 'devices', ids: [id] };
     if (opts && opts.follow) {
       const row = rowOfRack(loc.rack);
       if (row !== ui.rowId) setRow(row, { render: false });
     }
-    const changed = commit((p) => void (M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at }), { label: `Moved ${d.name}` });
+    const changed = commit(
+      (p) => {
+        M.deviceById(p, id).loc = { rack: loc.rack, kind: loc.kind, at: loc.at };
+        M.pruneCords(p);
+      },
+      { label: `Moved ${d.name}` }
+    );
     if (changed) announce(`Moved ${d.name} to ${M.formatLoc(project, loc, d.type, d.height)}`);
     else render();
     if (opts && (opts.reveal || opts.follow)) revealDevice(id, opts.reveal);
     return changed;
   }
 
-  function applyMoves(moves) {
+  async function applyMoves(moves) {
     if (!moves || !moves.length) return false;
     const check = M.canMoveAll(project, moves);
     if (!check.ok) {
       toast(check.reason, { warn: true });
       return false;
     }
+    if (!(await okToUnplug(moves))) {
+      render();
+      return false;
+    }
     ui.selection = { kind: 'devices', ids: moves.map((m) => m.id) };
     const label = `Moved ${plural(moves.length, 'device')}`;
-    const changed = commit((p) => void moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at })), { label });
+    const changed = commit(
+      (p) => {
+        moves.forEach((m) => (M.deviceById(p, m.id).loc = { rack: m.loc.rack, kind: m.loc.kind, at: m.loc.at }));
+        M.pruneCords(p);
+      },
+      { label }
+    );
     if (changed) announce(label);
     return changed;
   }
@@ -2363,7 +2516,7 @@
       if (u) loc = { rack: d.loc.rack, kind: 'u', at: u };
     } else if (!loc) {
       loc = freeSideSlot(d);
-      if (!loc) return toast(`No side slot is free for a copy of ${d.name}`, { warn: true });
+      if (!loc) return toast(`No ${slotNoun(d.loc)} is free for a copy of ${d.name}`, { warn: true });
     }
     if (!loc) {
       for (const r of currentRow().row.racks.concat(M.allRacks(project).map((x) => x.rack))) {
@@ -2389,14 +2542,14 @@
     toast(`Added ${copy.name} at ${M.formatDeviceLoc(project, copy)}`);
   }
 
-  /** A free side slot for a copy of side-slot device `d`: in its rack, then in the nearest racks of its row, then anywhere. */
+  /** A free side slot (PDU slot) for a copy of side-slot device (PDU) `d`: in its rack, then in the nearest racks of its row, then anywhere. */
   function freeSideSlot(d) {
     const pos = M.locateRack(project, d.loc.rack);
     // By distance, the rack to the right first.
     const away = (i) => Math.abs(i - pos.index) * 2 + (i < pos.index ? 1 : 0);
     const row = pos.row.racks.map((r, i) => [r, away(i)]).sort((a, b) => a[1] - b[1]).map(([r]) => r);
     for (const r of row.concat(M.allRacks(project).map((x) => x.rack))) {
-      const loc = M.validLocs(project, d.type, r.id, null, d.height).find((l) => l.kind === 'side');
+      const loc = M.validLocs(project, d.type, r.id, null, d.height).find((l) => l.kind === d.loc.kind);
       if (loc) return loc;
     }
     return null;
@@ -2411,19 +2564,25 @@
     revealDevice(ui.selection.ids[0]);
   }
 
-  /** Copies devices to `moves` ([{ id, loc }]) with the cables between them, in one undo step. */
+  /** Copies devices to `moves` ([{ id, loc }]) with the cables and the power cords between them, in one undo step. */
   function copyGroup(moves, verb) {
     const copies = M.copiesAt(project, moves);
     // copiesAt keeps the order of `moves`, which maps each original to its copy.
     const idMap = new Map(moves.map((m, i) => [m.id, copies[i].id]));
     ui.selection = { kind: 'devices', ids: copies.map((c) => c.id) };
     let cables = 0;
+    let cords = 0;
     commit((p) => {
       p.devices.push(...copies);
       cables = M.copyCables(p, idMap).length;
+      const before = p.powerCords.length;
+      M.copyCords(p, idMap);
+      // A cord stays within one rack: a copy whose device and PDU went to different racks is dropped.
+      M.pruneCables(p);
+      cords = p.powerCords.length - before;
     });
     const first = copies[0];
-    toast(`${verb || 'Copied'} ${plural(copies.length, 'device')}${andCables(cables)}, from ${first.name} at ${M.formatDeviceLoc(project, first)}`, { action: 'Undo', onAction: undo });
+    toast(`${verb || 'Copied'} ${plural(copies.length, 'device')}${andCables(cables, cords)}, from ${first.name} at ${M.formatDeviceLoc(project, first)}`, { action: 'Undo', onAction: undo });
   }
 
   /**
@@ -2437,12 +2596,18 @@
     M.pruneCables(work);
     return project.cables.length - work.cables.length;
   }
-  /** " and 37 cables", or nothing without cables. */
-  const andCables = (n) => (n ? ` and ${plural(n, 'cable')}` : '');
+  /** How many power cords go when the devices `gone` (a Set of ids) go: the ones plugged into one of them. */
+  const cordsGoingWith = (gone) => M.cordsOf(project, gone).length;
+  /** " and 37 cables", ", 37 cables and 12 power cords", or nothing without either. */
+  const andCables = (cables, cords) => {
+    const parts = [cables && plural(cables, 'cable'), cords && plural(cords, 'power cord')].filter(Boolean);
+    return parts.length > 1 ? `, ${parts.join(' and ')}` : parts.length ? ` and ${parts[0]}` : '';
+  };
   const idSet = (devs) => new Set(devs.map((d) => d.id));
-  /** "15 devices and 37 cables": the devices `devs` and the cables that go with them. */
+  /** "15 devices, 37 cables and 12 power cords": the devices `devs` with the cables and power cords that go with them. */
   function devicesAndCables(devs) {
-    return plural(devs.length, 'device') + andCables(cablesGoingWith(idSet(devs)));
+    const gone = idSet(devs);
+    return plural(devs.length, 'device') + andCables(cablesGoingWith(gone), cordsGoingWith(gone));
   }
   /** "a, b and c" of the parts that are not empty. */
   function listAnd(parts) {
@@ -2450,14 +2615,15 @@
     return p.length > 1 ? `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}` : p.join('');
   }
 
-  /** Deleting this many devices at once asks first, as deleting several that take cables does. */
+  /** Deleting this many devices at once asks first, as deleting several that take cables or power cords does. */
   const ASK_TO_DELETE = 10;
   async function deleteDevices(ids) {
     const devs = ids.map((id) => M.deviceById(project, id)).filter(Boolean);
     if (!devs.length) return;
     const gone = idSet(devs);
     const cables = cablesGoingWith(gone);
-    if (devs.length > 1 && (cables || devs.length >= ASK_TO_DELETE)) {
+    const cords = cordsGoingWith(gone);
+    if (devs.length > 1 && (cables || cords || devs.length >= ASK_TO_DELETE)) {
       const ok = await confirmDialog({
         title: `Delete ${plural(devs.length, 'device')}?`,
         body: `This deletes ${devicesAndCables(devs)}. Undo brings them back.`,
@@ -2471,7 +2637,7 @@
       p.devices = p.devices.filter((x) => !gone.has(x.id));
       M.pruneCables(p);
     });
-    toast(`Deleted ${devs.length === 1 ? devs[0].name : plural(devs.length, 'device')}${andCables(cables)}`, { action: 'Undo', onAction: undo });
+    toast(`Deleted ${devs.length === 1 ? devs[0].name : plural(devs.length, 'device')}${andCables(cables, cords)}`, { action: 'Undo', onAction: undo });
   }
 
   /**
@@ -2718,13 +2884,15 @@
     if (inside) autoScroll(e);
     const pt = toScene(e);
     const primary = d.source === 'device' ? M.deviceById(project, d.deviceId) : null;
-    const loc = inside ? R.locateDrop(project, ui.rowId, d.typeId, pt.x, pt.y, d.grab, primary ? primary.height : d.height) : null;
+    let loc = inside ? R.locateDrop(project, ui.rowId, d.typeId, pt.x, pt.y, d.grab, primary ? primary.height : d.height) : null;
+    // A new PDU takes the slot under the pointer, or the rack's first free one when that is taken.
+    if (loc && loc.kind === 'pdu' && d.source === 'palette' && !M.canPlace(project, d.typeId, loc).ok) loc = M.validLocs(project, d.typeId, loc.rack)[0] || loc;
     d.loc = loc;
     d.moves = null;
 
     if (d.source === 'device' && d.ids.length > 1) {
       let check = { ok: false, reason: 'Drop it on a rack' };
-      if (loc && loc.kind !== primary.loc.kind) check = { ok: false, reason: primary.loc.kind === 'u' ? 'Drop the group on rack units' : 'Drop the group on a side slot' };
+      if (loc && loc.kind !== primary.loc.kind) check = { ok: false, reason: primary.loc.kind === 'u' ? 'Drop the group on rack units' : `Drop the group on a ${slotNoun(primary.loc)}` };
       else if (loc) {
         const from = M.locateRack(project, primary.loc.rack);
         const to = M.locateRack(project, loc.rack);
@@ -2742,7 +2910,7 @@
       if (d.moves) drawGhosts(d.moves, d.ok);
       else setGhosts('');
       const title = `${d.copy ? 'Copy' : 'Move'} ${plural(d.ids.length, 'device')}`;
-      const detail = loc && d.ok ? `${loc.kind === 'u' ? 'by ' + (loc.at - primary.loc.at) + ' U' : 'side slots'}${d.moves && d.moves[0].loc.rack !== primary.loc.rack ? ', other racks' : ''}` : d.reason;
+      const detail = loc && d.ok ? `${loc.kind === 'u' ? 'by ' + (loc.at - primary.loc.at) + ' U' : `${slotNoun(loc)}s`}${d.moves && d.moves[0].loc.rack !== primary.loc.rack ? ', other racks' : ''}` : d.reason;
       return showChip(e, title, detail, loc ? (d.ok ? 'ok' : 'bad') : '');
     }
 
@@ -3436,15 +3604,17 @@
 
   function openPlaceDialog(typeId, loc) {
     const type = M.typeOf(project, typeId);
-    Object.assign(place, { typeId, loc, nameTouched: false, clusterTouched: false, positions: [], valid: true });
+    Object.assign(place, { typeId, loc, nameTouched: false, clusterTouched: false, gridTouched: false, grid: '', positions: [], valid: true });
     $('#place-title').textContent = type.label;
     $('#place-height-field').hidden = !type.variable;
-    $('#place-mount').innerHTML = type.face === 'reserved' ? '' : mountRadios('place-mount', M.mountsReversed(type), 'place-mount-label', M.portsSide(type));
+    $('#place-pos-label').textContent = M.isPduType(type) ? 'Slot' : 'Position';
+    $('#place-mount').innerHTML = type.face === 'reserved' || M.isPduType(type) ? '' : mountRadios('place-mount', M.mountsReversed(type), 'place-mount-label', M.portsSide(type));
     $('#place-height').value = loc.kind === 'side' ? '1' : '2';
     $('#place-qty').value = '1';
     $('input[name="place-dir"][value="down"]').checked = true;
     $('#place-spread').checked = false;
     setPlaceLoc(loc);
+    suggestPlaceGrid();
     $('#place-cluster-label').textContent = clusterHeading();
     suggestPlaceCluster();
     place.newColor = M.nextClusterColor(project, ui.clusterView);
@@ -3484,6 +3654,41 @@
     $('#place-new').hidden = initial !== '__new';
   }
 
+  /**
+   * The Power grid field of the place dialog, for a vertical PDU: unless
+   * the user picked one, the grid of the PDU its name follows when that is
+   * in the same slot of another rack, else the first grid no PDU of the
+   * rack is on, else the grid of the slot's turn (P1 the first).
+   */
+  function suggestPlaceGrid() {
+    const pdu = M.isPduType(M.typeOf(project, place.typeId));
+    $('#place-grid-field').hidden = !pdu;
+    if (!pdu) return;
+    const grids = project.powerGrids || [];
+    if (!place.gridTouched) {
+      const from = M.suggestPlacement(project, place.typeId, place.loc, 1).from;
+      const ref = from ? project.devices.find((d) => d.name === from && d.type === place.typeId) : null;
+      const used = new Set(P.pdus(project, new Set([place.loc.rack])).map((d) => d.grid));
+      const free = grids.find((g) => !used.has(g.id));
+      place.grid = (ref && ref.loc.rack !== place.loc.rack && ref.loc.at === place.loc.at && ref.grid) || (free ? free.id : M.gridForSlot(project, place.loc.at) || '');
+    }
+    $('#place-grid').innerHTML =
+      grids.map((g) => `<option value="${esc(g.id)}"${g.id === place.grid ? ' selected' : ''}>${esc(g.name)}</option>`).join('') +
+      `<option value=""${place.grid ? '' : ' selected'}>No grid</option>`;
+  }
+
+  /** The grids of the PDUs the place dialog adds: the one picked, and for more PDUs in one rack the grids after it in turn. */
+  function placeGrids() {
+    const grids = (project.powerGrids || []).map((g) => g.id);
+    const start = grids.indexOf(place.grid);
+    const seen = new Map();
+    return place.positions.map((pos) => {
+      const k = seen.get(pos.rack) || 0;
+      seen.set(pos.rack, k + 1);
+      return start < 0 ? null : grids[(start + k) % grids.length];
+    });
+  }
+
   /** Sets where the dialog places the devices: its Rack and Position fields, and the racks of that row to spread over. */
   function setPlaceLoc(loc) {
     place.loc = loc;
@@ -3506,7 +3711,7 @@
 
   /** Whether a device of the place dialog's type, `height` for reserved space, ends inside its rack at `loc`. */
   function placeFits(loc, height) {
-    return loc.kind === 'side' || loc.at + M.heightOf(project, place.typeId, height) - 1 <= M.rackUnits(project, loc.rack);
+    return loc.kind !== 'u' || loc.at + M.heightOf(project, place.typeId, height) - 1 <= M.rackUnits(project, loc.rack);
   }
 
   /** The free positions of the rack in the Position field, and the one picked even when it no longer fits. */
@@ -3517,8 +3722,8 @@
     if (!locs.some((l) => l.kind === loc.kind && l.at === loc.at)) locs.unshift(loc);
     $('#place-pos').innerHTML = locs
       .map((l) => {
-        const label = l.kind === 'side' ? `Side slot V${l.at + 1}` : placeFits(l, height) ? M.formatPosition(project, l, place.typeId, height) : `U${l.at} (does not fit)`;
-        return `<option value="${locKey(l)}"${l.kind === loc.kind && l.at === loc.at ? ' selected' : ''}>${label}</option>`;
+        const label = placeFits(l, height) ? slotLabel(l, place.typeId, height) : `U${l.at} (does not fit)`;
+        return `<option value="${locKey(l)}"${l.kind === loc.kind && l.at === loc.at ? ' selected' : ''}>${esc(label)}</option>`;
       })
       .join('');
   }
@@ -3556,7 +3761,7 @@
     if (!Number.isFinite(qty) || qty < 1) qty = 1;
     const dir = $('input[name="place-dir"]:checked').value === 'up' ? -1 : 1;
     const nameInput = $('#place-name');
-    if (!place.nameTouched) nameInput.value = M.suggestPlacement(project, type.id, place.loc, qty).name;
+    if (!place.nameTouched) nameInput.value = place.loc.kind === 'pdu' ? M.pduNameFor(project, type.id, place.loc.rack, place.loc.at) : M.suggestPlacement(project, type.id, place.loc, qty).name;
     const line = $('#place-preview');
     const submit = $('#place-submit');
     line.classList.remove('bad');
@@ -3573,14 +3778,14 @@
       : placeFits(loc, height)
         ? `${M.formatLoc(project, loc, type.id, height)} · ${M.formatTypeSpec(type, height)}`
         : `${rackName} · does not fit at U${loc.at} · ${M.formatTypeSpec(type, height)}`;
-    const side = loc.kind === 'side';
+    const side = loc.kind !== 'u';
     const spread = !$('#place-spread-wrap').hidden && $('#place-spread').checked;
     $('#place-racks').hidden = !spread;
     const racks = spread ? $$('#place-racks input:checked').map((i) => i.value) : [loc.rack];
     // Side-slot devices take the free side slots from the one picked on, in this rack or the racks to spread over.
     const plan = (n) =>
       side
-        ? M.planSideSlots(project, type.id, racks, loc.at, n)
+        ? M.planSideSlots(project, type.id, racks, loc.at, n, loc.kind)
         : spread
           ? M.planSpread(project, type.id, racks, loc.at, n, dir, height)
           : M.planPositions(project, type.id, loc.rack, loc.at, n, dir, null, height).map((at) => ({ rack: loc.rack, at }));
@@ -3611,7 +3816,7 @@
       line.classList.add('bad');
       const these = spread ? 'these racks' : 'this rack';
       line.textContent = side
-        ? `Only ${plural(max, 'side slot')} ${max === 1 ? 'is' : 'are'} free in ${these}.`
+        ? `Only ${plural(max, slotNoun(loc))} ${max === 1 ? 'is' : 'are'} free in ${these}.`
         : `Only ${max} fit ${dir < 0 ? 'upward' : 'downward'} from U${loc.at} in ${these}.`;
     } else if (!place.positions.length) {
       place.valid = false;
@@ -3625,7 +3830,9 @@
         per.size > 1
           ? [...per].map(([r, n]) => `${shortRack(M.rackById(project, r).name)} ×${n}`).join(', ')
           : side
-            ? `Side slots ${place.positions.map((p) => `V${p.at + 1}`).join(', ')}`
+            ? loc.kind === 'pdu'
+              ? `PDU slots ${place.positions.map((p) => `P${p.at + 1}`).join(', ')}`
+              : `Side slots ${place.positions.map((p) => `V${p.at + 1}`).join(', ')}`
             : blocksText(place.positions[0].rack, place.positions.map((p) => p.at), M.heightOf(project, type.id, height));
       line.textContent = `${names[0]}${qty > 1 ? ` … ${names[qty - 1]}` : ''} · ${where}`;
     }
@@ -3742,7 +3949,10 @@
   }
 
   /** The names of the devices the place dialog adds, each with the code of its rack where the name holds one. */
-  const placeNames = () => M.namesAt(project, $('#place-name').value, place.loc.rack, place.positions.map((pos) => pos.rack));
+  const placeNames = () =>
+    place.loc.kind === 'pdu' && !place.nameTouched
+      ? place.positions.map((pos) => M.pduNameFor(project, place.typeId, pos.rack, pos.at))
+      : M.namesAt(project, $('#place-name').value, place.loc.rack, place.positions.map((pos) => pos.rack));
   /** Where the place dialog puts its devices: a loc for each of place.positions. */
   const placeLocs = () => place.positions.map((pos) => ({ rack: pos.rack, kind: place.loc.kind, at: pos.at }));
   /** "Rack A01 will be at 12.1 kW of 12.0 kW; …" for racks over a budget (`list` from M.overBudgetWith). */
@@ -3770,15 +3980,22 @@
   $('#place-rack').addEventListener('change', (e) => {
     const rackId = e.target.value;
     const near = place.loc.kind === 'u' ? place.loc.at : 1;
-    // The nearest free position there; in a full rack its top unit, which the preview says is taken.
-    setPlaceLoc(M.nearestLoc(project, place.typeId, rackId, near, null, place.loc.kind === 'side', placeHeight()) || { rack: rackId, kind: 'u', at: 1 });
+    // The nearest free position there; in a full rack its top unit (a PDU: its first slot), which the preview says is taken.
+    const full = place.loc.kind === 'pdu' ? { rack: rackId, kind: 'pdu', at: 0 } : { rack: rackId, kind: 'u', at: 1 };
+    setPlaceLoc(M.nearestLoc(project, place.typeId, rackId, near, null, place.loc.kind === 'side', placeHeight()) || full);
     suggestPlaceCluster();
+    suggestPlaceGrid();
     updatePlacePreview();
   });
   $('#place-pos').addEventListener('change', (e) => {
     setPlaceLoc(parseLocKey(place.loc.rack, e.target.value));
     suggestPlaceCluster();
+    suggestPlaceGrid();
     updatePlacePreview();
+  });
+  $('#place-grid').addEventListener('change', (e) => {
+    place.grid = e.target.value;
+    place.gridTouched = true;
   });
   $('#place-spread').addEventListener('change', updatePlacePreview);
   $('#place-racks').addEventListener('change', updatePlacePreview);
@@ -3838,11 +4055,13 @@
     if (taken.length && !(await confirmTaken(taken, count > 1 ? `Place ${count} anyway` : 'Place anyway'))) return;
     const height = placeHeight();
     const over = place.over;
+    const grids = M.isPduType(type) ? placeGrids() : null;
     const devices = placeLocs().map((loc, i) =>
       M.newDevice(
         Object.assign(
           { type: type.id, name: names[i], groups: Object.assign({}, groups), reversed: placeReversed(), loc },
-          type.variable ? { height } : {}
+          type.variable ? { height } : {},
+          grids ? { grid: grids[i] } : {}
         )
       )
     );
@@ -4242,9 +4461,12 @@
 
   function deviceTypeForm(t) {
     const b = (sub, text) => `<button type="button" id="cat-sub-${sub}" data-cat-sub="${sub}" aria-pressed="${cat.sub === sub}">${text}</button>`;
+    const pdu = M.isPduType(t);
+    if (cat.sub === 'outlets' && !pdu) cat.sub = 'general';
     return (
-      `<div class="seg cat-subs" role="group" aria-label="Part of the type">${b('general', 'General')}${b('ports', `Ports · ${M.expandPorts(t).length}`)}</div>` +
-      (cat.sub === 'ports' ? portsForm(t) : generalForm(t))
+      `<div class="seg cat-subs" role="group" aria-label="Part of the type">${b('general', 'General')}${b('ports', `Ports · ${M.expandPorts(t).length}`)}` +
+      `${pdu ? b('outlets', `Outlets · ${M.expandOutlets(t).length}`) : ''}</div>` +
+      (cat.sub === 'outlets' ? outletsForm(t) : cat.sub === 'ports' ? portsForm(t) : generalForm(t))
     );
   }
 
@@ -4252,18 +4474,32 @@
     const n = catalogUse('devices', t.id);
     const pv = R.renderPreview(t, ui.theme, '#2f6fdb', t.defaultName, measure);
     const faces = M.FACES.map((f) => `<option value="${f.id}"${f.id === t.face ? ' selected' : ''}>${esc(f.label)}</option>`).join('');
+    const pdu = M.isPduType(t);
+    const kinds = [
+      ['device', 'Rack device'],
+      ['pdu', 'Vertical PDU'],
+    ];
     return (
       `<div class="cat-preview">${previewSVG(pv)}</div>` +
       `<div class="field-grid cat-fields">` +
       `<div class="field span2"><label for="cat-label">Name</label><input id="cat-label" data-prop="label" type="text" value="${esc(t.label)}" maxlength="60" autocomplete="off"></div>` +
-      `<div class="field"><label for="cat-tag">Tag on the front</label><input id="cat-tag" data-prop="tag" type="text" value="${esc(t.tag)}" maxlength="12" autocomplete="off"></div>` +
-      `<div class="field"><label for="cat-height">Height (U)</label><input id="cat-height" data-prop="height" data-num type="number" min="1" max="${M.LIMITS.deviceHeight}" step="1" value="${t.height}"></div>` +
-      `<div class="field span2"><label for="cat-face">Drawing</label><select id="cat-face" data-prop="face">${faces}</select></div>` +
+      `<div class="field span2"><label for="cat-kind">Kind</label><select id="cat-kind">${options(kinds, pdu ? 'pdu' : 'device')}</select>` +
+      `<small class="field-hint">${pdu ? 'Hangs in a PDU slot at the rear of a rack, over its full length. Its outlets are on the Outlets tab.' : 'Goes in rack units or a side slot.'}</small></div>` +
+      `<div class="field${pdu ? ' span2' : ''}"><label for="cat-tag">Tag on the front</label><input id="cat-tag" data-prop="tag" type="text" value="${esc(t.tag)}" maxlength="12" autocomplete="off"></div>` +
+      (pdu
+        ? ''
+        : `<div class="field"><label for="cat-height">Height (U)</label><input id="cat-height" data-prop="height" data-num type="number" min="1" max="${M.LIMITS.deviceHeight}" step="1" value="${t.height}"></div>` +
+          `<div class="field span2"><label for="cat-face">Drawing</label><select id="cat-face" data-prop="face">${faces}</select></div>`) +
       `<div class="field span2"><label for="cat-spec">Description</label><input id="cat-spec" data-prop="spec" type="text" value="${esc(t.spec)}" maxlength="60" placeholder="48 × RJ45, 24 bays …" autocomplete="off"></div>` +
       `<div class="field span2"><label for="cat-default">First name</label><input id="cat-default" class="mono" data-prop="defaultName" type="text" value="${esc(t.defaultName)}" maxlength="${M.NAME_MAX}" autocomplete="off" spellcheck="false"></div>` +
       `<div class="field"><label for="cat-power">Power (W)</label><input id="cat-power" data-prop="powerW" data-num type="number" min="0" step="10" value="${t.powerW}"></div>` +
       `<div class="field"><label for="cat-weight">Weight (kg)</label><input id="cat-weight" data-prop="weightKg" data-num type="number" min="0" step="0.5" value="${t.weightKg}"></div>` +
       `</div>` +
+      (!pdu && t.face === 'pdu'
+        ? `<div class="cat-note cat-make">${icon('info', 'ic-sm')}<span>A PDU for a side slot. As a vertical PDU it has outlets, fuse groups and a power grid: its devices move from side slot V1 to PDU slot P1 and from V2 to P2 where free, and keep their names, clusters and cables.</span>` +
+          `<span class="cat-make-act"><select id="cat-make-pdu-tpl" aria-label="Outlets like">${options(M.TYPE_TEMPLATES.filter(M.isPduType).map((x, i) => [i, x.label]), 0)}</select>` +
+          `<button type="button" class="btn sm" id="cat-make-pdu">Make vertical PDU</button></span></div>`
+        : '') +
       catActions(project.deviceTypes, t, n)
     );
   }
@@ -4317,7 +4553,8 @@
       `<p class="sec-hint cat-slack-hint">Extra length a cable gets at a device of this type; a device can set its own.</p></div>` +
       (devs.size
         ? `<p class="cat-note">${icon('info', 'ic-sm')}<span>${plural(devs.size, 'device')} of this type ${devs.size === 1 ? 'has' : 'have'} ${plural(cabled, 'port')} cabled. A change that unplugs cables names them before it applies.</span></p>`
-        : '')
+        : '') +
+      (M.isPduType(t) ? '' : inletsSection(t))
     );
   }
 
@@ -4422,6 +4659,12 @@
   function rackTypeForm(t) {
     const n = catalogUse('racks', t.id);
     const maxSlots = M.maxSideSlots(t.units);
+    const pduTypes = project.deviceTypes.filter(M.isPduType);
+    const sides = (i) => [['', i < t.pduSlots.length ? 'Remove' : 'None'], ['left', 'Left'], ['right', 'Right']];
+    const pduSlotPicks = Array.from(
+      { length: Math.min(M.LIMITS.pduSlots, t.pduSlots.length + 1) },
+      (_, i) => `<label class="pdu-slot-pick"><span class="mono">P${i + 1}</span><select id="cat-pslot-${i}" data-pdu-slot="${i}" aria-label="Side of PDU slot P${i + 1}">${options(sides(i), t.pduSlots[i] || '')}</select></label>`
+    ).join('');
     return (
       `<div class="field-grid cat-fields">` +
       `<div class="field span2"><label for="cat-rname">Name</label><input id="cat-rname" data-prop="name" type="text" value="${esc(t.name)}" maxlength="60" autocomplete="off"></div>` +
@@ -4433,7 +4676,10 @@
       `<div class="field"><label for="cat-rdepth">Depth (mm)</label><input id="cat-rdepth" data-prop="depthMm" data-num type="number" min="600" max="1600" step="50" value="${t.depthMm}"></div>` +
       `<div class="field"><label for="cat-rtray">To cable tray (m)</label><input id="cat-rtray" data-prop="trayM" data-num type="number" min="0" max="10" step="0.1" inputmode="decimal" value="${t.trayM}"></div>` +
       `<div class="field"><label for="cat-rslack">Slack per cable (m)</label><input id="cat-rslack" data-prop="slackM" data-num type="number" min="0" max="10" step="0.05" inputmode="decimal" value="${t.slackM}"></div>` +
+      `<div class="field span2"><span class="label" id="cat-pslots-label">PDU slots</span><div class="pdu-slots" role="group" aria-labelledby="cat-pslots-label">${pduSlotPicks}</div></div>` +
+      `<div class="field span2"><label for="cat-rpdu">Default PDU type</label><select id="cat-rpdu" data-prop="defaultPdu" data-or-null${t.pduSlots.length && pduTypes.length ? '' : ' disabled'}>${options([['', 'None']].concat(pduTypes.map((x) => [x.id, x.label])), t.defaultPdu || '')}</select></div>` +
       `</div>` +
+      `<p class="sec-hint">A PDU slot holds a vertical PDU at the rear, left or right as seen from the front; of two slots on one side the first is the outer one. New racks of this type get a PDU of the default PDU type in each slot.</p>` +
       `<p class="sec-hint">Up to ${maxSlots} side slot${maxSlots === 1 ? '' : 's'} fit a ${t.units}U rack. A budget of 0 means none; racks over their budget are flagged in red. ` +
       `Cable lengths count the width and depth, the way from the top unit up to the cable tray, and the slack a cable gets at each end; racks can override the tray and the slack.</p>` +
       catActions(project.rackTypes, t, n, n || project.rackTypes.length <= 1 ? ` disabled title="${n ? 'Give its racks another type first' : 'A plan needs at least one rack type'}"` : '')
@@ -4587,6 +4833,481 @@
     );
   }
 
+  // Power: inlets, the outlets of a PDU type, cord types ---------------
+
+  /** Power connector choices for an inlet or an outlet, with `cur` kept when it is of the other kind. */
+  function powerConns(role, cur) {
+    const list = M.POWER_CONNECTORS.filter((c) => c.role === role || c.role === 'both').map((c) => [c.id, c.label]);
+    return options(!cur || list.some(([id]) => id === cur) ? list : list.concat([[cur, M.powerConnectorLabel(cur)]]), cur);
+  }
+
+  /** The table of the inlet groups of a device type (`kind` 'inlets') or the outlet groups of a PDU type ('outlets'): names as a pattern, connector, how many. */
+  function powerGroupTable(list, kind) {
+    const what = kind === 'inlets' ? 'inlet' : 'outlet';
+    const rows = list
+      .map((g, i) => {
+        const pattern = M.portPattern(g);
+        const id = (k) => `cat-${what}-${i}-${k}`;
+        return (
+          `<tr><td><input id="${id('names')}" class="mono" type="text" data-pw="${kind}" data-pw-i="${i}" data-pw-prop="names" value="${esc(pattern)}" maxlength="48" autocomplete="off" spellcheck="false" aria-label="Names of ${what} group ${i + 1}"></td>` +
+          `<td><select id="${id('connector')}" data-pw="${kind}" data-pw-i="${i}" data-pw-prop="connector" aria-label="Connector of ${esc(pattern)}">${powerConns(what, g.connector)}</select></td>` +
+          `<td class="pt-count mono">${M.groupNames(g).length}</td>` +
+          `<td><button type="button" class="btn icon sm subtle" id="${id('del')}" data-pw-del="${kind}:${i}" title="Remove these ${what}s" aria-label="Remove ${esc(pattern)}">${icon('trash')}</button></td></tr>`
+        );
+      })
+      .join('');
+    return (
+      `<div class="pt-wrap"><table class="pw-table" id="cat-${what}s"><thead><tr><th scope="col">Names</th><th scope="col">Connector</th>` +
+      `<th scope="col" class="pt-count">${kind === 'inlets' ? 'Inlets' : 'Outlets'}</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    );
+  }
+
+  /** The Inlets part of the Ports tab: the power inlets of a device type that is no PDU. */
+  function inletsSection(t) {
+    const full = t.inlets.length >= M.LIMITS.inletGroups;
+    const corded = M.cordsOf(project, idSet(project.devices.filter((d) => d.type === t.id))).length;
+    return (
+      `<h3 class="cat-h" id="cat-inlets-h">Inlets · ${M.expandInlets(t).length}</h3>` +
+      (t.inlets.length ? powerGroupTable(t.inlets, 'inlets') : `<p class="empty-note">No inlets: devices of this type take no power cords.</p>`) +
+      `<div class="cat-actions"><button type="button" class="btn sm" id="cat-inlet-add" data-pw-add="inlets"${full ? ` disabled title="A device type has at most ${M.LIMITS.inletGroups} inlet groups"` : ''}>${icon('plus', 'ic-sm')}Add inlets</button></div>` +
+      `<p class="sec-hint">Power inlets are named like ports: psu[1-2] is psu1 and psu2. A power cord runs from an inlet to an outlet of a PDU in the same rack; the device’s power divides equally over its inlets that have a cord.</p>` +
+      (corded ? `<p class="cat-note">${icon('info', 'ic-sm')}<span>${plural(corded, 'power cord')} ${corded === 1 ? 'is' : 'are'} plugged into devices of this type. A change that unplugs cords names them before it applies.</span></p>` : '')
+    );
+  }
+
+  /** Inlet or outlet groups `list` with group `i` changed: its names (a pattern) or connector. A message why when the names are no pattern. */
+  function editedPowerGroups(list, i, prop, value) {
+    const groups = M.clone(list);
+    const g = groups[i];
+    if (!g) return groups;
+    if (prop === 'names') {
+      const problem = M.portPatternProblem(value);
+      if (problem) return problem;
+      delete g.first;
+      delete g.count;
+      Object.assign(g, M.parsePortPattern(value));
+    } else g.connector = value;
+    return groups;
+  }
+
+  /** The power cords that changing device type `id` by `changes` would unplug. */
+  function cordsLostBy(id, changes) {
+    if (!(project.powerCords || []).length) return [];
+    const work = M.clone(project);
+    if (M.updateDeviceType(work, id, changes)) return [];
+    const kept = new Set(work.powerCords.map((c) => c.id));
+    return project.powerCords.filter((c) => !kept.has(c.id));
+  }
+
+  /**
+   * Changes the inlets or the `pdu` block of the selected device type
+   * (`changes` for M.updateDeviceType, or a message that refuses), like
+   * setTypePorts: what is not valid is refused with the reason, keeping
+   * `keep` in its field, and a change that unplugs power cords names them
+   * and asks first.
+   */
+  async function setTypePower(changes, keep, back) {
+    const id = cat.id;
+    const t = M.typeOf(project, id);
+    if (!t) return;
+    const focus = cat.focus;
+    const problem = typeof changes === 'string' ? changes : changes.inlets ? M.powerGroupsProblem(changes.inlets, 'inlet') : changes.pdu ? M.pduProblem(changes.pdu) : null;
+    if (problem) {
+      cat.error = problem;
+      cat.keep = keep || null;
+      return refreshCatalog();
+    }
+    cat.keep = null;
+    const lost = cordsLostBy(id, changes);
+    if (lost.length) {
+      const ok = await confirmDialog({
+        title: `Unplug ${plural(lost.length, 'power cord')}?`,
+        body: `This change takes away ${changes.inlets ? 'inlets' : 'outlets'} of ${t.label} that ${lost.length === 1 ? 'a power cord is' : 'power cords are'} plugged into: ${cordNames(lost)}. Undo plugs ${lost.length === 1 ? 'it' : 'them'} back in.`,
+        ok: lost.length === 1 ? 'Unplug the cord' : `Unplug ${lost.length} cords`,
+      });
+      cat.focus = ok ? focus : back || focus;
+      if (!ok) {
+        cat.error = '';
+        return renderCatalog();
+      }
+      openDialog($('#dlg-catalog'));
+    }
+    const err = commitOrError((p) => M.updateDeviceType(p, id, changes));
+    cat.error = err || '';
+    refreshCatalog();
+    if (lost.length && !err) toast(`Unplugged ${plural(lost.length, 'power cord')} from ${t.label}`, { action: 'Undo', onAction: undo });
+  }
+
+  /** Gives the selected type the inlet groups, or its PDU the outlet groups, `groups` (a message refuses). Fuse and meter groups follow the outlets that are renamed. */
+  function setPowerGroups(kind, groups, keep, back) {
+    const t = M.typeOf(project, cat.id);
+    if (!t || typeof groups === 'string') return setTypePower(groups, keep);
+    if (kind === 'inlets') return setTypePower({ inlets: groups }, keep, back);
+    const problem = M.powerGroupsProblem(groups, 'outlet');
+    if (problem) return setTypePower(problem, keep);
+    const moves = M.portMoves(t.pdu.outlets, groups, () => true);
+    const follow = (list) => list.map((g) => Object.assign({}, g, { outlets: g.outlets.map((n) => moves.get(n)).filter(Boolean) }));
+    return setTypePower({ pdu: M.cleanPdu(Object.assign({}, t.pdu, { outlets: groups, fuses: follow(t.pdu.fuses), meters: follow(t.pdu.meters) })) }, keep, back);
+  }
+
+  function powerGroupChange(input) {
+    const t = M.typeOf(project, cat.id);
+    if (!t) return;
+    const kind = input.dataset.pw;
+    const list = kind === 'inlets' ? t.inlets : t.pdu.outlets;
+    setPowerGroups(kind, editedPowerGroups(list, Number(input.dataset.pwI), input.dataset.pwProp, input.value), { id: input.id, value: input.value });
+  }
+
+  /** Adds an inlet (psu1, psu2 … C14) or an outlet (the next number, C13) and puts the cursor in its names. */
+  function addPowerGroup(kind) {
+    const t = M.typeOf(project, cat.id);
+    const inlets = kind === 'inlets';
+    const list = inlets ? t.inlets : t.pdu.outlets;
+    const names = new Set((inlets ? M.expandInlets(t) : M.expandOutlets(t)).map((x) => x.name));
+    let n = 1;
+    while (names.has(inlets ? `psu${n}` : String(n))) n++;
+    cat.focus = `cat-${inlets ? 'inlet' : 'outlet'}-${list.length}-names`;
+    setPowerGroups(kind, list.concat(inlets ? { name: `psu${n}`, connector: 'c14' } : { name: String(n), connector: 'c13' }));
+    const input = document.getElementById(cat.focus);
+    cat.focus = null;
+    if (input) input.select();
+  }
+
+  // The Outlets tab of a vertical PDU type.
+
+  const PDU_PHASES = [
+    [1, 'Single phase'],
+    [3, 'Three phases'],
+  ];
+
+  /**
+   * The outlets picked in the strip of PDU type `id`, for a fuse or meter
+   * group: `anchor` is where a drag or a Shift-click starts from, `base`
+   * what was picked before the drag, `to` the group chosen for them.
+   */
+  const pick = { id: null, names: new Set(), anchor: null, base: null, drag: false, moved: false, off: null, to: '' };
+  /** The outlets of PDU type `t` picked in its strip, in the order of the PDU; another type starts with none. */
+  function pickedOutlets(t) {
+    if (pick.id !== t.id) Object.assign(pick, { id: t.id, names: new Set(), anchor: null, base: null, drag: false, off: null, to: '' });
+    return M.expandOutlets(t).map((o) => o.name).filter((n) => pick.names.has(n));
+  }
+
+  /** The PDU of type `t` drawn as a strip: its outlets in their fuse groups, colored by phase. An outlet is a button that picks it; a drag across outlets picks them all. */
+  function pduStripHTML(t) {
+    const groups = M.outletGroups(t);
+    const all = M.expandOutlets(t);
+    const conn = new Map(all.map((o) => [o.name, o.connector]));
+    const index = new Map(all.map((o, i) => [o.name, i]));
+    const picked = new Set(pickedOutlets(t));
+    // One stop for Tab: the arrow keys go from outlet to outlet.
+    const stop = picked.has(pick.anchor) ? pick.anchor : t.pdu.fuses.length ? t.pdu.fuses[0].outlets[0] : null;
+    const outlet = (n) => {
+      const g = groups.get(n);
+      const tip = `Outlet ${n} · ${M.powerConnectorLabel(conn.get(n))}${g && g.meter ? ` · ${g.meter.name}` : ''}`;
+      return (
+        `<button type="button" class="po po-${esc(conn.get(n))}${picked.has(n) ? ' is-picked' : ''}" id="cat-out-${index.get(n)}" data-out="${esc(n)}" aria-pressed="${picked.has(n)}" ` +
+        `tabindex="${n === stop ? 0 : -1}" title="${esc(tip)}" aria-label="${esc(tip)}">${esc(n)}</button>`
+      );
+    };
+    return (
+      `<div class="pdu-strip" id="cat-strip" role="group" aria-label="${esc(`${t.label}: ${plural(conn.size, 'outlet')} in ${plural(t.pdu.fuses.length, 'fuse group')}. Pick outlets to put them into a group`)}">` +
+      t.pdu.fuses
+        .map(
+          (f) =>
+            `<div class="pdu-fg ph-${f.phase}"><span class="pdu-fg-name">${esc(f.name)} · ${f.ratingA} A${t.pdu.phases === 3 ? ` · ${f.phase}` : ''}</span>` +
+            `<span class="pdu-outs">${f.outlets.map(outlet).join('')}</span></div>`
+        )
+        .join('') +
+      `</div>` +
+      pickBarHTML(t)
+    );
+  }
+
+  /** Under the strip: how to pick outlets, or the outlets picked with the group to put them into. */
+  function pickBarHTML(t) {
+    const names = pickedOutlets(t);
+    if (!names.length) return `<p class="sec-hint pdu-pick" id="cat-pick">Drag across outlets in the strip to pick them for a group. A click picks one, Ctrl-click one more, Shift-click all up to it.</p>`;
+    const opts = (key, what, list) =>
+      `<optgroup label="${what} groups">${options([[`${key}:new`, `New ${what.toLowerCase()} group`]].concat(list.map((g, i) => [`${key}:${i}`, g.name])), pick.to)}</optgroup>`;
+    return (
+      `<div class="pdu-pick" id="cat-pick"><span id="cat-pick-text">${esc(`${plural(names.length, 'outlet')} picked: ${M.formatOutletList(names, M.expandOutlets(t).map((o) => o.name))}`)}</span>` +
+      `<label for="cat-pick-to">Put into</label>` +
+      `<select id="cat-pick-to">${opts('fuses', 'Fuse', t.pdu.fuses)}${t.pdu.metering === 'group' ? opts('meters', 'Meter', t.pdu.meters) : ''}</select>` +
+      `<button type="button" class="btn sm" id="cat-pick-apply">Group them</button>` +
+      `<button type="button" class="btn sm subtle" id="cat-pick-clear">Clear</button></div>`
+    );
+  }
+
+  /** Shows what is picked in the strip that is drawn, without drawing the form again. */
+  function paintPick() {
+    const t = M.typeOf(project, cat.id);
+    const bar = $('#cat-pick');
+    if (!t || !t.pdu || !bar) return;
+    const picked = new Set(pickedOutlets(t));
+    for (const b of $$('#cat-strip .po')) {
+      b.classList.toggle('is-picked', picked.has(b.dataset.out));
+      b.setAttribute('aria-pressed', String(picked.has(b.dataset.out)));
+    }
+    const to = $('#cat-pick-to');
+    if (to) pick.to = to.value;
+    bar.outerHTML = pickBarHTML(t);
+  }
+
+  /** Picks the outlets from the anchor to outlet `name`, on top of what was picked before the drag or the Shift-click. */
+  function pickTo(name) {
+    const t = M.typeOf(project, cat.id);
+    const all = M.expandOutlets(t).map((o) => o.name);
+    const a = all.indexOf(pick.anchor);
+    const b = all.indexOf(name);
+    if (a < 0 || b < 0) return;
+    pick.names = new Set([...(pick.base || [])].concat(all.slice(Math.min(a, b), Math.max(a, b) + 1)));
+    paintPick();
+  }
+
+  /** A press on outlet `name` of the strip: starts a drag from it. Ctrl adds to what is picked, Shift picks from the last outlet pressed. */
+  function pickStart(name, e) {
+    const t = M.typeOf(project, cat.id);
+    pickedOutlets(t);
+    const add = e.ctrlKey || e.metaKey;
+    const range = e.shiftKey && pick.names.has(pick.anchor);
+    // A press on a picked outlet lets go of it, unless a drag follows.
+    pick.off = !range && pick.names.has(name) && (add || pick.names.size === 1) ? name : null;
+    pick.base = add || range ? new Set(pick.names) : new Set();
+    if (!range) pick.anchor = name;
+    pick.drag = true;
+    pick.moved = false;
+    pickTo(name);
+  }
+
+  function pickEnd() {
+    if (!pick.drag) return;
+    pick.drag = false;
+    if (pick.off && !pick.moved) {
+      pick.names.delete(pick.off);
+      paintPick();
+    }
+    pick.off = null;
+  }
+
+  /** Enter or Space on outlet `name`: picks it or lets go of it; with Shift, picks all from the last one picked. */
+  function pickByKey(name, shift) {
+    const t = M.typeOf(project, cat.id);
+    pickedOutlets(t);
+    if (shift && pick.names.has(pick.anchor)) {
+      pick.base = new Set(pick.names);
+      return pickTo(name);
+    }
+    if (pick.names.has(name)) pick.names.delete(name);
+    else pick.names.add(name);
+    pick.anchor = name;
+    paintPick();
+  }
+
+  /** Puts the outlets picked into the fuse or meter group chosen under the strip: a new one, or one there is. */
+  function groupPicked() {
+    const t = M.typeOf(project, cat.id);
+    const names = pickedOutlets(t);
+    const [key, to] = $('#cat-pick-to').value.split(':');
+    const next = M.groupOutlets(t.pdu, key, names, to === 'new' ? null : Number(to));
+    if (typeof next === 'string') return setTypePower(next);
+    pick.names = new Set();
+    pick.to = '';
+    // The cursor goes to the outlets of the group in its table.
+    cat.focus = `cat-${key === 'fuses' ? 'fg' : 'mg'}-${next[key].findIndex((g) => g.outlets.includes(names[0]))}-outlets`;
+    setTypePower({ pdu: next });
+    cat.focus = null;
+  }
+
+  function outletsForm(t) {
+    const pdu = t.pdu;
+    const all = M.expandOutlets(t).map((o) => o.name);
+    const pf = M.powerSettings(project).powerFactor;
+    const cap = pdu.phases * pdu.voltageV * pdu.maxA * pf;
+    const phases = M.PHASES.slice(0, pdu.phases).map((p) => [p, p]);
+    const cell = (key, short, i, prop, attrs, value, label) =>
+      `<td><input id="cat-${short}-${i}-${prop}" data-grp="${key}" data-grp-i="${i}" data-grp-prop="${prop}" ${attrs} value="${esc(String(value))}" autocomplete="off" spellcheck="false" aria-label="${esc(label)}"></td>`;
+    const del = (key, short, i, list, name) =>
+      `<td><button type="button" class="btn icon sm subtle" id="cat-${short}-${i}-del" data-grp-del="${key}:${i}"${list.length > 1 ? '' : ' disabled'} title="Remove the group: its outlets join the one before it" aria-label="Remove ${esc(name)}">${icon('trash')}</button></td>`;
+    const fuseRows = pdu.fuses
+      .map(
+        (f, i) =>
+          `<tr class="ph-${f.phase}">` +
+          cell('fuses', 'fg', i, 'name', 'class="mono" type="text" maxlength="20"', f.name, `Name of fuse group ${i + 1}`) +
+          cell('fuses', 'fg', i, 'outlets', 'class="mono" type="text"', M.formatOutletList(f.outlets, all), `Outlets of ${f.name}`) +
+          cell('fuses', 'fg', i, 'ratingA', 'type="number" min="0.5" max="1000" step="1" inputmode="decimal"', f.ratingA, `Rating of ${f.name} in amperes`) +
+          `<td><select id="cat-fg-${i}-phase" data-grp="fuses" data-grp-i="${i}" data-grp-prop="phase" aria-label="Phase of ${esc(f.name)}"${pdu.phases === 1 ? ' disabled' : ''}>${options(phases, f.phase)}</select></td>` +
+          del('fuses', 'fg', i, pdu.fuses, f.name) +
+          `</tr>`
+      )
+      .join('');
+    const meterRows = pdu.meters
+      .map(
+        (m, i) =>
+          `<tr>` +
+          cell('meters', 'mg', i, 'name', 'class="mono" type="text" maxlength="20"', m.name, `Name of meter group ${i + 1}`) +
+          cell('meters', 'mg', i, 'outlets', 'class="mono" type="text"', M.formatOutletList(m.outlets, all), `Outlets of ${m.name}`) +
+          del('meters', 'mg', i, pdu.meters, m.name) +
+          `</tr>`
+      )
+      .join('');
+    const add = (key, id, text, list, max) =>
+      `<button type="button" class="btn sm" id="${id}" data-grp-add="${key}"${list.length >= max ? ` disabled title="A PDU type has at most ${max} of these groups"` : ''}>${icon('plus', 'ic-sm')}${text}</button>`;
+    const devs = idSet(project.devices.filter((d) => d.type === t.id));
+    const corded = M.cordsOf(project, devs).length;
+    return (
+      pduStripHTML(t) +
+      `<div class="field-grid cat-fields">` +
+      `<div class="field"><label for="cat-pdu-phases">Phases</label><select id="cat-pdu-phases" data-pdu-prop="phases">${options(PDU_PHASES, pdu.phases)}</select></div>` +
+      `<div class="field"><label for="cat-pdu-volts">Volts per phase</label><input id="cat-pdu-volts" data-pdu-prop="voltageV" type="number" min="1" max="1000" step="1" inputmode="decimal" value="${pdu.voltageV}"></div>` +
+      `<div class="field"><label for="cat-pdu-max">Max. per phase (A)</label><input id="cat-pdu-max" data-pdu-prop="maxA" type="number" min="1" max="1000" step="1" inputmode="decimal" value="${pdu.maxA}"></div>` +
+      `<div class="field"><label for="cat-pdu-span">Length (U)</label><input id="cat-pdu-span" data-pdu-prop="spanU" type="number" min="1" max="${M.LIMITS.unitsMax}" step="1" inputmode="numeric" value="${pdu.spanU}"></div>` +
+      `</div>` +
+      `<p class="sec-hint" id="cat-pdu-cap">${esc(`Capacity: ${pdu.phases} × ${pdu.voltageV} V × ${pdu.maxA} A${pf === 1 ? '' : ` × ${pf}`} = ${P.fmtKw(cap)}`)}</p>` +
+      `<h3 class="cat-h">Outlets · ${all.length}</h3>` +
+      powerGroupTable(pdu.outlets, 'outlets') +
+      `<div class="cat-actions"><button type="button" class="btn sm" id="cat-outlet-add" data-pw-add="outlets"${pdu.outlets.length >= M.LIMITS.outletGroups ? ' disabled' : ''}>${icon('plus', 'ic-sm')}Add outlets</button></div>` +
+      `<p class="form-error" id="cat-error" role="alert" hidden></p>` +
+      `<h3 class="cat-h">Fuse groups · ${pdu.fuses.length}</h3>` +
+      `<div class="pt-wrap"><table class="pw-table pw-groups" id="cat-fuses"><thead><tr><th scope="col">Name</th><th scope="col">Outlets</th><th scope="col">Rating (A)</th><th scope="col">Phase</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody>${fuseRows}</tbody></table></div>` +
+      `<div class="cat-actions">${add('fuses', 'cat-fg-add', 'Add fuse group', pdu.fuses, M.LIMITS.fuseGroups)}</div>` +
+      `<h3 class="cat-h">Metering</h3>` +
+      `<div class="field-grid cat-fields"><div class="field span2"><label for="cat-pdu-metering">The PDU measures</label><select id="cat-pdu-metering" data-pdu-prop="metering">${options(M.METERING.map((m) => [m.id, m.label]), pdu.metering)}</select></div></div>` +
+      (pdu.metering === 'group'
+        ? `<div class="pt-wrap"><table class="pw-table pw-groups" id="cat-meters"><thead><tr><th scope="col">Name</th><th scope="col">Outlets</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody>${meterRows}</tbody></table></div>` +
+          `<div class="cat-actions">${add('meters', 'cat-mg-add', 'Add meter group', pdu.meters, M.LIMITS.meterGroups)}` +
+          `<button type="button" class="btn sm subtle" id="cat-mg-same">Same as the fuse groups</button></div>`
+        : '') +
+      `<p class="sec-hint">Pick outlets in the strip, or type the outlets of a group as a list: 1-5, 21. Outlets put into a group leave the group they were in, and outlets left without a group get one of their own, so every outlet is in exactly one fuse group${pdu.metering === 'group' ? ' and one meter group' : ''}.</p>` +
+      (corded ? `<p class="cat-note">${icon('info', 'ic-sm')}<span>${plural(devs.size, 'PDU')} of this type ${devs.size === 1 ? 'has' : 'have'} ${plural(corded, 'power cord')} plugged in. A change that unplugs cords names them before it applies.</span></p>` : '')
+    );
+  }
+
+  /** A fuse or meter group of the selected PDU type changed: its name, its outlets (a typed list), its rating or phase. */
+  function pduGroupChange(input) {
+    const t = M.typeOf(project, cat.id);
+    if (!t || !t.pdu) return;
+    const key = input.dataset.grp;
+    const prop = input.dataset.grpProp;
+    const pdu = M.clone(t.pdu);
+    const g = pdu[key][Number(input.dataset.grpI)];
+    if (!g) return;
+    const keep = { id: input.id, value: input.value };
+    if (prop === 'outlets') {
+      const parsed = M.parseOutletList(input.value, M.expandOutlets(t).map((o) => o.name));
+      if (parsed.error) return setTypePower(parsed.error, keep);
+      if (!parsed.names.length) return setTypePower(`${g.name} needs an outlet. Remove the group to give its outlets to the one before it.`, keep);
+      const mine = new Set(parsed.names);
+      for (const x of pdu[key]) x.outlets = x === g ? parsed.names : x.outlets.filter((n) => !mine.has(n));
+    } else if (prop === 'name') {
+      g.name = input.value.trim();
+      const problem = M.pduProblem(pdu);
+      if (problem) return setTypePower(problem, keep);
+    } else if (prop === 'ratingA') g.ratingA = Number(input.value);
+    else g.phase = input.value;
+    setTypePower({ pdu: M.cleanPdu(pdu) }, keep);
+  }
+
+  /** Adds a fuse or meter group: the larger half of the largest group stays, the rest is the new group. */
+  function addPduGroup(key) {
+    const t = M.typeOf(project, cat.id);
+    const pdu = M.clone(t.pdu);
+    const list = pdu[key];
+    const big = list.reduce((a, b) => (b.outlets.length > a.outlets.length ? b : a), list[0]);
+    if (!big || big.outlets.length < 2) return setTypePower('Every outlet has a group of its own already.');
+    const half = Math.ceil(big.outlets.length / 2);
+    const prefix = key === 'fuses' ? 'CB' : 'M';
+    const names = new Set(list.map((g) => g.name.toLowerCase()));
+    let n = list.length + 1;
+    while (names.has(`${prefix}${n}`.toLowerCase())) n++;
+    list.push(Object.assign({}, big, { name: `${prefix}${n}`, outlets: big.outlets.slice(half) }));
+    big.outlets = big.outlets.slice(0, half);
+    cat.focus = `cat-${key === 'fuses' ? 'fg' : 'mg'}-${list.length - 1}-outlets`;
+    setTypePower({ pdu: M.cleanPdu(pdu) });
+    cat.focus = null;
+  }
+
+  /** Removes fuse or meter group `i`: its outlets join the group before it (the first: the next). */
+  function removePduGroup(key, i) {
+    const t = M.typeOf(project, cat.id);
+    const pdu = M.clone(t.pdu);
+    const list = pdu[key];
+    if (list.length < 2 || !list[i]) return;
+    const [gone] = list.splice(i, 1);
+    const to = list[Math.max(0, i - 1)];
+    to.outlets = to.outlets.concat(gone.outlets);
+    cat.focus = `cat-${key === 'fuses' ? 'fg' : 'mg'}-${Math.max(0, i - 1)}-outlets`;
+    setTypePower({ pdu: M.cleanPdu(pdu) });
+    cat.focus = null;
+  }
+
+  /**
+   * Phases, volts, amperes, length or metering of the selected PDU type
+   * changed. A number field left empty keeps its value: as 0 it would
+   * become the least there is, a PDU of 1 V.
+   */
+  function pduPropChange(input) {
+    const t = M.typeOf(project, cat.id);
+    if (!t || !t.pdu) return;
+    const prop = input.dataset.pduProp;
+    if (prop !== 'metering' && input.value.trim() === '') return refreshCatalog();
+    setTypePower({ pdu: M.cleanPdu(Object.assign({}, t.pdu, { [prop]: prop === 'metering' ? input.value : Number(input.value) })) });
+  }
+
+  /** The kind of the selected device type changed: a vertical PDU gets the outlets of the first PDU template. */
+  function kindChange(select) {
+    const tpl = M.TYPE_TEMPLATES.find(M.isPduType);
+    setTypePower({ pdu: select.value === 'pdu' ? M.clone(tpl.pdu) : null });
+  }
+
+  /** Makes the selected 1U PDU type a vertical PDU with the outlets of template `k` of the PDU templates, and moves its devices into PDU slots. */
+  function makeVerticalPdu(k) {
+    const t = M.typeOf(project, cat.id);
+    const tpl = M.TYPE_TEMPLATES.filter(M.isPduType)[k];
+    if (!t || !tpl) return;
+    const n = project.devices.filter((d) => d.type === t.id).length;
+    const err = commitOrError((p) => M.makeVerticalPdu(p, t.id, M.clone(tpl.pdu)), `Made ${t.label} a vertical PDU`);
+    cat.error = err || '';
+    if (!err) cat.sub = 'outlets';
+    renderCatalog();
+    if (!err) toast(`${t.label} is a vertical PDU${n ? `: ${plural(n, 'device')} moved into PDU slots` : ''}`, { action: 'Undo', onAction: undo });
+  }
+
+  /** A PDU slot of the selected rack type changed side, was added (the last select) or removed. */
+  function pduSlotChange(select) {
+    const t = M.rackTypeById(project, cat.id);
+    if (!t) return;
+    const slots = t.pduSlots.slice();
+    const i = Number(select.dataset.pduSlot);
+    if (select.value) slots[i] = select.value;
+    else slots.splice(i, 1);
+    const id = cat.id;
+    const err = commitOrError((p) => M.updateRackType(p, id, { pduSlots: slots }));
+    cat.error = err || '';
+    refreshCatalog();
+  }
+
+  // Cord types.
+
+  const cordSub = (t) => `${M.powerConnectorLabel(t.inlet)} to ${M.powerConnectorLabel(t.outlet)} · ${t.maxA} A${t.lengthsM.length ? ` · ${t.lengthsM[0]}–${t.lengthsM[t.lengthsM.length - 1]} m` : ' · made to length'}`;
+  const cordArt = () =>
+    svgArt(64, 24, `<path d="M10 12 H54" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><rect x="3" y="7" width="9" height="10" rx="2" fill="currentColor"/><rect x="52" y="7" width="9" height="10" rx="2" fill="currentColor"/>`);
+
+  function cordTypeForm(t) {
+    const n = catalogUse('cords', t.id);
+    return (
+      `<div class="field-grid cat-fields">` +
+      `<div class="field span2"><label for="cat-p-name">Name</label><input id="cat-p-name" data-prop="name" type="text" value="${esc(t.name)}" maxlength="60" autocomplete="off"></div>` +
+      `<div class="field"><label for="cat-p-outlet">Plugs into the outlet</label><select id="cat-p-outlet" data-prop="outlet">${powerConns('outlet', t.outlet)}</select></div>` +
+      `<div class="field"><label for="cat-p-inlet">Plugs into the inlet</label><select id="cat-p-inlet" data-prop="inlet">${powerConns('inlet', t.inlet)}</select></div>` +
+      `<div class="field"><label for="cat-p-max">Rated (A)</label><input id="cat-p-max" data-prop="maxA" data-num data-or-old type="number" min="0.5" max="1000" step="1" inputmode="decimal" value="${t.maxA}"></div>` +
+      `<div class="field span2"><label for="cat-p-lengths">Stock lengths (m)</label>` +
+      `<input id="cat-p-lengths" class="mono" data-prop="lengthsM" data-list type="text" value="${esc(t.lengthsM.join(', '))}" placeholder="0.6, 1, 1.5, 2, 3" autocomplete="off" spellcheck="false"></div>` +
+      `</div>` +
+      `<p class="sec-hint">A power cord joins an outlet of a PDU to an inlet of a device. Cords set to Auto take the first type in this order whose plugs fit both, with a stock length that reaches; without stock lengths a type is made to length.</p>` +
+      catActions(project.cordTypes, t, n)
+    );
+  }
+
   // Tabs --------------------------------------------------------------
 
   async function deleteDeviceType(id) {
@@ -4594,9 +5315,10 @@
     const devs = project.devices.filter((d) => d.type === id);
     if (devs.length) {
       const cables = cablesGoingWith(idSet(devs));
+      const cords = cordsGoingWith(idSet(devs));
       const ok = await confirmDialog({
         title: `Delete ${t.label}?`,
-        body: `${plural(devs.length, 'device')} of this type${andCables(cables)} ${devs.length === 1 && !cables ? 'is' : 'are'} deleted with it. Undo brings everything back.`,
+        body: `${plural(devs.length, 'device')} of this type${andCables(cables, cords)} ${devs.length === 1 && !cables && !cords ? 'is' : 'are'} deleted with it. Undo brings everything back.`,
         ok: 'Delete type and devices',
       });
       if (!ok) return false;
@@ -4706,13 +5428,34 @@
       del: (id) => deleteOrRefuse(C.deleteTransceiver, id, `the transceiver ${M.transceiverById(project, id).name}`),
       empty: 'No transceivers: fiber cables can’t plug into cages. Add one with “New type”.',
     },
+    cords: {
+      noun: 'cord type',
+      list: () => project.cordTypes,
+      byId: M.cordTypeById,
+      name: (t) => t.name,
+      sub: cordSub,
+      art: cordArt,
+      // Only the cords that name the type: cords set to Auto pick theirs by this list.
+      use: (id) => P.cordTypeUse(project, id),
+      useText: (n) => (n ? `${plural(n, 'power cord')} ${n === 1 ? 'names' : 'name'} this type` : 'No power cord names this type'),
+      form: cordTypeForm,
+      update: P.updateCordType,
+      move: P.moveCordType,
+      templates: () => M.DEFAULT_CORD_TYPES.map((t, i) => [i, t.name, cordSub(t)]),
+      add: (p, tpl) => P.addCordType(p, tpl === 'copy' ? M.cordTypeById(p, cat.id) : M.DEFAULT_CORD_TYPES[Number(tpl)]),
+      del: (id) => deleteOrRefuse(P.deleteCordType, id, `the cord type ${M.cordTypeById(project, id).name}`),
+      empty: 'No cord types: power cords can’t pick a type or be ordered. Add one with “New type”.',
+    },
   };
 
   function catalogChange(input) {
     const prop = input.dataset.prop;
     let value = input.value;
+    // A number that has to be there keeps its value when its field is left empty: as 0 it would become the least there is.
+    if (input.dataset.orOld !== undefined && value.trim() === '') return refreshCatalog();
     if (input.dataset.num !== undefined) value = Number(value);
     if (input.dataset.kw !== undefined) value = Number(value) * 1000;
+    if (input.dataset.orNull !== undefined && value === '') value = null;
     if (input.dataset.list !== undefined) {
       value = parseLengths(input.value);
       if (typeof value === 'string') {
@@ -4733,6 +5476,13 @@
     const t = e.target;
     if (!t.dataset) return;
     if (t.dataset.pgProp) portChange(t);
+    else if (t.dataset.pw) powerGroupChange(t);
+    else if (t.dataset.grp) pduGroupChange(t);
+    else if (t.dataset.pduProp) pduPropChange(t);
+    else if (t.dataset.pduSlot !== undefined) pduSlotChange(t);
+    else if (t.id === 'cat-kind') kindChange(t);
+    else if (t.id === 'cat-make-pdu-tpl') return;
+    else if (t.id === 'cat-pick-to') pick.to = t.value;
     else if (t.id === 'cat-c-made') madeToLength(t.checked);
     else if (t.dataset.prop) catalogChange(t);
   });
@@ -4750,6 +5500,40 @@
       return $(`#cat-sub-${cat.sub}`).focus();
     }
     if (e.target.closest('#cat-pg-add')) return addPortGroup();
+    const pwAdd = e.target.closest('[data-pw-add]');
+    if (pwAdd) return addPowerGroup(pwAdd.dataset.pwAdd);
+    const pwDel = e.target.closest('[data-pw-del]');
+    if (pwDel) {
+      const [kind, k] = pwDel.dataset.pwDel.split(':');
+      const type = M.typeOf(project, cat.id);
+      const list = kind === 'inlets' ? type.inlets : type.pdu.outlets;
+      cat.focus = kind === 'inlets' ? 'cat-inlet-add' : 'cat-outlet-add';
+      setPowerGroups(kind, list.filter((g, i) => i !== Number(k)), null, pwDel.id);
+      cat.focus = null;
+      return;
+    }
+    const out = e.target.closest('.po[data-out]');
+    // A press of the pointer has picked already; Enter and Space come as a click without one.
+    if (out) return e.detail === 0 ? pickByKey(out.dataset.out, e.shiftKey) : undefined;
+    if (e.target.closest('#cat-pick-apply')) return groupPicked();
+    if (e.target.closest('#cat-pick-clear')) {
+      pick.names = new Set();
+      paintPick();
+      const first = $('#cat-strip .po[tabindex="0"]');
+      return first ? first.focus() : undefined;
+    }
+    const grpAdd = e.target.closest('[data-grp-add]');
+    if (grpAdd) return addPduGroup(grpAdd.dataset.grpAdd);
+    const grpDel = e.target.closest('[data-grp-del]');
+    if (grpDel) {
+      const [key, k] = grpDel.dataset.grpDel.split(':');
+      return removePduGroup(key, Number(k));
+    }
+    if (e.target.closest('#cat-mg-same')) {
+      const type = M.typeOf(project, cat.id);
+      return setTypePower({ pdu: M.cleanPdu(Object.assign({}, type.pdu, { meters: type.pdu.fuses.map((f, i) => ({ name: `M${i + 1}`, outlets: f.outlets.slice() })) })) });
+    }
+    if (e.target.closest('#cat-make-pdu')) return makeVerticalPdu(Number($('#cat-make-pdu-tpl').value));
     const del = e.target.closest('[data-pg-del]');
     if (del) {
       // Focus moves to the remove button of the row that takes its place, or
@@ -4778,13 +5562,42 @@
   });
   // In the port table Enter moves on like Tab. Both commit the field
   // before moving, so that the redraw this causes knows where focus goes.
+  // The strip of a PDU type: a press on an outlet picks it, a drag across outlets picks all between.
+  $('#cat-form').addEventListener('pointerdown', (e) => {
+    const out = e.target.closest('.po[data-out]');
+    if (!out || e.button !== 0) return;
+    // The pointer stays free, so that the outlets it crosses are found.
+    if (out.hasPointerCapture && out.hasPointerCapture(e.pointerId)) out.releasePointerCapture(e.pointerId);
+    pickStart(out.dataset.out, e);
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!pick.drag) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const out = el && el.closest ? el.closest('#cat-strip .po[data-out]') : null;
+    if (!out || (out.dataset.out === pick.anchor && !pick.moved)) return;
+    pick.moved = true;
+    pickTo(out.dataset.out);
+  });
+  document.addEventListener('pointerup', pickEnd);
+  document.addEventListener('pointercancel', pickEnd);
+  $('#cat-form').addEventListener('keydown', (e) => {
+    const out = e.target.closest('.po[data-out]');
+    if (!out || e.altKey || e.ctrlKey || e.metaKey) return;
+    const list = $$('#cat-strip .po');
+    const k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    const next = e.key === 'Home' ? list[0] : e.key === 'End' ? list[list.length - 1] : k ? list[list.indexOf(out) + k] : null;
+    if (!next) return;
+    e.preventDefault();
+    for (const b of list) b.tabIndex = b === next ? 0 : -1;
+    next.focus();
+  });
   $('#cat-form').addEventListener('keydown', (e) => {
     const menu = e.target.closest('#cat-pg-menu');
     if (menu) return menuKeydown(e, menu, $('#cat-pg-copy'));
-    const field = e.target.closest('.pt-table input, .pt-table select, .pt-table button');
+    const field = e.target.closest('.pt-table input, .pt-table select, .pt-table button, .pw-table input, .pw-table select, .pw-table button');
     if (!field || (e.key !== 'Enter' && e.key !== 'Tab') || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key === 'Enter' && field.tagName !== 'INPUT') return;
-    const fields = $$('.pt-table input, .pt-table select, .pt-table button', $('#cat-form'));
+    const fields = $$('.pt-table input, .pt-table select, .pt-table button, .pw-table input, .pw-table select, .pw-table button', $('#cat-form'));
     const next = fields[fields.indexOf(field) + (e.shiftKey ? -1 : 1)];
     if (!next && e.key === 'Tab') return;
     e.preventDefault();

@@ -28,7 +28,9 @@
   const HEADER = 50;
   const PLINTH = 12;
   const EAR = 9;
-  const RACK_W = FRAME + RAIL + BAY_W + RAIL + SIDE_W + FRAME;
+  // A channel down each side of the rack for the vertical PDUs in its PDU slots.
+  const PDU_W = 18;
+  const RACK_W = FRAME + PDU_W + RAIL + BAY_W + RAIL + SIDE_W + PDU_W + FRAME;
   const ADD_W = 120;
   const SLOT_W = U;
   const SLOT_H = BAY_W;
@@ -55,10 +57,13 @@
         rack,
         i,
         x,
-        bayX: x + FRAME + RAIL,
-        sideX: x + FRAME + RAIL + BAY_W + RAIL,
+        bayX: x + FRAME + PDU_W + RAIL,
+        sideX: x + FRAME + PDU_W + RAIL + BAY_W + RAIL,
+        pduLX: x + FRAME,
+        pduRX: x + FRAME + PDU_W + RAIL + BAY_W + RAIL + SIDE_W,
         units: t.units,
         slots: t.sideSlots,
+        pduSlots: t.pduSlots || [],
         uTop,
         uh: t.units * U,
         rackTop: uTop - FRAME,
@@ -87,7 +92,26 @@
     return { x: r.sideX + (SIDE_W - SLOT_W) / 2 - 2, y: r.uTop + gap + k * (SLOT_H + gap), w: SLOT_W, h: SLOT_H };
   }
 
-  function rectIn(r, loc, h) {
+  /**
+   * PDU slot `at` of a rack in its channel: the slots of one side stand
+   * side by side, the first listed nearest the frame. With `span`, the
+   * strip of a PDU that long (in units), centered on the rack's height;
+   * without, the whole slot.
+   */
+  function pduRect(r, at, span) {
+    const sides = r.pduSlots || [];
+    const side = sides[at] === 'right' ? 'right' : 'left';
+    const same = sides.map((s, i) => i).filter((i) => (sides[i] === 'right') === (side === 'right'));
+    const n = Math.max(1, same.length);
+    const k = Math.max(0, same.indexOf(at));
+    const w = n === 1 ? 10 : (PDU_W - 3 - (n - 1)) / n;
+    const off = (n === 1 ? (PDU_W - w) / 2 : 1.5) + k * (w + 1);
+    const u = Math.max(1, Math.min(r.units, span || r.units));
+    return { x: side === 'right' ? r.pduRX + PDU_W - off - w : r.pduLX + off, y: r.uTop + ((r.units - u) / 2) * U, w, h: u * U, rotated: false };
+  }
+
+  function rectIn(r, loc, h, span) {
+    if (loc.kind === 'pdu') return pduRect(r, loc.at, span);
     if (loc.kind === 'side') return Object.assign(slotRect(r, loc.at), { rotated: true });
     return { x: r.bayX, y: r.uTop + (loc.at - 1) * U, w: BAY_W, h: h * U, rotated: false };
   }
@@ -97,7 +121,12 @@
     const pos = M.locateRack(project, loc.rack);
     if (!pos) return null;
     const lay = layout && layout.row.id === pos.row.id ? layout : rowLayout(project, pos.row.id);
-    return rectIn(lay.racks[pos.index], loc, M.heightOf(project, typeId, height));
+    return rectIn(lay.racks[pos.index], loc, M.heightOf(project, typeId, height), pduSpan(project, typeId));
+  }
+  /** The length in units of a vertical PDU type; undefined for other types. */
+  function pduSpan(project, typeId) {
+    const type = M.typeOf(project, typeId);
+    return type && type.pdu ? type.pdu.spanU : undefined;
   }
 
   // ---------------------------------------------------------------- fonts
@@ -838,7 +867,9 @@
     const x = r.x;
     const y = r.headTop;
     const rack = r.rack;
-    const statText = `${st.used + st.reserved}/${st.units} U · ${st.powerBudgetW ? `${kw(st.powerW)}/${kw(st.powerBudgetW)} kW` : formatPower(st.powerW)}`;
+    // A rack with PDUs says how many of its PDU slots are filled.
+    const pduText = st.pduUsed ? ` · PDU ${st.pduUsed}/${st.pduSlots}` : '';
+    const statText = `${st.used + st.reserved}/${st.units} U · ${st.powerBudgetW ? `${kw(st.powerW)}/${kw(st.powerBudgetW)} kW` : formatPower(st.powerW)}${pduText}`;
     const warn = st.overPower || st.overWeight;
     const statW = measure(statText + (warn ? ' !' : ''), FONTS.stat.css);
     const name = fitText(rack.name, FONTS.tape, Math.max(60, RACK_W - statW - 36), measure);
@@ -869,7 +900,7 @@
     if (o.interactive) {
       const lines = [
         `${rack.name} (${o.rackTypeName || `${st.units}U`})`,
-        `${st.used} U used, ${st.reserved} U reserved, ${st.free} U free, side slots ${st.sideUsed}/${st.sideSlots}`,
+        `${st.used} U used, ${st.reserved} U reserved, ${st.free} U free, side slots ${st.sideUsed}/${st.sideSlots}${st.pduSlots ? `, PDU slots ${st.pduUsed}/${st.pduSlots}` : ''}`,
         `Power ${formatPower(st.powerW)}${st.powerBudgetW ? ` of ${formatPower(st.powerBudgetW)}` : ''}${st.overPower ? ' (over budget)' : ''}`,
         `Weight ${Math.round(st.weightKg)} kg${st.weightBudgetKg ? ` of ${st.weightBudgetKg} kg` : ''}${st.overWeight ? ' (over the limit)' : ''}`,
       ];
@@ -881,7 +912,7 @@
   function rackBody(r, T, lay) {
     const x = r.x;
     const bx = r.bayX;
-    const lx = x + FRAME;
+    const lx = bx - RAIL;
     const rx = bx + BAY_W;
     const sx = r.sideX;
     const uTop = r.uTop;
@@ -925,7 +956,46 @@
       const cy = r1(sr.y + SLOT_H / 2);
       s += text(cx, cy, `SIDE V${k + 1} · 1U`, FONTS.rail, T.ink3, ` transform="rotate(-90 ${cx} ${cy})" text-anchor="middle" letter-spacing="1"`);
     }
+    // The PDU channels down both sides, with the PDU slots the rack type lists.
+    s += `<rect x="${r.pduLX}" y="${uTop}" width="${PDU_W}" height="${r.uh}" fill="${T.channel}"/><rect x="${r.pduRX}" y="${uTop}" width="${PDU_W}" height="${r.uh}" fill="${T.channel}"/>`;
+    r.pduSlots.forEach((side, at) => {
+      const pr = pduRect(r, at);
+      s += `<rect class="pdu-slot" data-pdu-slot="${at}" x="${r1(pr.x + 0.5)}" y="${r1(pr.y + 3.5)}" width="${r1(pr.w - 1)}" height="${r1(pr.h - 7)}" rx="1.5" fill="${T.channelSlot}" stroke="${T.slotDash}" stroke-dasharray="3 2.5"/>`;
+      if (pr.w >= 9) s += text(pr.x + pr.w / 2, pr.y + 14, `P${at + 1}`, FONTS.cap, T.ink3, ' text-anchor="middle"');
+    });
     return s;
+  }
+
+  /**
+   * A vertical PDU in its slot: a dashed strip (it hangs at the rear of
+   * the rack) in the color of its grid, gray without one, with its name
+   * along it.
+   */
+  function pduNode(project, d, r, T, o, measure) {
+    const type = M.typeOf(project, d.type);
+    const rect = pduRect(r, d.loc.at, type.pdu.spanU);
+    const grid = M.gridOf(project, d);
+    const color = grid ? grid.color : T.ink3;
+    const dim = o.highlight && !o.highlight(d);
+    const cls = ['dev', 'is-pdu'];
+    if (o.dragging && o.dragging.has(d.id)) cls.push('is-dragging');
+    if (o.selected && o.selected.has(d.id)) cls.push('is-selected');
+    let s = `<g class="${cls.join(' ')}" data-id="${esc(d.id)}" transform="${placeTransform(rect)}"${dim ? ' opacity="0.2"' : ''}`;
+    if (o.interactive) {
+      const where = M.formatDeviceLoc(project, d);
+      const feed = grid ? grid.name : 'no grid';
+      s += ` tabindex="0" role="button" aria-pressed="${!!(o.selected && o.selected.has(d.id))}" aria-label="${esc(`${d.name}, ${type.label}, ${where}, ${feed}`)}">`;
+      s += `<title>${esc([d.name, `${type.label} (vertical PDU)`, where, grid ? `Grid: ${grid.name}` : 'No grid'].join('\n'))}</title>`;
+    } else s += '>';
+    s += `<rect x="0.6" y="0.6" width="${r1(rect.w - 1.2)}" height="${r1(rect.h - 1.2)}" rx="2" fill="${mix(color, T.paper, 0.78)}" stroke="${color}" stroke-width="1.2" stroke-dasharray="4 2.5"/>`;
+    if (rect.w >= 6.5) {
+      const font = rect.w >= 9 ? FONTS.rail : FONTS.cap;
+      const cx = r1(rect.w / 2 + font.size * 0.33);
+      const cy = r1(rect.h / 2);
+      s += text(cx, cy, fitText(d.name, font, rect.h - 12, measure), font, T.ink, ` transform="rotate(-90 ${cx} ${cy})" text-anchor="middle"`);
+    }
+    if (o.interactive) s += `<rect class="dev-hl" x="-1.5" y="-1.5" width="${r1(rect.w + 3)}" height="${r1(rect.h + 3)}" rx="3" fill="none" stroke="${T.ink}" stroke-width="1.5"/>`;
+    return s + '</g>';
   }
 
   /** A cluster's number in its view, from 1, as its devices and the legend show it; '' for none. */
@@ -935,6 +1005,7 @@
 
   function deviceNode(project, d, r, T, theme, o, measure) {
     const type = M.typeOf(project, d.type);
+    if (d.loc.kind === 'pdu') return pduNode(project, d, r, T, o, measure);
     const cluster = M.clusterOf(project, d, o.view);
     const sc = schemeFor(cluster ? cluster.color : null, theme);
     const hU = M.deviceHeight(project, d);
@@ -1164,7 +1235,7 @@
     if (o.selected) {
       for (const d of rowDevices) {
         if (!o.selected.has(d.id)) continue;
-        const rect = rectIn(lay.byId.get(d.loc.rack), d.loc, M.deviceHeight(project, d));
+        const rect = rectIn(lay.byId.get(d.loc.rack), d.loc, M.deviceHeight(project, d), pduSpan(project, d.type));
         s += selectionMarks(rect.x, rect.y, rect.w, rect.h, T);
       }
     }
@@ -1189,12 +1260,14 @@
       const type = M.typeOf(project, it.typeId);
       const hU = M.heightOf(project, it.typeId, it.height);
       const sc = schemeFor(it.color || null, theme);
-      // A device taller than 1U cannot be drawn into a side slot; only mark the slot.
-      if (!(it.loc.kind === 'side' && hU !== 1)) {
+      // A device taller than 1U cannot be drawn into a side slot; only mark the slot. A PDU is its strip.
+      if (it.loc.kind === 'pdu') {
+        s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r1(r.w)}" height="${r.h}" rx="2" fill="${ok ? color : T.bad}" fill-opacity="${ok ? 0.35 : 0.18}"/>`;
+      } else if (!(it.loc.kind === 'side' && hU !== 1)) {
         s += `<g transform="${placeTransform(r)}" opacity="${ok ? 0.92 : 0.55}">${faceOf(type, it.name || type.label, sc, theme, measure, hU, { color: it.color, bare: o.bare }, it.reversed)}</g>`;
       }
-      if (!ok) s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r.w}" height="${r.h}" fill="${T.bad}" fill-opacity="0.18"/>`;
-      s += `<rect x="${r1(r.x - 1.5)}" y="${r1(r.y - 1.5)}" width="${r.w + 3}" height="${r.h + 3}" rx="2.5" fill="none" stroke="${color}" stroke-width="2"/>`;
+      if (!ok && it.loc.kind !== 'pdu') s += `<rect x="${r1(r.x)}" y="${r1(r.y)}" width="${r.w}" height="${r.h}" fill="${T.bad}" fill-opacity="0.18"/>`;
+      s += `<rect x="${r1(r.x - 1.5)}" y="${r1(r.y - 1.5)}" width="${r1(r.w + 3)}" height="${r.h + 3}" rx="2.5" fill="none" stroke="${color}" stroke-width="2"/>`;
     }
     return s + '</g>';
   }
@@ -1218,7 +1291,16 @@
     for (const r of lay.racks) {
       if (x < r.x - GAP / 2 || x >= r.x + RACK_W + GAP / 2) continue;
       const rack = r.rack.id;
-      if (x >= r.sideX - 2 && r.slots) {
+      // A vertical PDU goes to the PDU slot nearest the pointer; a rack without one says so (see M.canPlace).
+      if (M.isPduType(M.typeOf(project, typeId))) {
+        let at = 0;
+        r.pduSlots.forEach((side, i) => {
+          const mid = (k) => pduRect(r, k).x + pduRect(r, k).w / 2;
+          if (Math.abs(mid(i) - x) < Math.abs(mid(at) - x)) at = i;
+        });
+        return { rack, kind: 'pdu', at };
+      }
+      if (x >= r.sideX - 2 && x < r.pduRX && r.slots) {
         const k = Math.max(0, Math.min(r.slots - 1, Math.floor(((y - r.uTop) * r.slots) / r.uh)));
         return { rack, kind: 'side', at: k };
       }
@@ -1236,11 +1318,12 @@
    */
   function renderPreview(type, theme, color, name, measure, height, side) {
     const th = theme === 'dark' ? 'dark' : 'light';
-    const hU = type.variable ? height || 2 : type.height;
+    // A vertical PDU (0U) is drawn as a 1U strip of outlets.
+    const hU = type.variable ? height || 2 : type.pdu ? 1 : type.height;
     const sc = schemeFor(color || null, th);
     const m = measure || approxMeasure;
     const label = name || type.label;
-    const plainFront = side !== 'rear' && (side !== 'front' || !M.expandPorts(type).some((p) => p.side === 'front'));
+    const plainFront = !!type.pdu || (side !== 'rear' && (side !== 'front' || !M.expandPorts(type).some((p) => p.side === 'front')));
     return {
       width: BAY_W,
       height: hU * U,
@@ -1289,7 +1372,8 @@
   }
 
   return {
-    geometry: { U, BAY_W, RACK_W, RAIL, FRAME, GAP, MX, SLOT_W, SLOT_H, HEADER, ADD_W, EAR, LABEL_X, DETAIL_X },
+    geometry: { U, BAY_W, RACK_W, RAIL, FRAME, GAP, MX, SLOT_W, SLOT_H, HEADER, ADD_W, EAR, LABEL_X, DETAIL_X, PDU_W },
+    pduRect,
     esc,
     r1,
     text,

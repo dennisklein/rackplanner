@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/cabling.css">
+<link rel="stylesheet" href="css/power.css">
 <script>
   // A theme picked in the app applies before the first paint (see applyTheme in js/app.js).
   try {
@@ -267,11 +268,15 @@
           <select id="place-rack"></select>
         </div>
         <div class="field">
-          <label for="place-pos">Position</label>
+          <label for="place-pos" id="place-pos-label">Position</label>
           <select id="place-pos"></select>
         </div>
       </div>
       <div id="place-mount"></div>
+      <div class="field" id="place-grid-field" hidden>
+        <label for="place-grid">Power grid</label>
+        <select id="place-grid"></select>
+      </div>
       <div class="field-row">
         <div class="field field-qty" id="place-height-field" hidden>
           <label for="place-height">Height (U)</label>
@@ -548,12 +553,13 @@
     <header class="dlg-head">
       <span class="tape">Types</span>
       <h2 id="catalog-title">Catalog</h2>
-      <p class="dlg-sub">The types of devices, racks, cables and transceivers belong to this plan and travel with its file. Changes apply right away; Undo takes them back. Drag types to reorder them: the devices panel follows this order, new rows get the first rack type, and cables pick the first cable type that fits.</p>
+      <p class="dlg-sub">The types of devices, racks, cables, transceivers and power cords belong to this plan and travel with its file. Changes apply right away; Undo takes them back. Drag types to reorder them: the devices panel follows this order, new rows get the first rack type, and cables pick the first cable type that fits.</p>
       <div class="seg tabs" role="tablist" aria-label="Catalog">
         <button type="button" role="tab" id="cat-tab-devices" data-tab="devices" aria-selected="true" aria-controls="cat-panel">Device types</button>
         <button type="button" role="tab" id="cat-tab-racks" data-tab="racks" aria-selected="false" aria-controls="cat-panel">Rack types</button>
         <button type="button" role="tab" id="cat-tab-cables" data-tab="cables" aria-selected="false" aria-controls="cat-panel">Cable types</button>
         <button type="button" role="tab" id="cat-tab-transceivers" data-tab="transceivers" aria-selected="false" aria-controls="cat-panel">Transceivers</button>
+        <button type="button" role="tab" id="cat-tab-cords" data-tab="cords" aria-selected="false" aria-controls="cat-panel">Cord types</button>
       </div>
     </header>
     <div class="dlg-body catalog" id="cat-panel" role="tabpanel">
@@ -681,6 +687,7 @@
 
 <script src="js/model.js"></script>
 <script src="js/cabling.js"></script>
+<script src="js/power.js"></script>
 <script src="js/io.js"></script>
 <script src="js/render.js"></script>
 <script src="js/cabling-render.js"></script>

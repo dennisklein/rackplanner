@@ -1010,3 +1010,22 @@ test('interactive fabric boxes are named buttons for the keyboard', () => {
   assert.ok(!CR.fabric(p, 'n-ib', {}).body.includes('tabindex'), 'not when the drawing is not interactive');
   assert.ok(!CR.exportSVG('fabric', p, { networkId: 'n-ib' }).includes('tabindex'), 'nor in exports');
 });
+
+test('the elevation draws vertical PDUs on the frame posts with their network ports, on the mirrored side at the rear', () => {
+  const p = M.createExampleProject();
+  const type = M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
+  const [a, b] = M.fillPduSlots(p, ['r1'], type.id);
+  C.connect(p, { a: { device: a.id, port: 'mgmt' }, b: { device: byName(p, 'sw-mgmt-a01').id, port: 'swp40' }, network: 'n-mgmt' });
+  const xOf = (body, id) => Number(new RegExp(`data-dev="${id}"[^>]*transform="translate\\(([\\d.]+)`).exec(body)[1]);
+  for (const side of ['front', 'rear']) {
+    const out = CR.elevation(p, { rowId: 'row1', side, theme: 'light' });
+    assertWellFormed(wrap(out));
+    assert.equal(count(out.body, `data-dev="${a.id}"`), 1, side);
+    assert.equal(count(out.body, `data-dev="${b.id}"`), 1, side);
+    // P1 is on the left seen from the front, so on the right from the rear.
+    assert.equal(xOf(out.body, a.id) < xOf(out.body, b.id), side === 'front', side);
+  }
+  const rear = CR.elevation(p, { rowId: 'row1', side: 'rear', theme: 'light' });
+  assert.equal(count(rear.body, `data-port="${a.id}|mgmt"`), 1, 'the management port is drawn where it is: at the rear');
+  assert.equal(count(CR.elevation(p, { rowId: 'row1', side: 'front', theme: 'light' }).body, `data-port="${a.id}|mgmt"`), 0);
+});

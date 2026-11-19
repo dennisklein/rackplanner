@@ -1,0 +1,46 @@
+/* Power: PDU types in the catalog, and the Power workspace with its panel, views and inspectors. On the tokens of css/app.css. */
+
+:root { --ph-l1: #b5651d; --ph-l2: #3d4650; --ph-l3: #7d8894; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ph-l1: #d98a45; --ph-l2: #c9d1da; --ph-l3: #7f8b98; }
+}
+:root[data-theme="dark"] { --ph-l1: #d98a45; --ph-l2: #c9d1da; --ph-l3: #7f8b98; }
+.ph-L1 { --ph: var(--ph-l1); }
+.ph-L2 { --ph: var(--ph-l2); }
+.ph-L3 { --ph: var(--ph-l3); }
+
+/* ------------------------------------------------------------ catalog */
+
+.cat-h { margin: 6px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.pw-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pw-table th { text-align: left; font-weight: 500; font-size: 11.5px; color: var(--ink-3); padding: 0 4px 6px; }
+.pw-table td { padding: 3px 4px; }
+.pw-table :where(input, select) { width: 100%; height: 30px; padding: 0 6px; font-size: 13px; }
+.pw-table td:first-child { width: 34%; }
+.pw-table .pt-count { text-align: right; color: var(--ink-2); padding-right: 6px; width: 64px; }
+.pw-table td:last-child { width: 32px; }
+.pw-groups td:first-child { width: 22%; box-shadow: inset 3px 0 0 var(--ph, transparent); padding-left: 8px; }
+.pw-groups td:nth-child(3) { width: 84px; }
+.pw-groups td:nth-child(4) { width: 72px; }
+#cat-meters td:nth-child(2) { width: auto; }
+
+.pdu-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.pdu-fg { display: grid; gap: 3px; padding: 4px 5px 5px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--ph, var(--line-strong)); }
+.pdu-fg-name { font: 500 10.5px var(--font-mono); color: var(--ink-2); white-space: nowrap; }
+.pdu-outs { display: flex; flex-wrap: wrap; gap: 2px; max-width: 150px; }
+.po { display: grid; place-items: center; min-width: 20px; height: 18px; padding: 0 2px; font: 500 10px var(--font-mono); font-style: normal; color: var(--ink); border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface-2); cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: none; }
+.po-c19, .po-nema-l6-30 { border-width: 2px; border-color: var(--ink-2); }
+.po:hover { border-color: var(--ink); }
+.po.is-picked { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.pdu-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 12.5px; }
+.pdu-pick #cat-pick-text { font-family: var(--font-mono); color: var(--ink); }
+.pdu-pick label { color: var(--ink-2); }
+.pdu-pick select { width: auto; min-width: 150px; }
+
+.pdu-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+.pdu-slot-pick { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+.pdu-slot-pick select { width: 96px; }
+.cat-make { flex-wrap: wrap; }
+.cat-make > span:first-of-type { flex: 1 1 220px; }
+.cat-make-act { display: flex; gap: 8px; align-items: center; flex: 1 1 100%; padding-left: 22px; }
+.cat-make-act select { flex: 1 1 auto; min-width: 0; height: 30px; }
