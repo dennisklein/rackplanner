@@ -221,7 +221,9 @@ Rear**); otherwise they ask how it is **Mounted**.
   picker with previous and next buttons, and a switch between the
   **Elevation** of the current row and the **Floor map**. The floor map shows
   every row of a floor with a small drawing of each rack and a meter for
-  space, power or weight; click a rack to open it, a row name to see its
+  space, power or weight, or for its power **At worst**: the highest use of
+  a fuse group, phase or PDU of the rack with one grid down, with a tick at
+  the plan's limit. Click a rack to open it, a row name to see its
   elevation.
 - **Search**: type in the search box (or press <kbd>/</kbd>) to find floors,
   rows, racks and devices. Devices are found by name, type, cluster, serial

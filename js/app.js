@@ -165,7 +165,7 @@
     selection: null, // { kind: 'devices', ids } | { kind: 'rack' | 'row' | 'floor', id }
     rowId: null, // the row shown
     view: prefs.view === 'map' ? 'map' : 'sheet',
-    metric: ['space', 'power', 'weight'].includes(prefs.metric) ? prefs.metric : 'space',
+    metric: ['space', 'power', 'weight', 'worst'].includes(prefs.metric) ? prefs.metric : 'space',
     clusterView: null, // id of the plan view whose clusters color the devices (ui.view is the sheet or floor map)
     focusCluster: null, // cluster id, '__none' for unassigned, or null
     hoverCluster: null,
@@ -911,9 +911,33 @@
 
   // Floor map ----------------------------------------------------------
 
-  const METRICS = { space: 'Space', power: 'Power', weight: 'Weight' };
+  const METRICS = { space: 'Space', power: 'Power', weight: 'Weight', worst: 'At worst' };
+  const METRIC_TITLES = { worst: 'Power at worst: the highest use of a fuse group, phase or PDU of the rack, with one grid down' };
 
-  function metricOf(st) {
+  /**
+   * Power at worst, for the floor map's meters: Map from rack id to
+   * { use, over }, the highest use of a rating among the PDUs of the rack,
+   * their phases and fuse groups, in their worst scenario. A rack without
+   * a PDU has no entry.
+   */
+  function worstByRack() {
+    const out = new Map();
+    for (const x of P.loads(project).pdus) {
+      const values = [x.total].concat(...x.phases.map((ph) => [ph.value].concat(ph.fuses.map((f) => f.value))));
+      const w = out.get(x.pdu.loc.rack) || { use: 0, over: false };
+      for (const v of values) {
+        w.use = Math.max(w.use, v.use);
+        w.over = w.over || v.over;
+      }
+      out.set(x.pdu.loc.rack, w);
+    }
+    return out;
+  }
+
+  function metricOf(st, worst) {
+    if (ui.metric === 'worst') {
+      return worst ? { p: worst.use, text: `${Math.round(worst.use * 100)}%`, over: worst.over } : { p: 0, text: 'no PDU', over: false };
+    }
     if (ui.metric === 'power') {
       return { p: st.powerBudgetW ? st.powerW / st.powerBudgetW : 0, text: fmtKw(st.powerW), over: st.overPower };
     }
@@ -943,11 +967,14 @@
     const sel = ui.selection;
     const colors = new Map(viewClusters().map((c) => [c.id, c.color]));
     const fs = M.statsWithin(project, floor.id, stats);
+    const worst = ui.metric === 'worst' ? worstByRack() : null;
+    // The tick on the meters of "At worst": the plan's limit.
+    const limitPct = M.powerSettings(project).limitPct;
     let html =
       `<div class="fm-head"><div class="fm-title"><h2 title="${esc(floor.name)}">${esc(floor.name)}</h2><p>${esc(plural(floor.rows.length, 'row'))} · ${esc(statsLine(fs))}</p></div>` +
       `<div class="seg fm-metric" role="group" aria-label="Rack meters show">` +
       Object.entries(METRICS)
-        .map(([k, label]) => `<button type="button" data-metric="${k}" aria-pressed="${ui.metric === k}">${label}</button>`)
+        .map(([k, label]) => `<button type="button" data-metric="${k}" aria-pressed="${ui.metric === k}"${METRIC_TITLES[k] ? ` title="${esc(METRIC_TITLES[k])}"` : ''}>${label}</button>`)
         .join('') +
       `</div></div><div class="fm-rows">`;
     for (const row of floor.rows) {
@@ -962,7 +989,7 @@
         const st = stats.get(rack.id);
         const devs = byRack.get(rack.id) || [];
         const hits = match ? devs.filter(match).length : 0;
-        const m = metricOf(st);
+        const m = metricOf(st, worst && worst.get(rack.id));
         let blocks = '';
         for (const d of devs) {
           if (d.loc.kind !== 'u') continue;
@@ -977,11 +1004,11 @@
         if (m.over) cls.push('is-over');
         if (hits) cls.push('is-hit');
         if (sel && sel.kind === 'rack' && sel.id === rack.id) cls.push('is-selected');
-        const label = `${rack.name}: ${st.used + st.reserved} of ${st.units} U used, ${withBudget(fmtPower, st.powerW, st.powerBudgetW)}, ${fmtKg(st.weightKg)}${m.over ? ', over budget' : ''}${hits ? `, ${plural(hits, 'match', 'matches')}` : ''}`;
+        const label = `${rack.name}: ${st.used + st.reserved} of ${st.units} U used, ${withBudget(fmtPower, st.powerW, st.powerBudgetW)}, ${fmtKg(st.weightKg)}${worst ? (worst.has(rack.id) ? `, ${m.text} of a rating at worst` : ', no PDU') : ''}${m.over ? (worst ? ', over the limit' : ', over budget') : ''}${hits ? `, ${plural(hits, 'match', 'matches')}` : ''}`;
         html +=
           `<button type="button" class="${cls.join(' ')}" data-rack="${esc(rack.id)}" title="${esc(label)}" aria-label="${esc(label)}">` +
           `<span class="fm-elev" style="height:${st.units * 2}px">${blocks}</span>` +
-          `<span class="fm-meter"><span style="width:${Math.min(100, m.p * 100).toFixed(1)}%"></span></span>` +
+          `<span class="fm-meter"><span style="width:${Math.min(100, m.p * 100).toFixed(1)}%"></span>${worst ? `<i style="left:${limitPct}%"></i>` : ''}</span>` +
           `<span class="fm-name">${esc(shortRack(rack.name))}</span><span class="fm-val">${esc(m.text)}</span>` +
           (hits ? `<span class="fm-hits">${hits}</span>` : '') +
           `</button>`;

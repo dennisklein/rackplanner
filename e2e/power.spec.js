@@ -2,8 +2,9 @@
 
 // The Power workspace: switching to it, the elevation and connecting, the
 // left panel (cord types and power grids), the inspectors, the outlet map,
-// the schedule, the Load view, search, and what moving a device does to
-// its cords. The example plan has PDUs on two grids and cords in Row B.
+// the schedule, the Load view, search, what moving a device does to its
+// cords, and the floor map's meter for power at worst. The example plan
+// has PDUs on two grids and cords in Row B.
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
@@ -842,4 +843,29 @@ test('a device type without inlets is told in the panel, with a button that adds
   await expect(toast(page)).toContainText('the inlets psu1 and psu2');
   await expect(page.locator('#pow-noinlets')).toBeHidden();
   expect(await plan(page, (p) => p.deviceTypes.find((t) => t.label === 'Compute node').inlets.length)).toBeGreaterThan(0);
+});
+
+test('the floor map has a meter for power at worst: the highest use of a rating in each rack', async ({ page }) => {
+  await page.keyboard.press('m');
+  await expect(page.locator('#floormap')).toBeVisible();
+  await page.click('.fm-metric [data-metric="worst"]');
+  await expect(page.locator('.fm-metric [data-metric="worst"]')).toHaveAttribute('aria-pressed', 'true');
+  // Row A has no PDUs; in Row B the fuse groups of the GPU racks carry the most when a grid is down.
+  await expect(page.locator('.fm-rack .fm-val')).toHaveText(['no PDU', 'no PDU', 'no PDU', '14%', '65%', '65%']);
+  const b02 = page.locator('.fm-rack', { hasText: 'B02' });
+  await expect(b02).toHaveAttribute('aria-label', /65% of a rating at worst$/);
+  await expect(b02.locator('.fm-meter > i')).toHaveAttribute('style', 'left:80%');
+  await expect(page.locator('.fm-rack.is-over')).toHaveCount(0);
+  // A lower limit: the racks over it are marked, and the tick moves.
+  await page.click('.ws-switch [data-workspace="power"]');
+  await page.fill('#pow-limit', '50');
+  await page.locator('#pow-limit').blur();
+  await page.click('.ws-switch [data-workspace="racks"]');
+  await expect(page.locator('#floormap')).toBeVisible();
+  await expect(page.locator('.fm-rack.is-over')).toHaveCount(2);
+  await expect(b02).toHaveAttribute('aria-label', /65% of a rating at worst, over the limit$/);
+  await expect(b02.locator('.fm-meter > i')).toHaveAttribute('style', 'left:50%');
+  // The meter stays picked over a reload.
+  await page.reload();
+  await expect(page.locator('.fm-metric [data-metric="worst"]')).toHaveAttribute('aria-pressed', 'true');
 });

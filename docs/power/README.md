@@ -404,6 +404,8 @@ the limit is flagged, and so is a phase that is not balanced.
   treat power cords as they treat cables: the question names or counts the
   cords that would go, and a copy of devices with their PDUs copies the
   cords between them.
+- The floor map's meters get **At worst**: the highest use of a fuse
+  group, phase or PDU of each rack, in its worst scenario.
 - The CSV inventory lists a PDU at `PDU P1`, with its grid.
 
 ## 3. Decisions
