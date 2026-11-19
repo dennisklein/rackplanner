@@ -38,6 +38,7 @@ const SHELL = [
   'js/power-render.js',
   'js/library.js',
   'js/cabling-ui.js',
+  'js/power-ui.js',
   'js/app.js',
   'manifest.webmanifest',
   'icon.svg',

@@ -217,7 +217,7 @@ test('the drawing module is registered with the page and the service worker, and
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  for (const f of ['js/power.js', 'js/power-render.js', 'css/power.css']) {
+  for (const f of ['js/power.js', 'js/power-render.js', 'js/power-ui.js', 'css/power.css']) {
     assert.ok(html.includes(`"${f}"`), `index.html loads ${f}`);
     assert.ok(sw.includes(`'${f}'`), `sw.js caches ${f}`);
   }

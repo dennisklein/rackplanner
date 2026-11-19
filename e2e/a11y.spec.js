@@ -217,6 +217,9 @@ test('C keeps keyboard focus on the drawing', async ({ page }) => {
   const inStage = () => app(page, () => document.querySelector('#canvas').contains(document.activeElement));
   expect(await inStage()).toBe(true);
   await page.keyboard.press('c');
+  await expect(page.locator('.ws-switch [data-workspace="power"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await inStage()).toBe(true);
+  await page.keyboard.press('c');
   await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
   expect(await inStage()).toBe(true);
 });

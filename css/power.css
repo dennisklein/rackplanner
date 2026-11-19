@@ -44,3 +44,159 @@
 .cat-make > span:first-of-type { flex: 1 1 220px; }
 .cat-make-act { display: flex; gap: 8px; align-items: center; flex: 1 1 100%; padding-left: 22px; }
 .cat-make-act select { flex: 1 1 auto; min-width: 0; height: 30px; }
+
+/* ------------------------------------------------------------ workspace */
+
+/* The four views take the room of Cabling's four in the bar above the drawing, with longer names. */
+@media (min-width: 561px) {
+  #pow-toggle { --seg-pad: 9px; }
+}
+#app.is-power .scene .pw-dev:not(.is-reserved), #app.is-power .scene .pw-pdu { cursor: pointer; }
+#app.is-power .scene:focus:not(:focus-visible) { outline: none; }
+.scene .pw-dev, .scene .pw-pdu { outline: none; }
+.scene .pw-dev:focus-visible > rect:first-of-type, .scene .pw-pdu:focus-visible > rect:first-of-type { stroke: var(--ink); stroke-width: 2; }
+.scene [data-inlet], .scene [data-outlet], .scene .pw-cord-hit { cursor: pointer; }
+.scene [data-inlet]:hover, .scene [data-outlet]:hover { stroke: var(--ink); stroke-width: 1.4; }
+.scene .pw-cord { pointer-events: none; }
+#app.is-power .armed-hint { width: max-content; }
+#app.is-power .canvas.has-sides ~ .armed-hint { left: 132px; right: 12px; transform: none; margin: 0 auto; width: fit-content; max-width: none; }
+#app.is-power .insp-actions > .btn.danger-text:only-child { flex: none; margin-left: auto; }
+
+/* The line of a drag from an inlet or an outlet. */
+.pow-band { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 70; pointer-events: none; overflow: visible; }
+.pow-band line { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 6 4; stroke-linecap: round; }
+.pow-band circle { fill: var(--tape); stroke: var(--ink); stroke-width: 1.5; }
+
+/* The left panel: a grid's note after its name, and the devices that cannot get a cord. */
+.cl-note { flex: 1; min-width: 0; margin-left: 2px; color: var(--ink-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.cl-main { cursor: default; }
+.pow-warn { display: flex; gap: 6px; align-items: flex-start; color: var(--warn); margin-top: 6px; }
+.pow-warn .ic { flex: none; margin-top: 2px; }
+
+/* A limit's tick on a bar. */
+.fm-meter, .pw-track { position: relative; }
+.fm-meter > i, .pw-track > i { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--ink-2); opacity: .7; }
+.fm-meter.is-over > span { background: var(--danger); }
+
+/* ------------------------------------------------------------ outlet map */
+
+.om-scen > button { white-space: nowrap; }
+.om-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+.om-pdu { position: relative; border: 1px solid var(--line); border-top: 3px solid var(--g, var(--line-strong)); border-radius: var(--r-md); background: var(--surface); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.om-pdu.is-selected { box-shadow: 0 0 0 2px var(--tape-edge); }
+.om-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.om-head .sw { flex: none; width: 12px; height: 12px; border-radius: 3px; background: var(--g); }
+.om-head .pm-name { max-width: none; flex: 0 1 auto; }
+.om-slot { font: 500 11.5px/1 var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+.om-grid { margin-left: auto; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.om-sub, .om-meters { margin: 0; font: 400 11.5px/1.4 var(--font-mono); color: var(--ink-3); }
+.om-meters { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.om-meters b { color: var(--ink-2); font-weight: 600; }
+.om-down { margin: 0; padding: 5px 8px; border-radius: var(--r-sm); background: var(--surface-3); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.om-pdu.is-down .om-fuses { opacity: .45; }
+.om-fuses { display: flex; flex-direction: column; gap: 6px; }
+.om-fuse { border-left: 3px solid var(--ph, var(--line-strong)); padding-left: 8px; }
+.om-fuse-head {
+  display: grid; grid-template-columns: auto auto minmax(40px, 1fr) auto; align-items: center; gap: 8px; width: 100%;
+  border: 0; border-radius: var(--r-sm); padding: 3px 4px; margin: 0 -4px; background: none; color: inherit; text-align: left; cursor: pointer; font-size: 12px;
+}
+.om-fuse-head.is-none { cursor: default; color: var(--ink-3); }
+button.om-fuse-head:hover { background: var(--surface-2); }
+.om-fuse-head.is-selected { background: color-mix(in srgb, var(--tape) 22%, var(--surface)); }
+.om-fuse-head b { font: 600 12px/1.2 var(--font-mono); color: var(--ph, var(--ink)); }
+.om-ph { font: 500 11px/1 var(--font-mono); color: var(--ph, var(--ink-3)); }
+.om-fuse-head .mono { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+.om-fuse-head .fm-meter { height: 6px; border-radius: 3px; }
+.om-outs { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; }
+.om-out {
+  display: grid; grid-template-columns: 22px 14px minmax(0, 1fr) auto 26px; align-items: center; gap: 6px; width: 100%; height: 22px;
+  border: 0; border-radius: 3px; padding: 0 4px; margin: 0 -4px; background: none; color: inherit; text-align: left; cursor: pointer;
+  font: 400 11.5px/1 var(--font-mono);
+}
+.om-out:hover { background: var(--surface-2); }
+.om-out.is-selected { background: color-mix(in srgb, var(--tape) 22%, var(--surface)); }
+.om-out.is-pending { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.om-n { text-align: right; color: var(--ink-3); }
+.om-sock { display: block; width: 12px; height: 12px; border-radius: 2px; background: var(--port-free); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.om-out.is-used .om-sock { background: var(--g); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .25); }
+.om-sock.om-c19, .om-sock.om-nema-l6-30 { height: 14px; width: 14px; margin-left: -1px; }
+.om-dev { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.om-out.is-free .om-dev { color: var(--ink-3); font-family: var(--font-ui); font-size: 12px; }
+.om-w { color: var(--ink-2); white-space: nowrap; }
+.om-m { color: var(--ink-3); font-size: 10.5px; text-align: right; }
+
+/* ------------------------------------------------------------ schedule, load */
+
+.sched tbody tr[data-cord] { cursor: pointer; }
+.sched tbody tr[data-cord]:hover td { background: var(--surface-2); }
+.sched tbody tr[data-cord].is-selected:hover td { background: color-mix(in srgb, var(--tape) 26%, var(--surface)); }
+.sched .ps-ph { color: var(--ph, inherit); font-weight: 600; }
+.sched td small { margin-left: 2px; }
+#ps-order .ic { margin-right: 2px; }
+.ld-table td:first-child { white-space: nowrap; }
+.ld-table tr[data-pow-device], .ld-table tr[data-pow-fuse] { cursor: pointer; }
+.ld-table tbody tr:not(.sc-group):hover td { background: var(--surface-2); }
+.ld-grid td { height: 34px; }
+.ld-grid .sw { margin-right: 8px; vertical-align: middle; }
+.ld-grid .sc-count { margin-left: 10px; }
+.ld-pdu td { font-weight: 500; }
+.ld-pdu .sc-fold { padding: 3px 2px; margin: 0 2px 0 6px; }
+.ld-in1 { display: inline-block; margin-left: 46px; font: 600 12px/1 var(--font-mono); }
+.ld-in2 { display: inline-block; margin-left: 66px; }
+.ld-phase td:first-child { box-shadow: inset 3px 0 0 var(--ph, transparent); }
+.ld-use { display: flex; align-items: center; gap: 8px; }
+.ld-use .fm-meter { flex: 0 0 110px; height: 7px; border-radius: 3px; }
+.ld-use .mono { font-size: 12px; color: var(--ink-2); min-width: 44px; }
+.ld-use.is-over .mono { color: var(--warn); font-weight: 600; }
+.ld-use.is-over .fm-meter > span { background: var(--warn-icon); }
+.ld-foot { padding: 8px 18px 12px; border-top: 1px solid var(--line); background: var(--surface); margin: 0; }
+.ld .cab-empty { flex: 1; justify-content: center; }
+
+/* ------------------------------------------------------------ inspectors, dialogs */
+
+.pw-fuses { list-style: none; margin: -2px 0 4px; padding: 0 0 0 8px; border-left: 3px solid var(--ph, var(--line-strong)); display: flex; flex-direction: column; }
+.pw-fuse {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; width: 100%;
+  border: 0; border-radius: var(--r-sm); padding: 3px 4px; background: none; color: inherit; text-align: left; cursor: pointer; font-size: 12px;
+}
+.pw-fuse:hover { background: var(--surface-2); }
+.pw-fuse b { font: 600 12px/1.3 var(--font-mono); }
+.pw-fuse span { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-fuse .mono { color: var(--ink-2); font-size: 11.5px; }
+.pw-fuse.is-over .mono { color: var(--danger); font-weight: 600; }
+.pw-scen tr.is-worst td { font-weight: 600; }
+.pw-color { display: flex; gap: 6px; align-items: center; }
+.pw-color select { flex: 1; min-width: 0; }
+.pw-color input[type="color"] { flex: none; width: 34px; height: 30px; padding: 2px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); }
+.check-act { display: inline-block; margin-top: 3px; text-decoration: underline; text-underline-offset: 2px; color: var(--ink); font-weight: 500; }
+.pow-skipped { font-size: 12.5px; color: var(--ink-2); }
+.pow-skipped p { margin: 0 0 4px; }
+.pow-skipped ul { margin: 0; padding-left: 18px; }
+#dlg-pow-series .cs-preview { max-height: 300px; }
+#dlg-pow-series .sc-none { margin: 0; padding: 14px; font-size: 13px; color: var(--ink-3); }
+
+.ld-grid .sw, .bom-item .sw, #ps-table .sc-fold .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: -1px; }
+
+/* ------------------------------------------------------------ responsive */
+
+/*
+ * The switch has three workspaces. Beside it, the plan name keeps its room:
+ * the name of the app goes first, then the search narrows, and on the
+ * narrower screens the switch shows icons alone and the view its short name.
+ */
+@media (min-width: 961px) {
+  .search { flex-shrink: 3; min-width: 140px; }
+}
+@media (min-width: 961px) and (max-width: 1560px) {
+  .brand-name { display: none; }
+}
+@media (min-width: 1081px) and (max-width: 1180px) {
+  .ws-switch .ws-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (min-width: 961px) and (max-width: 1080px) {
+  .view-switch .vw-label { max-width: 60px; }
+}
+@media (max-width: 960px) {
+  #pow-types { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+  .om-cols { grid-template-columns: minmax(0, 1fr); }
+}

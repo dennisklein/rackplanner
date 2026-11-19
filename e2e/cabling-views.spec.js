@@ -554,7 +554,7 @@ test('the zoom buttons, keys and Ctrl+wheel zoom the elevation; a change keeps z
   expect(await where()).toEqual(scroll);
 
   // The Racks sheet keeps its own zoom.
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await expect(page.locator('.scene .dev')).toHaveCount(37);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('rackplanner.prefs.v1')).zoom)).toBeNull();
 });
@@ -1018,7 +1018,7 @@ test('the Export menu says what PNG, SVG and Print give in Cabling', async ({ pa
   await page.click('#btn-export');
   await expect(hint('png')).toHaveText('This row’s Racks sheet, for docs, tickets and chat');
   await page.keyboard.press('Escape');
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await page.click('#btn-export');
   await expect(hint('png')).toHaveText('This row, for docs, tickets and chat');
 });

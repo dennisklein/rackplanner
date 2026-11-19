@@ -68,8 +68,13 @@ test('the workspace switches with its button and with C; the Racks workspace sta
   await expect(page.locator('.cab-card[data-cab-type="dac-qsfp56"]')).toHaveClass(/is-armed/);
   expect(await page.evaluate(() => window.RP.app.ui.cabType)).toBe('dac-qsfp56');
 
-  // C goes back to Racks, as it was: selection, scroll, panels.
+  // C steps on, past Power, to Racks, as it was: selection, scroll, panels.
   await page.keyboard.press('c');
+  await expect(page.locator('.ws-switch [data-workspace="power"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#cab-host')).toBeHidden();
+  await expect(page.locator('#cab-types-sec')).toBeHidden();
+  await page.keyboard.press('c');
+  await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#scene')).toBeVisible();
   await expect(page.locator('#cab-host')).toBeHidden();
   await expect(page.locator('.scene .dev')).toHaveCount(37);
@@ -152,7 +157,7 @@ test('the schedule lists the row’s cables in groups that fold, for the row, th
   expect((await byId()).network).toBe('n-sas');
   await page.keyboard.press('Escape');
   await page.locator('#sc-title').click();
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await expect(page.locator('#scene')).toBeVisible();
   await page.keyboard.press('c');
   await expect(fold).toHaveAttribute('aria-expanded', 'false');
@@ -574,7 +579,7 @@ test('the cable schedule and the order list download as CSV, for the plan and fo
   expect(rowOrder.text).toContain('Within Row A,Cat6a patch cord,Cable,');
   expect(rowOrder.text).toContain('Shared with other rows,MPO-12 OM4,"Cable, made to length",');
   // The Racks workspace keeps its exports.
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   const inv = await read(async () => {
     await page.click('#btn-export');
     await page.click('[data-export="csv"]');
@@ -591,7 +596,7 @@ test('opening a cable schedule CSV adds its cables to the plan, with Undo', asyn
   await page.fill('#sc-filter', '');
   const count = await plan(page, (p) => p.cables.length);
   // From the Racks workspace: the cables come in, and Cabling shows them.
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await page.click('#btn-open');
   await expect(page.locator('#dlg-open .dlg-sub')).toContainText('A cable schedule CSV');
   await page.fill('#open-text', csv);
@@ -656,7 +661,7 @@ test('cabling and the workspace survive a reload', async ({ page }) => {
   await expect(page.locator('#scene')).toBeHidden();
   await expect(row(page, 'KEEP-ME')).toHaveCount(1);
   expect(await page.evaluate(() => window.RP.app.ui.workspace)).toBe('cabling');
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await expect(page.locator('.scene .dev')).toHaveCount(37);
 });
 
@@ -811,7 +816,7 @@ test('picking a row from the row menu in Cabling keeps the Racks view as it was'
   await page.locator('#menu-row [data-row="row2"]').click();
   await expect(page.locator('#sc-title')).toHaveText('Row B · cable schedule');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('rackplanner.prefs.v1')).view)).toBe('map');
-  await page.keyboard.press('c');
+  await page.click('.ws-switch [data-workspace="racks"]');
   await expect(page.locator('#floormap')).toBeVisible();
   await expect(page.locator('.view-toggle [data-view="map"]')).toHaveAttribute('aria-pressed', 'true');
 });

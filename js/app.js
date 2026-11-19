@@ -13,6 +13,7 @@
   const M = window.RP.model;
   const C = window.RP.cabling;
   const CR = window.RP.cablingRender;
+  const PR = window.RP.powerRender;
   const IO = window.RP.io;
   const R = window.RP.render;
   const P = window.RP.power;
@@ -143,7 +144,7 @@
   if (!prefs.lastClusters || typeof prefs.lastClusters !== 'object') prefs.lastClusters = {};
   if (!prefs.noted || typeof prefs.noted !== 'object') prefs.noted = {};
   delete prefs.lastCluster;
-  if (prefs.workspace !== 'cabling') prefs.workspace = 'racks';
+  if (prefs.workspace !== 'cabling' && prefs.workspace !== 'power') prefs.workspace = 'racks';
   if (!THEME_PICKS.has(prefs.theme)) prefs.theme = 'system';
   if (prefs.detail !== 'bare') prefs.detail = 'full';
   prefs.compactParts = prefs.compactParts === true;
@@ -160,7 +161,7 @@
   // The next change of the address replaces the entry instead of adding one; none is written while one is followed (see writeAddress).
   const address = { replace: true, following: false };
   const ui = {
-    workspace: prefs.workspace, // 'racks' | 'cabling'; the Cabling workspace keeps its own state (js/cabling-ui.js)
+    workspace: prefs.workspace, // 'racks' | 'cabling' | 'power'; the Cabling and Power workspaces keep their own state (js/cabling-ui.js, js/power-ui.js)
     selection: null, // { kind: 'devices', ids } | { kind: 'rack' | 'row' | 'floor', id }
     rowId: null, // the row shown
     view: prefs.view === 'map' ? 'map' : 'sheet',
@@ -212,6 +213,7 @@
     ui.hiddenClusters.clear();
     ui.armed = null;
     cab.reset();
+    pow.reset();
     // Undo buttons in toasts refer to the previous plan.
     el.toasts.textContent = '';
     // Back does not go to a row of the plan before.
@@ -468,6 +470,7 @@
     if ($('#dlg-catalog').open) renderCatalog();
     if ($('#dlg-views').open) renderViewList();
     cab.onRestore();
+    pow.onRestore();
     return went.join(' · ');
   }
   /** Says what undo or redo did (`verb`), and where when it went to another row or view. */
@@ -526,9 +529,10 @@
     printRoot: $('#print-root'),
   };
 
-  // The Cabling workspace: app.js hands it what it needs and calls its hooks
-  // at the dispatch points below while ui.workspace is 'cabling'.
-  const cab = window.RP.cablingUI.create({
+  // The Cabling and Power workspaces: app.js hands each what it needs and
+  // calls its hooks at the dispatch points below while ui.workspace is
+  // 'cabling' or 'power' (wsUI() is the one shown, null in Racks).
+  const wsContext = {
     project: () => project,
     view: () => ui.clusterView,
     ui,
@@ -563,7 +567,12 @@
     esc,
     icon,
     plural,
-  });
+    doExport: (kind) => doExport(kind),
+  };
+  const cab = window.RP.cablingUI.create(wsContext);
+  const pow = window.RP.powerUI.create(wsContext);
+  const wsUI = () => (ui.workspace === 'cabling' ? cab : ui.workspace === 'power' ? pow : null);
+  const WS_NAMES = { racks: 'Racks', cabling: 'Cabling', power: 'Power' };
 
   // ------------------------------------------------------------ selection
 
@@ -590,8 +599,8 @@
     const o = opts || {};
     if (!M.rowById(project, rowId)) return;
     const changed = rowId !== ui.rowId;
-    // The Cabling elevation keeps its zoom and scroll for each row.
-    if (changed && ui.workspace === 'cabling') cab.keepElevation();
+    // The Cabling and Power elevations keep their zoom and scroll for each row.
+    if (changed && wsUI()) wsUI().keepElevation();
     ui.rowId = rowId;
     if (o.view) ui.view = o.view;
     prefs.rows[planId] = rowId;
@@ -600,7 +609,7 @@
     savePrefs();
     if (o.render !== false) render();
     if (!changed || o.keepScroll) return;
-    if (o.render === false || ui.workspace !== 'cabling' || !cab.elevationAgain()) scrollToOrigin();
+    if (o.render === false || !wsUI() || !wsUI().elevationAgain()) scrollToOrigin();
   }
 
   /**
@@ -629,10 +638,11 @@
 
   function selectThing(kind, id, opts) {
     // Racks, rows and floors are edited in the Racks workspace: the toast says so, with the way back.
-    if (ui.workspace === 'cabling') {
+    if (ui.workspace !== 'racks') {
+      const from = ui.workspace;
       setWorkspace('racks');
       const what = { floor: 'Floor', row: 'Row', rack: 'Rack' }[kind];
-      toast(`${what} settings open in Racks`, { kind: 'where', action: 'Back to Cabling', onAction: () => setWorkspace('cabling') });
+      toast(`${what} settings open in Racks`, { kind: 'where', action: `Back to ${WS_NAMES[from]}`, onAction: () => setWorkspace(from) });
     }
     ui.selection = { kind, id };
     if (kind === 'rack') {
@@ -656,7 +666,7 @@
     pruneUiState();
     renderNav();
     renderStage();
-    if (ui.workspace === 'cabling') cab.renderBin();
+    if (wsUI()) wsUI().renderBin();
     else {
       renderParts();
       renderClusters();
@@ -689,6 +699,7 @@
     if (ui.armed && !M.typeOf(project, ui.armed)) ui.armed = null;
     if (ui.moving && selIds().join() !== ui.moving) ui.moving = null;
     cab.prune();
+    pow.prune();
   }
 
   function findDevEl(id) {
@@ -843,7 +854,7 @@
   }
 
   function renderStage() {
-    if (ui.workspace === 'cabling') return cab.renderStage();
+    if (wsUI()) return wsUI().renderStage();
     const map = ui.view === 'map';
     el.svg.toggleAttribute('hidden', map);
     el.floormap.hidden = !map;
@@ -854,7 +865,7 @@
   }
 
   function renderScene() {
-    if (ui.view === 'map' || ui.workspace === 'cabling') return;
+    if (ui.view === 'map' || ui.workspace !== 'racks') return;
     const active = document.activeElement;
     const inside = active && active !== el.svg && el.svg.contains(active) && active.dataset;
     const focusedId = inside ? active.dataset.id : null;
@@ -1016,7 +1027,7 @@
     el.rowPrev.disabled = i <= 0;
     el.rowNext.disabled = i >= rows.length - 1;
     for (const b of $$('.view-toggle button')) b.setAttribute('aria-pressed', String(b.dataset.view === ui.view));
-    if (ui.workspace === 'cabling') cab.renderNav();
+    if (wsUI()) wsUI().renderNav();
   }
 
   function renderFloorTabs() {
@@ -1027,7 +1038,7 @@
         .map((f) => {
           const on = f === pos.floor;
           const picked = sel && sel.kind === 'floor' && sel.id === f.id;
-          return `<button type="button" class="ftab${picked ? ' is-selected' : ''}" data-floor="${esc(f.id)}" aria-pressed="${on}" title="${on ? `${esc(f.name)}: click for floor settings${ui.workspace === 'cabling' ? ' (opens Racks)' : ''}` : `Show ${esc(f.name)}`}">${esc(f.name)}</button>`;
+          return `<button type="button" class="ftab${picked ? ' is-selected' : ''}" data-floor="${esc(f.id)}" aria-pressed="${on}" title="${on ? `${esc(f.name)}: click for floor settings${ui.workspace !== 'racks' ? ' (opens Racks)' : ''}` : `Show ${esc(f.name)}`}">${esc(f.name)}</button>`;
         })
         .join('') +
       (project.floors.length < M.LIMITS.floors ? `<button type="button" class="ftab ftab-add" data-add-floor title="Add a floor" aria-label="Add a floor">${icon('plus', 'ic-sm')}</button>` : '');
@@ -1060,29 +1071,33 @@
   el.rowNext.addEventListener('click', () => stepRow(1));
   $$('.view-toggle button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
-  /** Switches between the Racks and the Cabling workspace; each keeps its selection, and Racks its scroll. */
+  /** Switches between the Racks, the Cabling and the Power workspace; each keeps its selection, and Racks its scroll. */
   const racksScroll = { at: null };
   function setWorkspace(ws) {
-    if ((ws !== 'racks' && ws !== 'cabling') || ws === ui.workspace) return;
+    if (!WS_NAMES[ws] || ws === ui.workspace) return;
     if (ui.drag) cancelDrag();
     disarm();
     closeMenus();
-    if (ui.workspace === 'racks') racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view, zoom: ui.zoom };
-    else cab.keepElevation();
+    const from = wsUI();
+    if (!from) racksScroll.at = { left: el.canvas.scrollLeft, top: el.canvas.scrollTop, rowId: ui.rowId, view: ui.view, zoom: ui.zoom };
+    else from.keepElevation();
     ui.workspace = ws;
     prefs.workspace = ws;
     savePrefs();
-    cab.cancelPending();
+    if (from) {
+      // The workspace left stops connecting, and gives the panel and the stage back.
+      from.cancelPending();
+      from.hideBin();
+    }
     if (ws === 'racks') {
-      cab.hideBin();
-      // The Racks sheet comes back at its own zoom: the Cabling drawings have theirs.
+      // The Racks sheet comes back at its own zoom: the other drawings have theirs.
       const z = racksScroll.at ? racksScroll.at.zoom : prefs.zoom;
       if (z) ui.zoom = clamp(z, 0.1, 3);
     }
     render();
     placeToastsSoon();
-    announce(ws === 'cabling' ? 'Cabling workspace' : 'Racks workspace');
-    if (ws === 'cabling') cab.fitStage();
+    announce(`${WS_NAMES[ws]} workspace`);
+    if (wsUI()) wsUI().fitStage();
     else if (racksScroll.at && racksScroll.at.rowId === ui.rowId && racksScroll.at.view === ui.view) {
       el.canvas.scrollLeft = racksScroll.at.left;
       el.canvas.scrollTop = racksScroll.at.top;
@@ -1195,7 +1210,7 @@
         .join('') +
       `<hr>` +
       (pos.floor.rows.length < M.LIMITS.rows ? `<button type="button" role="menuitem" data-row-action="add"><span>${icon('plus', 'ic-sm')} Add row</span><small>A new row of racks on ${esc(pos.floor.name)}</small></button>` : '') +
-      `<button type="button" role="menuitem" data-row-action="settings"><span>${icon('pencil', 'ic-sm')} Row settings</span><small>${ui.workspace === 'cabling' ? 'In Racks: rename' : 'Rename'}, reorder racks, move or delete ${esc(pos.row.name)}</small></button>`;
+      `<button type="button" role="menuitem" data-row-action="settings"><span>${icon('pencil', 'ic-sm')} Row settings</span><small>${ui.workspace !== 'racks' ? 'In Racks: rename' : 'Rename'}, reorder racks, move or delete ${esc(pos.row.name)}</small></button>`;
   }
   el.rowMenu.addEventListener('click', (e) => {
     const t = e.target.closest('button');
@@ -1420,10 +1435,12 @@
 
   function renderChrome() {
     const cabling = ui.workspace === 'cabling';
+    const power = ui.workspace === 'power';
     for (const b of $$('.ws-switch [data-workspace]')) b.setAttribute('aria-pressed', String(b.dataset.workspace === ui.workspace));
     $('#app').classList.toggle('is-cabling', cabling);
-    el.search.placeholder = cabling ? 'Search devices and cables' : 'Search devices, racks, rows, floors';
-    el.bare.hidden = cabling; // the Cabling drawings keep the ports, and the nav bar its room
+    $('#app').classList.toggle('is-power', power);
+    el.search.placeholder = cabling ? 'Search devices and cables' : power ? 'Search devices, PDUs and cords' : 'Search devices, racks, rows, floors';
+    el.bare.hidden = cabling || power; // the Cabling and Power drawings keep the ports and inlets, and the nav bar its room
     renderViewSwitch();
     renderUndoButtons();
     if (document.activeElement !== el.planName) el.planName.value = project.name;
@@ -1444,7 +1461,7 @@
         `<button type="button" data-disarm aria-label="Stop placing">${icon('x', 'ic-sm')}</button>`;
     }
     el.armedHint.hidden = !(ui.armed || ui.moving);
-    if (cabling) cab.renderChrome();
+    if (wsUI()) wsUI().renderChrome();
   }
 
   /** The undo and redo buttons, whose tooltips name the step each one reverts. */
@@ -1570,7 +1587,8 @@
       .join('');
     return (
       `<section class="insp-sec" id="insp-pdu-load"><h3>Load per phase</h3>${meters}` +
-      `<p class="sec-hint">${esc(`${P.fmtKw(row.total.worstW)} of ${P.fmtKw(row.capacityW)} at worst${worst && worst.grid ? ` (${worst.name})` : ''}. The limit is ${Math.round(load.limit * 100)} % of a rating.`)}</p></section>`
+      `<p class="sec-hint">${esc(`${P.fmtKw(row.total.worstW)} of ${P.fmtKw(row.capacityW)} at worst${worst && worst.grid ? ` (${worst.name})` : ''}. The limit is ${Math.round(load.limit * 100)} % of a rating.`)} ` +
+      `<button type="button" class="btn-link" id="insp-open-power" title="Its outlets, cords and fuse groups, in the Power workspace">Open in Power</button></p></section>`
     );
   }
 
@@ -1634,7 +1652,7 @@
     // Leaving the control fires its change (a value typed but not yet
     // committed), which may redraw the plan and this inspector.
     if (focusId) active.blur();
-    const key = ui.workspace === 'cabling' ? 'cabling:' + cab.inspectorKey() : JSON.stringify(ui.selection || null);
+    const key = wsUI() ? `${ui.workspace}:${wsUI().inspectorKey()}` : JSON.stringify(ui.selection || null);
     const same = key === inspectorKey;
     inspectorKey = key;
     drawInspector();
@@ -1643,7 +1661,7 @@
   }
 
   function drawInspector() {
-    if (ui.workspace === 'cabling') return cab.renderInspector();
+    if (wsUI()) return wsUI().renderInspector();
     const s = ui.selection;
     if (s && s.kind === 'devices') {
       if (s.ids.length === 1) renderDeviceInspector(M.deviceById(project, s.ids[0]));
@@ -1896,6 +1914,14 @@
     bindField($('#insp-power'), id, 'powerW', parseOptNum(100000));
     bindField($('#insp-weight'), id, 'weightKg', parseOptNum(5000));
     bindField($('#insp-notes'), id, 'notes');
+    const toPower = $('#insp-open-power');
+    if (toPower) {
+      toPower.addEventListener('click', () => {
+        pow.showDevice(id);
+        setWorkspace('power');
+        pow.revealSelection();
+      });
+    }
     $('#insp-dup').addEventListener('click', () => duplicateDevice(id));
     $('#insp-del').addEventListener('click', () => deleteDevices([id]));
     if (hidden) $('#insp-show-cluster').addEventListener('click', () => showCluster(clusterIdOf(d) || '__none'));
@@ -2654,6 +2680,7 @@
     ui.focusCluster = null;
     ui.hoverCluster = null;
     cab.reset();
+    pow.reset();
     disarm();
     const ok = commit((p) => {
       Object.keys(p).forEach((k) => delete p[k]);
@@ -2682,9 +2709,9 @@
     el.zoomLevel.textContent = Math.round(ui.zoom * 100) + '%';
   }
 
-  /** Whether the stage shows a drawing that zooms: the Racks sheet, or a drawing of the Cabling workspace. */
+  /** Whether the stage shows a drawing that zooms: the Racks sheet, or a drawing of the Cabling or Power workspace. */
   function zoomable() {
-    return ui.workspace === 'cabling' ? cab.zoomable() : ui.view !== 'map';
+    return wsUI() ? wsUI().zoomable() : ui.view !== 'map';
   }
 
   function setZoom(z, anchor, remember) {
@@ -2746,12 +2773,12 @@
   function fitWidth() {
     if (!zoomable()) return;
     const cw = canvasWidth();
-    const least = coarse.matches && (ui.workspace === 'racks' || ui.cabView === 'elevation') ? 1 : 0.5;
+    const least = coarse.matches && (ui.workspace === 'racks' || ui.workspace === 'power' || ui.cabView === 'elevation') ? 1 : 0.5;
     ui.zoom = clamp(Math.round(clamp(Math.min(1, cw / ui.sceneW), least, 3) * 1000) / 1000, 0.1, 3);
     applyZoom();
     scrollToOrigin();
     // A Cabling drawing still too wide may show its middle instead (the fabric's switches).
-    if (ui.workspace === 'cabling') cab.afterFit(cw);
+    if (wsUI()) wsUI().afterFit(cw);
   }
 
   function scrollToOrigin() {
@@ -3060,8 +3087,8 @@
       return;
     }
     if (e.button !== 0) return;
-    // The Cabling workspace's drawings have their own pointer handling.
-    if (ui.workspace === 'cabling') return;
+    // The drawings of the Cabling and Power workspaces have their own pointer handling.
+    if (ui.workspace !== 'racks') return;
     const press = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
     if (e.target.closest('.add-rack')) {
       if (e.pointerType === 'mouse') e.preventDefault();
@@ -3248,7 +3275,7 @@
     render();
   });
   el.svg.addEventListener('keydown', (e) => {
-    if ((e.key !== 'Enter' && e.key !== ' ') || ui.workspace === 'cabling' || !e.target.closest) return;
+    if ((e.key !== 'Enter' && e.key !== ' ') || ui.workspace !== 'racks' || !e.target.closest) return;
     const head = e.target.closest('.rack-head');
     if (e.target.closest('.add-rack')) {
       e.preventDefault();
@@ -3284,6 +3311,7 @@
     // Lifted, the fingers tap nothing.
     ui.press = null;
     cab.cancelPress();
+    pow.cancelPress();
     pinch = { d: spread().d, zoom: ui.zoom };
   });
   window.addEventListener('pointermove', (e) => {
@@ -3368,6 +3396,11 @@
       res.cables = found.items;
       res.counts.cables = found.count;
       groups.push(['cables', 'Cables', 'cable']);
+    } else if (ui.workspace === 'power') {
+      const found = pow.searchCords(q, 8);
+      res.cords = found.items;
+      res.counts.cords = found.count;
+      groups.push(['cords', 'Power cords', 'power']);
     }
     const items = [];
     let html = '';
@@ -3383,12 +3416,12 @@
           `<span class="sr-kind">${icon(kind, 'ic-sm')}</span>` +
           `<span class="sr-name">${esc(it.name)}</span><span class="sr-detail">${esc(it.detail)}${it.kind === 'cluster' ? ' · Show view' : ''}</span></div>`;
       }
-      if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' && !cabling ? ' (highlighted in the racks)' : ''}</div>`;
+      if (more > 0) html += `<div class="sr-more" role="presentation">and ${more} more${key === 'devices' && ui.workspace !== 'cabling' ? ' (highlighted in the racks)' : ''}</div>`;
     }
     // With views, say that the search is in the view shown.
     const where = project.views.length > 1 ? ` in view ${esc(M.viewOf(project, ui.clusterView).name)}` : '';
     if (!items.length) html = `<div class="sr-empty" role="presentation">Nothing${where} matches “${esc(q)}”.</div>`;
-    else if (res.counts.devices && !cabling) html += `<div class="sr-foot" role="presentation">Matching devices stay highlighted; <kbd>Esc</kbd> clears the search.</div>`;
+    else if (res.counts.devices && ui.workspace !== 'cabling') html += `<div class="sr-foot" role="presentation">Matching devices stay highlighted; <kbd>Esc</kbd> clears the search.</div>`;
     ui.searchItems = items;
     if (ui.searchActive >= items.length) ui.searchActive = items.length - 1;
     el.searchResults.innerHTML = html;
@@ -3450,9 +3483,9 @@
       toast(`Showing view ${M.viewOf(project, it.view).name}`);
       return;
     }
-    if (ui.workspace === 'cabling') {
+    if (wsUI()) {
       el.search.blur();
-      cab.chooseResult(it);
+      wsUI().chooseResult(it);
     } else if (it.kind === 'device') {
       el.search.blur();
       selectDevices([it.id], { follow: true, focus: true });
@@ -5775,7 +5808,8 @@
       ['<kbd>?</kbd>', 'This help'],
       ['<kbd>/</kbd> or <kbd>Ctrl</kbd> <kbd>K</kbd>', 'Search'],
       ['<kbd>[</kbd> <kbd>]</kbd>', 'Previous, next row'],
-      ['<kbd>C</kbd>', 'Racks or Cabling'],
+      ['<kbd>C</kbd>', 'Next workspace: Racks, Cabling, Power'],
+      ['<kbd>P</kbd>', 'The Power workspace'],
       ['<kbd>V</kbd>, <kbd>Shift</kbd> <kbd>V</kbd>', 'Next, previous view, in a plan with more than one'],
       ['<kbd>Ctrl</kbd> <kbd>Z</kbd>, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd>', 'Undo, redo'],
     ],
@@ -5805,6 +5839,14 @@
       ['<kbd>0</kbd> <kbd>1</kbd> <kbd>+</kbd> <kbd>−</kbd>', 'Fit, 100%, zoom in, out, in the elevation and the fabric'],
       ['<kbd>Esc</kbd>', 'Cancel connecting, deselect, show all networks'],
     ],
+    power: [
+      ['<kbd>Shift</kbd> or <kbd>Ctrl</kbd> + click', 'Add or remove a cord; in the schedule, Shift selects a range'],
+      ['<kbd>Ctrl</kbd> <kbd>A</kbd>', 'Select the cords shown'],
+      ['<kbd>Enter</kbd> or <kbd>F2</kbd>', 'Edit the label of the selected cord'],
+      ['<kbd>Del</kbd>', 'Unplug the selected cords'],
+      ['<kbd>0</kbd> <kbd>1</kbd> <kbd>+</kbd> <kbd>−</kbd>', 'Fit, 100%, zoom in, out, in the elevation'],
+      ['<kbd>Esc</kbd>', 'Cancel connecting, deselect, clear the search'],
+    ],
   };
   const HELP_HOWTO = {
     racks: [
@@ -5820,12 +5862,19 @@
       ['Connect many at once', 'Connect series, in the schedule, the port map or the inspector of a device, joins many devices to one.'],
       ['Order', 'The schedule lists every cable with its length, and what to order underneath.'],
     ],
+    power: [
+      ['Hang PDUs', 'In Racks, drag a vertical PDU type onto a rack, or use Fill PDU slots on a rack, row or floor. Give each PDU its power grid.'],
+      ['Connect', 'Pick a cord type on the left, then click an inlet of a device and an outlet of a PDU, or drag from one to the other.'],
+      ['Connect many at once', 'Connect series, in the schedule or the inspector of a device, gives every free inlet an outlet, spread over the fuse groups.'],
+      ['Check the load', 'The Load view lists each grid, PDU, phase and fuse group with all grids up and with one grid down. The outlet map shows it per outlet.'],
+      ['Order', 'The schedule lists every cord with its length, and what to order underneath, by color.'],
+    ],
   };
 
   /** Opens the help: how-tos and every shortcut of the workspace shown. */
   function openHelp() {
-    const ws = ui.workspace === 'cabling' ? 'cabling' : 'racks';
-    const name = ws === 'cabling' ? 'Cabling' : 'Racks';
+    const ws = ui.workspace;
+    const name = WS_NAMES[ws];
     const list = (rows, cls) => `<dl class="${cls}">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
     $('#help-title').textContent = `${name}: how-tos and shortcuts`;
     $('#help-body').innerHTML =
@@ -6202,16 +6251,17 @@
   /** The Export menu says what PNG, SVG and Print give from where it opens: the Racks sheet of the row, or the Cabling drawing shown. */
   function renderExportMenu() {
     const cabling = ui.workspace === 'cabling';
-    const drawing = cabling ? cab.drawingName() : null;
+    const power = ui.workspace === 'power';
+    const drawing = wsUI() ? wsUI().drawingName() : null;
     const what = drawing || (cabling ? 'This row’s Racks sheet' : 'This row');
     const hint = (kind, text) => ($(`#menu-export [data-export="${kind}"] small`).textContent = text);
     // Drawings hide what the screen hides, as they leave out the fronts in bare mode; the menu says so.
     const elevation = cabling && ui.cabView === 'elevation';
-    const hidden = elevation ? cab.hiddenNetworkIds().length : drawing ? 0 : hiddenClusters().size;
-    const note = hidden ? ` · ${plural(hidden, elevation ? 'network' : 'cluster')} hidden` : '';
+    const hidden = elevation ? cab.hiddenNetworkIds().length : power ? pow.hiddenGridIds().length : drawing ? 0 : hiddenClusters().size;
+    const note = hidden ? ` · ${plural(hidden, elevation ? 'network' : power ? 'grid' : 'cluster')} hidden` : '';
     hint('png', `${what}, for docs, tickets and chat${note}`);
     hint('svg', `${what}, opens in vector editors${note}`);
-    hint('print', (elevation ? `One sheet per row, its cabling from the ${prefs.cabSide}` : 'One sheet per row, with title blocks') + note);
+    hint('print', (elevation ? `One sheet per row, its cabling from the ${prefs.cabSide}` : power ? 'One sheet per row, its power cabling from the rear' : 'One sheet per row, with title blocks') + note);
   }
 
   $('#menu-export').addEventListener('click', (e) => {
@@ -6280,10 +6330,10 @@
     return { rowId: ui.rowId, measure, date: todayISO(), sheet: sheetInfo(ui.rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn(), hiddenClusters: legendHidden() };
   }
 
-  /** The drawing to export as PNG or SVG: the Racks sheet of the row, or the Cabling workspace's elevation or fabric when it shows one. */
+  /** The drawing to export as PNG or SVG: the Racks sheet of the row, the Cabling workspace's elevation or fabric when it shows one, or the Power workspace's rear elevation. */
   function exportDrawing() {
-    const cabling = ui.workspace === 'cabling' && cab.exportDrawing();
-    if (cabling) return cabling;
+    const other = wsUI() && wsUI().exportDrawing();
+    if (other) return other;
     return { svg: R.exportSVG(project, exportOpts()), file: fileBase(true) };
   }
 
@@ -6442,7 +6492,7 @@
   function addressOf() {
     const q = new URLSearchParams({ row: ui.rowId });
     if (ui.view === 'map') q.set('view', 'map');
-    if (ui.workspace === 'cabling') q.set('ws', 'cabling');
+    if (ui.workspace !== 'racks') q.set('ws', ui.workspace);
     return `#${q}`;
   }
   function writeAddress() {
@@ -6464,7 +6514,7 @@
     if (hash.startsWith(SHARE_PREFIX)) return null;
     const q = new URLSearchParams(hash.slice(1));
     if (!q.get('row')) return null;
-    return { rowId: q.get('row'), view: q.get('view') === 'map' ? 'map' : 'sheet', workspace: q.get('ws') === 'cabling' ? 'cabling' : 'racks' };
+    return { rowId: q.get('row'), view: q.get('view') === 'map' ? 'map' : 'sheet', workspace: q.get('ws') === 'cabling' || q.get('ws') === 'power' ? q.get('ws') : 'racks' };
   }
   /** Before the first drawing: opens where the address says, in a row the plan has. */
   function takeAddress() {
@@ -6507,7 +6557,7 @@
       .join('');
     if (prefs.paper) $('#print-paper').value = prefs.paper;
     // The drawing shown: the Racks sheet, or the Cabling elevation from its side.
-    const drawing = ui.workspace === 'cabling' && ui.cabView === 'elevation' ? prefs.cabSide : 'racks';
+    const drawing = ui.workspace === 'power' ? 'power' : ui.workspace === 'cabling' && ui.cabView === 'elevation' ? prefs.cabSide : 'racks';
     $(`input[name="print-drawing"][value="${drawing}"]`).checked = true;
     openDialog($('#dlg-print'));
   }
@@ -6524,7 +6574,7 @@
     printSheets(scope, paper, orient, drawing);
   });
 
-  /** Prints the rows of `scope`, a sheet each: their racks (`drawing` 'racks') or their cabling seen from the 'front' or the 'rear'. */
+  /** Prints the rows of `scope`, a sheet each: their racks (`drawing` 'racks'), their cabling seen from the 'front' or the 'rear', or their 'power' cabling from the rear. */
   function printSheets(scope, paper, orient, drawing) {
     const pos = currentRow();
     const all = M.allRows(project);
@@ -6533,7 +6583,9 @@
     el.printRoot.innerHTML = rows
       .map((rowId) => {
         const sc =
-          drawing === 'front' || drawing === 'rear'
+          drawing === 'power'
+            ? PR.elevation(project, { rowId, side: 'rear', theme: 'light', measure, view: ui.clusterView, hiddenGrids: pow.hiddenGridIds() })
+            : drawing === 'front' || drawing === 'rear'
             ? CR.elevation(project, { rowId, side: drawing, theme: 'light', measure, hiddenNetworks: cab.hiddenNetworkIds() })
             : R.renderScene(project, { rowId, theme: 'light', measure, date, sheet: sheetInfo(rowId), bare: prefs.detail === 'bare', view: ui.clusterView, hidden: hiddenFn(), hiddenClusters: legendHidden() });
         return `<section class="print-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sc.width} ${sc.height}" preserveAspectRatio="xMidYMid meet">${sc.body}</svg></section>`;
@@ -6586,7 +6638,7 @@
     el.toasts.classList.remove('is-docked', 'is-top');
     if (!el.toasts.children.length) return;
     if (!foot) {
-      if (host === document.body && ui.workspace === 'cabling') dockToasts();
+      if (host === document.body && ui.workspace !== 'racks') dockToasts();
       return;
     }
     const f = foot.getBoundingClientRect();
@@ -6738,8 +6790,10 @@
       focusSearch();
       return;
     }
-    const cabling = ui.workspace === 'cabling';
-    if (cabling && !(t.closest && t.closest('.menu')) && cab.onKeyDown(e, { formControl, textEntry, mod, key, letter })) return;
+    // The Cabling or Power workspace shown, which takes its own keys first; `cabling` says that one of them is.
+    const side = wsUI();
+    const cabling = !!side;
+    if (side && !(t.closest && t.closest('.menu')) && side.onKeyDown(e, { formControl, textEntry, mod, key, letter })) return;
     if (formControl) {
       if (textEntry && (key === 'Escape' || (key === 'Enter' && t.tagName === 'INPUT'))) t.blur();
       return;
@@ -6751,16 +6805,16 @@
       else if (ui.marquee) {
         ui.marquee = null;
         hideDragFeedback();
-      } else if (cabling && cab.cancelPending()) return;
+      } else if (side && side.cancelPending()) return;
       else if (ui.armed || ui.moving) disarm();
       else if (!$$('.menu').every((m) => m.hidden)) closeMenus();
-      else if (cabling ? cab.hasSelection() : ui.selection) {
-        if (cabling) cab.clearSelection();
+      else if (side ? side.hasSelection() : ui.selection) {
+        if (side) side.clearSelection();
         else clearSelection();
       } else if (ui.query) {
         el.search.value = '';
         setQuery('');
-      } else if (cabling) cab.clearFocus();
+      } else if (side) side.clearFocus();
       else if (ui.focusCluster) {
         ui.focusCluster = null;
         render({ inspector: false });
@@ -6824,8 +6878,10 @@
     if (key === '/') {
       e.preventDefault();
       focusSearch();
-    } else if (letter === 'c') {
-      setWorkspace(cabling ? 'racks' : 'cabling');
+    } else if (letter === 'c' || letter === 'p') {
+      // C steps through the workspaces, P goes to Power.
+      const order = ['racks', 'cabling', 'power'];
+      setWorkspace(letter === 'c' ? order[(order.indexOf(ui.workspace) + 1) % order.length] : 'power');
       if (focusLost()) focusStage();
     }
     else if (letter === 'v') stepClusterView(e.shiftKey ? -1 : 1);
@@ -6911,8 +6967,8 @@
   bootPlan();
   takeAddress();
   render();
-  // Opened in Cabling, its drawing fits the stage; the Racks sheet keeps its zoom for later.
-  if (ui.workspace === 'cabling') {
+  // Opened in Cabling or Power, the drawing fits the stage; the Racks sheet keeps its zoom for later.
+  if (ui.workspace !== 'racks') {
     if (zoomable()) fitWidth();
   } else if (prefs.zoom) {
     setZoom(prefs.zoom, null, false);
