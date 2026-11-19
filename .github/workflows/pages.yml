@@ -15,12 +15,12 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
       - run: npm ci
       - name: Unit tests
@@ -41,12 +41,12 @@ jobs:
   # tests. It only changes with its sources, the drawing code and the fonts, so
   # the last recording is reused from the cache while those stay the same.
   video:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
       - id: cache
         uses: actions/cache@v6
@@ -78,7 +78,7 @@ jobs:
 
   deploy:
     needs: [test, video]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pages: write
@@ -95,7 +95,7 @@ jobs:
           cp -r index.html css js fonts sw.js manifest.webmanifest icon.svg _site/
           cp media/index.html _site/media/
       - name: Add the intro video next to its player page
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: intro-video
           path: _site/media
