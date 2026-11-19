@@ -1841,8 +1841,13 @@
     p.deviceTypes.push(
       { id: 'gpu-server', label: 'GPU server', tag: 'GPU', spec: '8 × GPU', height: 4, face: 'gpu', defaultName: 'gpu-srv-01', powerW: 3000, weightKg: 65, ports: clone(GPU_SERVER_PORTS), inlets: psus(4, 'c20'), slackM: 0.3 },
       { id: 'patch-panel', label: 'Patch panel', tag: 'PATCH', spec: '24 × RJ45', height: 1, face: 'patch', defaultName: 'pp-01', powerW: 0, weightKg: 2, ports: [], inlets: [], slackM: 0 },
-      { id: 'pdu', label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [], slackM: 0 }
+      { id: 'pdu', label: 'PDU', tag: 'PDU', spec: '12 × C13', height: 1, face: 'pdu', defaultName: 'pdu-01', powerW: 0, weightKg: 5, ports: [onePort('mgmt', 'rj45', 1, 'rear')], inlets: [], slackM: 0 },
+      Object.assign({ id: 'pdu-3p-30' }, clone(TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30')))
     );
+    p.powerGrids = [
+      { id: 'pg-a', name: 'Grid A', color: GRID_COLORS[0], note: 'UPS 1, room 0.12' },
+      { id: 'pg-b', name: 'Grid B', color: GRID_COLORS[1], note: 'UPS 2, room 0.14' },
+    ];
     const rack = (id, name, type) => ({ id, name, type: type || 'rack-47', trayM: null, slackM: null });
     p.floors = [
       {
@@ -1899,8 +1904,9 @@
     add('reserved', 'Core expansion', null, 'r4', 'u', 8, { height: 6, notes: 'Second spine pair, next budget year' });
     for (const r of ['r4', 'r5', 'r6']) {
       const k = r.slice(1) - 3;
-      add('pdu', `pdu-b0${k}-a`, null, r, 'side', 0);
-      add('pdu', `pdu-b0${k}-b`, null, r, 'side', 1);
+      // A vertical PDU on each grid, at the rear of every rack.
+      add('pdu-3p-30', `pdu-b0${k}-a`, null, r, 'pdu', 0, { grid: 'pg-a' });
+      add('pdu-3p-30', `pdu-b0${k}-b`, null, r, 'pdu', 1, { grid: 'pg-b' });
     }
     add('switch-osfp', 'ib-leaf-b02', 'c-heron', 'r5', 'u', 1, sw);
     add('switch-osfp', 'ib-leaf-b03', 'c-heron', 'r6', 'u', 1, sw);
@@ -1915,7 +1921,51 @@
     for (let i = 0; i < 4; i++) add('storage-enclosure', `arc-jbod-0${i + 1}`, 'c-archive', i < 2 ? 'r7' : 'r8', 'u', 7 + (i % 2) * 4);
 
     addExampleCabling(p);
+    addExamplePower(p);
     return p;
+  }
+
+  /**
+   * The example's power cords, in Row B: every power supply of a device
+   * goes to the PDU of one grid, half of them to each. Two devices are
+   * left the way a first pass often leaves them, for the checks to show:
+   * core-sw-02 has both supplies on Grid A, and sw-mgmt-b01 has one cord.
+   */
+  function addExamplePower(p) {
+    const byName = new Map(p.devices.map((d) => [d.name, d.id]));
+    const cord = (name, inlet, pdu, outlet) =>
+      p.powerCords.push({
+        id: `pc-${p.powerCords.length + 1}`,
+        label: formatSerial(parseSerial(CORD_LABEL), p.powerCords.length + 1),
+        type: null,
+        lengthM: null,
+        color: null,
+        notes: '',
+        inlet: { device: byName.get(name), inlet },
+        outlet: { device: byName.get(pdu), outlet: String(outlet) },
+      });
+    const both = (name, rack, outlet) => {
+      cord(name, 'psu1', `pdu-${rack}-a`, outlet);
+      cord(name, 'psu2', `pdu-${rack}-b`, outlet);
+    };
+    // Rack B01: the core switches.
+    both('core-sw-01', 'b01', 1);
+    cord('core-sw-02', 'psu1', 'pdu-b01-a', 2);
+    cord('core-sw-02', 'psu2', 'pdu-b01-a', 6);
+    cord('sw-mgmt-b01', 'psu1', 'pdu-b01-a', 11);
+    // Racks B02 and B03: a leaf switch, and GPU servers with four supplies on the C19 outlets, one fuse group each.
+    [
+      ['b02', 'ib-leaf-b02', 1],
+      ['b03', 'ib-leaf-b03', 4],
+    ].forEach(([rack, leaf, first]) => {
+      both(leaf, rack, 1);
+      for (let i = 0; i < 3; i++) {
+        const srv = `gpu-srv-0${first + i}`;
+        both(srv, rack, 5 + 5 * i);
+        cord(srv, 'psu3', `pdu-${rack}-a`, 20 + 5 * i);
+        cord(srv, 'psu4', `pdu-${rack}-b`, 20 + 5 * i);
+      }
+    });
   }
 
   /** The example's networks and cables, numbered per network in the order they are made. */

@@ -124,7 +124,9 @@ test('several side-slot devices fill the free side slots, in the rack or spread 
   await dragPart(page, 'pdu', await spot(page, 'pdu', { rack: 'r2', kind: 'side', at: 0 }));
   await page.mouse.up();
   await expect(page.locator('#dlg-place')).toBeVisible();
-  await expect(page.locator('#place-name')).toHaveValue('pdu-a02-a');
+  // The plan has no device of this type yet, so the name starts its series; one with the rack's code follows the racks.
+  await expect(page.locator('#place-name')).toHaveValue('pdu-01');
+  await page.fill('#place-name', 'pdu-a02-a');
   await expect(page.locator('#place-dir-field')).toBeHidden();
   await page.fill('#place-qty', '2');
   await expect(page.locator('#place-preview')).toHaveText('pdu-a02-a … pdu-a02-b · Side slots V1, V2');
@@ -836,7 +838,8 @@ test('duplicates several devices, racks, rows and floors', async ({ page }) => {
 test('a copy of a side-slot device goes to a side slot, in the next rack when its own are full', async ({ page }) => {
   await dragPart(page, 'pdu', await spot(page, 'pdu', { rack: 'r1', kind: 'side', at: 1 }));
   await page.mouse.up();
-  await expect(page.locator('#place-name')).toHaveValue('pdu-a01-a');
+  await expect(page.locator('#place-name')).toHaveValue('pdu-01');
+  await page.fill('#place-name', 'pdu-a01-a');
   await page.click('#place-submit');
   await device(page, 'pdu-a01-a').click();
   await page.keyboard.press('Control+d');

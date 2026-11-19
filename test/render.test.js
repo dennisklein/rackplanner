@@ -450,18 +450,17 @@ test('the number of a cluster reads at 4.5:1 on every default cluster color, on 
 
 // ------------------------------------------------------------ PDU slots
 
-/** The example with a vertical PDU type, two grids, and a PDU in each slot of Rack A01. */
+/** The example, whose Row B has vertical PDUs on two grids, with a PDU in each slot of Rack A01 too. */
 function pduProject() {
   const p = M.createExampleProject();
-  const type = M.addDeviceType(p, M.TYPE_TEMPLATES.find((t) => t.label === '0U PDU 3P 30'));
-  p.powerGrids.push({ id: 'ga', name: 'Grid A', color: '#d1453b', note: '' }, { id: 'gb', name: 'Grid B', color: '#2b6cd4', note: '' });
+  const type = M.typeOf(p, 'pdu-3p-30');
   const pdus = M.fillPduSlots(p, ['r1'], type.id);
   return { p, type, pdus };
 }
 
 test('the sheet draws PDU slots in the side channels and vertical PDUs as dashed strips in their grid color', () => {
   const { p, type, pdus } = pduProject();
-  assert.deepEqual(pdus.map((d) => [d.name, d.loc.at, d.grid]), [['pdu-a01-a', 0, 'ga'], ['pdu-a01-b', 1, 'gb']]);
+  assert.deepEqual(pdus.map((d) => [d.name, d.loc.at, d.grid]), [['pdu-a01-a', 0, 'pg-a'], ['pdu-a01-b', 1, 'pg-b']]);
   const out = R.renderScene(p, { rowId: 'row1', theme: 'light', interactive: true, date: '2026-01-01' });
   assertWellFormed(`<svg xmlns="http://www.w3.org/2000/svg">${out.body}</svg>`);
   // Six slots in three racks; the two taken ones are covered by their PDUs.

@@ -477,7 +477,7 @@ test('a CSV export imports back into an equal plan', () => {
   const { project: p, warnings, added } = IO.importCSV(IO.toCSV(ex));
   assert.deepEqual(warnings, [
     'Added the device type Patch panel (1U) to the catalog.',
-    'Added the device type PDU (1U) to the catalog.',
+    'Added the vertical PDU type 0U PDU 3P 30 to the catalog.',
     'Added the device type 32-port 400G switch (1U) to the catalog.',
     'Added the device type GPU server (4U) to the catalog.',
   ], 'a CSV has no catalog, so custom types come back as generic ones');
@@ -636,7 +636,7 @@ test('version 6 files keep ports, lengths, networks, catalogs, views and cables,
   const lines = json.split('\n');
   assert.equal(lines.filter((l) => l.startsWith('    {"id":"cb-')).length, 147);
   assert.equal(lines.filter((l) => l.startsWith('    {"id":"ex-')).length, 65);
-  assert.ok(lines.length < 1100, `${lines.length} lines`);
+  assert.ok(lines.length < 1400, `${lines.length} lines`);
   const { project: p, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, []);
   assert.deepEqual(p, ex);
@@ -1311,6 +1311,7 @@ test('a device id used before, or the same as another after the cut to 80 charac
     { id: 'k1', label: 'meant for B', a: { device: `${long}-B`, port: 'ib0' }, b: { device: 'sw', port: 'p1' } },
     { id: 'k2', label: 'K-2', type: 'dac-osfp-2x', a: { device: 'osfp', port: 'p1' }, b: [{ device: 'gpu', port: 'ib0' }, { device: `${long}-A`, port: 'ib0' }] },
   ];
+  raw.powerCords = [];
   const { project, warnings } = IO.normalizeProject(raw);
   assert.deepEqual(warnings, [
     `b has the id “${long}” of another device and gets a new one.`,
@@ -1597,4 +1598,39 @@ test('version 5 files get PDU slots, standard inlets, cord types and settings; t
   const v6 = IO.normalizeProject(Object.assign({}, raw, { version: 6 })).project;
   assert.deepEqual(v6.deviceTypes[0].inlets, []);
   assert.deepEqual(v6.rackTypes[1].pduSlots, [], 'the default for a rack type that lists none still depends on its height');
+});
+
+test('the inventory CSV writes a PDU as PDU P1 with its power grid, and reads both back', () => {
+  const ex = M.createExampleProject();
+  const csv = IO.toCSV(ex);
+  const lines = csv.trim().split('\r\n');
+  const head = lines[0].split(',');
+  const cells = (name) => lines.find((l) => l.includes(`,${name},`)).split(',');
+  const cell = (name, column) => cells(name)[head.indexOf(column)];
+  assert.deepEqual(['Position', 'Height (U)', 'Type', 'Power grid'].map((c) => cell('pdu-b01-a', c)), ['PDU P1', '0', '0U PDU 3P 30', 'Grid A']);
+  assert.deepEqual(['Position', 'Power grid'].map((c) => cell('pdu-b03-b', c)), ['PDU P2', 'Grid B']);
+  assert.equal(cell('core-sw-01', 'Power grid'), '', 'only PDUs are on a grid');
+  assert.deepEqual(['PDU P2', 'p3', 'pdu 4', 'P 1'].map(IO.parsePosition), [2, 3, 4, 1].map((n) => ({ kind: 'pdu', at: n - 1 })));
+
+  // Into a new plan: the PDU type comes from the template of its name, the grids are made by name.
+  const { project: p, warnings } = IO.importCSV(csv);
+  assert.ok(warnings.includes('Added the vertical PDU type 0U PDU 3P 30 to the catalog.'));
+  const pdus = M.sortedDevices(p).filter((d) => d.loc.kind === 'pdu');
+  assert.deepEqual(pdus.map((d) => `${d.name} P${d.loc.at + 1} ${M.gridOf(p, d).name}`), [1, 2, 3].flatMap((k) => [`pdu-b0${k}-a P1 Grid A`, `pdu-b0${k}-b P2 Grid B`]));
+  assert.deepEqual(p.powerGrids.map((g) => g.name), ['Grid A', 'Grid B']);
+  assert.equal(M.expandOutlets(M.typeOf(p, pdus[0].type)).length, 30);
+
+  // Into its own plan: a line changes the grid of its PDU (a new name makes a grid, an empty cell takes it away), power cords stay.
+  const gridAt = head.indexOf('Power grid');
+  const edit = (name, grid) => cells(name).map((c, i) => (i === gridAt ? grid : c)).join(',');
+  const edited = [lines[0], edit('pdu-b01-a', 'Grid C'), edit('pdu-b01-b', ''), edit('pdu-b02-a', 'grid b')].join('\r\n');
+  const again = IO.importCSV(edited, ex);
+  assert.deepEqual([again.added, again.updated, again.warnings], [0, 3, []]);
+  const grid = (name) => (M.gridOf(again.project, again.project.devices.find((d) => d.name === name)) || { name: null }).name;
+  assert.deepEqual(['pdu-b01-a', 'pdu-b01-b', 'pdu-b02-a', 'pdu-b02-b'].map(grid), ['Grid C', null, 'Grid B', 'Grid B']);
+  assert.deepEqual(again.project.powerGrids.map((g) => g.name), ['Grid A', 'Grid B', 'Grid C']);
+  assert.equal(again.project.powerCords.length, ex.powerCords.length);
+  // A PDU type in rack units, or another device in a PDU slot, is skipped with the reason.
+  const wrong = [lines[0], cells('pdu-b01-a').map((c, i) => (i === head.indexOf('Position') ? 'U40' : i === head.length - 1 ? '' : c)).join(',')].join('\r\n');
+  assert.match(IO.importCSV(wrong, ex).warnings.join(' '), /A vertical PDU goes in a PDU slot/);
 });

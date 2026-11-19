@@ -395,6 +395,10 @@ test('ports of devices whose ids hold "|" are clicked, hovered and connected', a
       if (Array.isArray(c.b)) c.b = c.b.map((e) => (e ? Object.assign(e, { device: map(e.device) }) : e));
       else c.b.device = map(c.b.device);
     }
+    for (const c of q.powerCords) {
+      c.inlet.device = map(c.inlet.device);
+      c.outlet.device = map(c.outlet.device);
+    }
     q.name = 'Pipes';
     delete q.meta.example;
     return q;

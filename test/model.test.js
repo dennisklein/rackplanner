@@ -259,6 +259,7 @@ test('planSpread spreads devices evenly and overflows into racks with room', () 
 test('planSideSlots fills free side slots from the one picked, then over the racks given', () => {
   // Rack A02 (r2) has two free side slots, A01 and A03 one each (V2), B01 (r4) none.
   const p = M.createExampleProject();
+  for (const at of [0, 1]) p.devices.push(M.newDevice({ type: 'pdu', name: `pdu-1u-${at}`, loc: { rack: 'r4', kind: 'side', at } }));
   assert.deepEqual(M.planSideSlots(p, 'pdu', ['r2'], 1, 2), [
     { rack: 'r2', at: 1 },
     { rack: 'r2', at: 0 },
@@ -559,9 +560,9 @@ test('suggestPlacement continues the nearest series and reuses its cluster', () 
 test('suggestPlacement takes a device of the same row first and the rack code of the target', () => {
   const p = M.createExampleProject();
   // PDUs are in Row B only: one in Rack A01 takes the code A01, not B04, and starts at a.
-  assert.equal(M.suggestPlacement(p, 'pdu', { rack: 'r1', kind: 'side', at: 1 }).name, 'pdu-a01-a');
+  assert.equal(M.suggestPlacement(p, 'pdu-3p-30', { rack: 'r1', kind: 'pdu', at: 1 }).name, 'pdu-a01-a');
   // In Rack B02, its neighbours in B02 come first; the letter counts up after the code.
-  assert.equal(M.suggestPlacement(p, 'pdu', { rack: 'r5', kind: 'side', at: 1 }).name, 'pdu-b02-c');
+  assert.equal(M.suggestPlacement(p, 'pdu-3p-30', { rack: 'r5', kind: 'pdu', at: 1 }).name, 'pdu-b02-c');
   // In a row of its own, the code of the rack counts no further.
   assert.equal(M.nameInRack(p, 'sw-mgmt-a01', 'r1', 'r1', 1), 'sw-mgmt-a01-2');
   assert.equal(M.nameInRack(p, 'sw-mgmt-a01', 'r1', 'r3', 1), 'sw-mgmt-a03-2', 'sw-mgmt-a03 is taken');
@@ -1061,8 +1062,12 @@ test('adding or removing a port group leaves the other groups’ cables on their
 test('forEachPortRef visits each cable end and breakout leg once, as the object in the plan', () => {
   const p = M.createExampleProject();
   const seen = [];
-  M.forEachPortRef(p, (ref, cable) => seen.push([ref, cable]));
+  const cordEnds = [];
+  M.forEachPortRef(p, (ref, owner, kind) => (kind === 'port' ? seen : cordEnds).push([ref, owner, kind]));
   assert.equal(seen.length, p.cables.reduce((n, c) => n + M.cableEnds(c).length, 0));
+  // The ends of the power cords too: the inlet, then the outlet, named by their kind.
+  assert.equal(cordEnds.length, 2 * p.powerCords.length);
+  assert.deepEqual(cordEnds.slice(0, 2).map(([ref, cord, kind]) => [cord === p.powerCords[0], kind, ref[kind]]), [[true, 'inlet', 'psu1'], [true, 'outlet', '1']]);
   const breakout = p.cables.find((c) => Array.isArray(c.b));
   const visits = seen.filter(([, c]) => c === breakout).map(([ref]) => ref);
   assert.deepEqual(visits, [breakout.a].concat(breakout.b.filter(Boolean)), 'the head, then each leg');
