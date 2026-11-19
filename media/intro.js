@@ -1,14 +1,16 @@
 /*
- * Rackplanner intro video: 50 seconds of motion graphics in eight chapters,
- * from placing devices to cabling them and sharing the plan.
+ * Rackplanner intro video: 60 seconds of motion graphics in nine chapters,
+ * from placing devices to cabling them, feeding them from two power grids
+ * and sharing the plan.
  *
  * Every frame is a pure function of time: render(t) poses the whole stage at
  * time t of the story, so frames can be drawn in any order, and PACE says how
- * much video each part of the story gets. The racks, devices, cabling
- * drawings, CSV and share link come from the app's own code and its example
- * plan; everything that needs drawing is drawn once at the start. media/record.js
- * steps through the frames and encodes them; opened in a browser, the page
- * plays in real time (?t=12.5 holds the frame 12.5 s into the video).
+ * much video each part of the story gets. The racks, devices, cabling and
+ * power drawings, loads, CSV and share link come from the app's own code and
+ * its example plan; everything that needs drawing is drawn once at the start.
+ * media/record.js steps through the frames and encodes them; opened in a
+ * browser, the page plays in real time (?t=12.5 holds the frame 12.5 s into
+ * the video).
  */
 (function () {
   'use strict';
@@ -17,9 +19,11 @@
   const R = RP.render;
   const IO = RP.io;
   const CR = RP.cablingRender;
+  const P = RP.power;
+  const PR = RP.powerRender;
 
-  const STORY = 33.9; // the story's own seconds, which everything below is timed in
-  const LENGTH = 50; // seconds of video
+  const STORY = 40.8; // the story's own seconds, which everything below is timed in
+  const LENGTH = 60; // seconds of video
   const URL_SCHEME = 'https://';
   const URL_HOST = 'dennisklein.github.io/rackplanner/';
   const DATE = '2026-10-03';
@@ -35,9 +39,10 @@
   const BRAND_TB = 0.6;
   const CATALOG = 15.0; // the catalog dialog opens
   const CABLING = 18.85; // the Cabling chapter begins
-  const SHARE = 25.25; // the export menu opens
-  const WIPE = 30.3; // the stripes sweep in
-  const OUTRO = 30.8; // ... and cover the screen: the closing page takes over
+  const POWER = 25.25; // the Power chapter begins
+  const SHARE = 32.15; // the export menu opens
+  const WIPE = SHARE + 5.05; // the stripes sweep in
+  const OUTRO = WIPE + 0.5; // ... and cover the screen: the closing page takes over
 
   // ------------------------------------------------------------- easing
 
@@ -70,9 +75,11 @@
     [12.3, 12.95, 1.1], [12.95, 14.55, 1.3], [14.55, 14.85, 5], // the floor map and its search
     [14.85, 15.5, 1.1], [15.5, 18.3, 1.35], // the catalog
     [18.3, 19.2, 1.1], [19.2, 21.6, 1.35], [21.6, 23.0, 1.5], [23.0, 24.7, 1.3], // cables draw in; cn-004; the fabric
-    [24.7, 25.5, 1.1], [25.5, 28.3, 1.3], [28.3, 28.4, 10], // export and share
-    [28.4, 30.05, 1.15], [30.05, 30.3, 12], // everything else
-    [30.3, 31.3, 1.1], [31.3, 32.2, 1.15], [32.2, STORY, 0], // the stripes; try it now
+    [24.7, POWER + 0.35, 1.1], [POWER + 0.35, POWER + 3.4, 1.35], [POWER + 3.4, POWER + 3.5, 6], // PDUs drop in; cords draw in
+    [POWER + 3.5, POWER + 5.7, 1.35], [POWER + 5.7, POWER + 5.8, 10], // the load, then with one grid down
+    [POWER + 5.8, SHARE + 0.25, 1.1], [SHARE + 0.25, SHARE + 3.05, 1.3], [SHARE + 3.05, SHARE + 3.15, 10], // export and share
+    [SHARE + 3.15, WIPE - 0.25, 1.15], [WIPE - 0.25, WIPE, 12], // everything else
+    [WIPE, WIPE + 1.0, 1.1], [WIPE + 1.0, WIPE + 1.9, 1.15], [WIPE + 1.9, STORY, 0], // the stripes; try it now
   ];
   const last = PACE[PACE.length - 1];
   last[2] = (LENGTH - PACE.slice(0, -1).reduce((v, [a, b, f]) => v + (b - a) * f, 0)) / (last[1] - last[0]);
@@ -171,14 +178,19 @@
     }
     return keys[keys.length - 1][1];
   }
-  const ROW_A_ALL = { cx: 580, top: 20, w: 1190 };
-  const KESTREL = { cx: 400, top: 62, w: 800 };
-  const OSPREY = { cx: 580, top: 22, w: 800 };
-  const CEPH = { cx: 580, top: 300, w: 800 };
-  const LUSTRE = { cx: 760, top: 62, w: 800 };
+  // On a row's sheet a camera is set in racks, so that it follows the width
+  // of the rack drawing: its middle counted from the left edge of the first
+  // rack, and its width, both in rack pitches.
+  const PITCH = R.geometry.RACK_W + R.geometry.GAP;
+  const cam = (x, top, w) => ({ cx: R.geometry.MX + x * PITCH, top, w: w * PITCH });
+  const ROW_A_ALL = cam(1.45, 20, 3.13);
+  const KESTREL = cam(0.98, 62, 2.1);
+  const OSPREY = cam(1.45, 22, 2.1);
+  const CEPH = cam(1.45, 300, 2.1);
+  const LUSTRE = cam(1.93, 62, 2.1);
   const CAM_A = [
-    [2.0, { cx: 310, top: 18, w: 600 }],
-    [3.7, { cx: 330, top: 18, w: 640 }],
+    [2.0, cam(0.74, 18, 1.58)],
+    [3.7, cam(0.8, 18, 1.68)],
     [5.9, ROW_A_ALL],
     [6.75, ROW_A_ALL],
     [7.15, KESTREL],
@@ -190,8 +202,8 @@
     [9.1, LUSTRE],
   ];
   const CAM_B = [
-    [9.4, { cx: 685, top: 14, w: 960 }],
-    [12.4, { cx: 715, top: 22, w: 900 }],
+    [9.4, cam(1.73, 14, 2.53)],
+    [12.4, cam(1.81, 22, 2.37)],
   ];
 
   // ------------------------------------------------------------ sheets
@@ -362,7 +374,7 @@
     if (floorMap.typed.textContent !== typed) floorMap.typed.textContent = typed;
     floorMap.ph.style.display = typed ? 'none' : '';
     // The placeholder follows the workspace, as the app's does.
-    const ph = t >= CABLING + CAB_FLIP && t < CABLING + CAB_OUT ? 'Search devices, cables' : 'Search devices, racks';
+    const ph = t < CABLING + CAB_FLIP || t >= POWER + POW_OUT ? 'Search devices, racks' : t < POWER + POW_FLIP ? 'Search devices, cables' : 'Search devices, cords';
     if (floorMap.ph.textContent !== ph) floorMap.ph.textContent = ph;
     const searching = t > SEARCH_AT - 0.3 && t < CATALOG;
     floorMap.search.classList.toggle('on', searching);
@@ -391,8 +403,8 @@
   const CHIPS = [
     ['Breakout cables', '#3aa655'],
     ['Optics and fiber', '#5b8def'],
-    ['Cable order list', '#e05a47'],
-    ['Port maps', '#b0569e'],
+    ['Cable and cord lists', '#e05a47'],
+    ['Port and outlet maps', '#b0569e'],
     ['Undo and redo', '#2f6fdb'],
     ['CSV import', '#0f9d8a'],
     ['Duplicate anything', '#e56b1f'],
@@ -410,9 +422,10 @@
     { tag: '03 · BUDGETS', lines: ['Stay within', '<em>budget.</em>'], sub: 'Space, power and weight, tracked per rack.', in: 9.55, out: 12.3, extra: 'card' },
     { tag: '04 · OVERVIEW', lines: ['From floors', 'to <em>devices.</em>'], sub: 'Floors, rows, a live floor map and search across the whole plan.', in: 12.6, out: 14.85 },
     { tag: '05 · CATALOG', lines: ['Your hardware,', 'your <em>catalog.</em>'], sub: 'Edit device and rack types: height, drawing, power, weight and budgets.', in: CATALOG + 0.15, out: CABLING - 0.35 },
-    { tag: '06 · CABLING', lines: ['Every port,', 'every <em>cable.</em>'], sub: 'Ports on every device. Cables routed, measured, checked and counted.', in: CABLING + 0.05, out: SHARE - 0.35 },
-    { tag: '07 · SHARE', lines: ['Print it.', '<em>Share it.</em>'], sub: 'Export PNG, SVG, PDF and CSV, or send a link that carries the whole plan.', in: SHARE + 0.05, out: SHARE + 3.15 },
-    { tag: '08 · AND MORE', lines: ['Everything', '<em>built in.</em>'], in: SHARE + 3.45, out: Infinity, extra: 'chips' },
+    { tag: '06 · CABLING', lines: ['Every port,', 'every <em>cable.</em>'], sub: 'Ports on every device. Cables routed, measured, checked and counted.', in: CABLING + 0.05, out: POWER - 0.35 },
+    { tag: '07 · POWER', lines: ['Lose a grid,', 'keep <em>running.</em>'], sub: 'PDUs on two grids, a cord for every inlet, and the load with one grid down.', in: POWER + 0.05, out: SHARE - 0.35, extra: 'load' },
+    { tag: '08 · SHARE', lines: ['Print it.', '<em>Share it.</em>'], sub: 'Export PNG, SVG and PDF, CSV lists of devices, cables and power cords, or send a link that carries the whole plan.', in: SHARE + 0.05, out: SHARE + 3.15 },
+    { tag: '09 · AND MORE', lines: ['Everything', '<em>built in.</em>'], in: SHARE + 3.45, out: Infinity, extra: 'chips' },
   ];
 
   function buildCopy() {
@@ -447,6 +460,19 @@
           `<div class="bar"><span></span></div>` +
           `<div class="mini"><div><b>SPACE</b><span class="u"></span><div class="mbar"><span class="ub"></span></div></div>` +
           `<div><b>WEIGHT</b><span class="kg"></span><div class="mbar"><span class="kb"></span></div></div></div>`;
+        el.appendChild(card);
+        c.card = card;
+        c.items.push(card);
+      } else if (c.extra === 'load') {
+        const x = pow.pdu;
+        const card = make('div', 'extra card load');
+        card.innerHTML =
+          `<div class="top"><span class="tag" style="font-size:20px">${x.pdu.name}</span><span class="badge">${pow.down.name.toUpperCase()}</span>` +
+          `<span class="cap"><i style="background:${x.grid.color}"></i>${x.grid.name.toUpperCase()}</span></div>` +
+          `<div class="big"><span class="pw"></span> <small>/ ${kw(x.capacityW)} kW</small></div>` +
+          `<div class="bar"><span></span><i style="left:${pow.limit * 100}%"></i></div>` +
+          `<div class="mini"><div><b>ALL GRIDS UP</b><span class="up"></span><div class="mbar"><span class="upb"></span></div></div>` +
+          `<div><b>WORST CASE</b><span class="dn"></span><div class="mbar"><span class="dnb"></span></div></div></div>`;
         el.appendChild(card);
         c.card = card;
         c.items.push(card);
@@ -534,6 +560,26 @@
       $('.cap', card).style.display = over ? 'none' : '';
       const shake = t > OVER_AT + 0.15 ? Math.sin((t - OVER_AT) * 70) * 10 * Math.exp(-(t - OVER_AT - 0.15) * 7) : 0;
       card.style.transform = `translateX(${r2(shake)}px)`;
+    }
+    if (c.extra === 'load') {
+      // The PDU's load: it grows with each cord that arrives, and again when the other grid goes down.
+      const s = t - POWER;
+      const v = pduLoadAt(s);
+      const cap = pow.pdu.capacityW;
+      const card = c.card;
+      const share = (w) => `${((100 * w) / cap).toFixed(2)}%`;
+      $('.pw', card).textContent = kw(v.w);
+      $('.bar span', card).style.width = share(v.w);
+      $('.up', card).textContent = `${kw(v.up)} kW`;
+      $('.upb', card).style.width = share(v.up);
+      $('.dn', card).textContent = v.down > 0 ? `${kw(v.w)} kW · ${pct(v.w, cap)} %` : '–';
+      $('.dnb', card).style.width = v.down > 0 ? share(v.w) : '0';
+      const bk = prog(s, ONE_DOWN, 0.4, ease.back);
+      const badge = $('.badge', card);
+      badge.style.opacity = clamp(bk * 2);
+      badge.style.transform = `scale(${0.6 + 0.4 * bk})`;
+      badge.style.display = s >= ONE_DOWN ? '' : 'none';
+      $('.cap', card).style.display = s >= ONE_DOWN ? 'none' : '';
     }
   }
 
@@ -635,7 +681,7 @@
       cat.rackKey = key;
       const sc = R.renderScene(rackPlan(units, slots), { rowId: 'rv', theme: THEME, measure });
       // Fixed scale and top edge, so the rack visibly grows; cut below the rack's feet.
-      const vb = { x: 18, y: 26, w: 364, h: 1150 };
+      const vb = { x: R.geometry.MX - 10, y: 26, w: R.geometry.RACK_W + 20, h: 1150 };
       const feet = sc.layout.rackBottom + 14;
       cat.rackPreview.innerHTML =
         `<svg viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}" width="${r2((500 * vb.w) / vb.h)}" height="500">` +
@@ -657,8 +703,8 @@
   // Row A from the rear: the cables draw themselves in, network by network,
   // each lighting up its ports as it arrives, while the camera eases toward
   // Rack A01. Then cn-004 is selected, its cables bold and their far ends
-  // named, and the InfiniBand fabric builds up, tier by tier. Times are
-  // seconds after CABLING.
+  // named, and the InfiniBand fabric builds up, tier by tier, and stays
+  // until the Power chapter. Times are seconds after CABLING.
   const CAB_FLIP = 0.1; // into the Cabling workspace
   // Rack A03's storage networks go first, while the whole row is still in view.
   const NET_START = { 'n-mgmt': 0.4, 'n-sas': 0.55, 'n-stor': 0.75, 'n-bmc': 0.95, 'n-ib': 1.1 };
@@ -667,7 +713,6 @@
   const SELECT = 2.85; // cn-004 is selected
   const FABRIC = 4.15; // the Fabric view
   const FABRIC_NET = 'n-ib';
-  const CAB_OUT = SHARE - CABLING - 0.45; // back to the Racks workspace and the floor map
   const cab = { cables: [], ports: [], links: [], boxes: [], labels: [] };
 
   /** The starting point of an SVG path's data. */
@@ -837,6 +882,194 @@
     cab.fsvg.setAttribute('viewBox', `${r2(v.cx - w / 2)} ${r2(v.cy - h / 2)} ${r2(w)} ${r2(h)}`);
   }
 
+  // ------------------------------------------------------------- power
+
+  // Row B from the rear: its PDUs drop into their slots, Grid A's and then
+  // Grid B's, and the cords draw themselves in, grid by grid, each lighting
+  // up its inlet as it leaves and its outlet as it arrives, while the camera
+  // eases toward Rack B02. Then the Load view: every PDU with all grids up,
+  // and its worst case with one grid down. Times are seconds after POWER.
+  const POW_FLIP = 0.1; // into the Power workspace
+  const POW_ROW = 'row2';
+  const PDU_START = 0.5; // the first grid's PDUs drop in
+  const PDU_GRID = 0.4; // ... the next grid's this much later
+  const PDU_STEP = 0.08; // ... and from rack to rack
+  const CORD_START = 1.3; // the first grid's cords set off
+  const CORD_GRID = 0.75; // ... the next grid's this much later
+  const CORD_SPREAD = 0.6; // a grid's cords set off within this
+  const LOAD = 3.55; // the Load view
+  const ONE_DOWN = 4.65; // ... and what one grid down does to it
+  const POW_OUT = SHARE - POWER - 0.45; // back to the Racks workspace and the floor map
+  const pow = { pdus: [], cords: [], ends: [], rows: [] };
+  // The loads are the app's own. The card on the left follows Rack B02's PDU on the first grid.
+  pow.loads = P.loads(example);
+  pow.limit = pow.loads.limit;
+  pow.pdu = pow.loads.pdus.find((x) => x.pdu.name === 'pdu-b02-a');
+  pow.down = pow.loads.scenarios.find((x) => x.id === pow.pdu.total.down); // its worst case: the other grid is down
+
+  /** The load of the card's PDU at time s: with all grids up, as its cords arrive, and then with the other grid down. */
+  function pduLoadAt(s) {
+    let up = 0;
+    let worst = 0;
+    for (const q of pow.cords) {
+      if (q.c.outlet.device !== pow.pdu.pdu.id) continue;
+      const k = prog(s, q.start + DRAW, 0.3);
+      up += (q.w[P.UP] || 0) * k;
+      worst += (q.w[pow.down.id] || 0) * k;
+    }
+    const down = prog(s, ONE_DOWN, 0.7, ease.inOut);
+    return { up, down, w: lerp(up, worst, down) };
+  }
+
+  const boxOf = (el) => ({ x: Number(el.getAttribute('x')), y: Number(el.getAttribute('y')), w: Number(el.getAttribute('width')), h: Number(el.getAttribute('height')) });
+
+  function buildPower() {
+    const sc = PR.elevation(example, { rowId: POW_ROW, side: 'rear', theme: THEME, measure });
+    pow.svg = $('#sheetP');
+    pow.svg.innerHTML = `<g>${sc.body}</g><g></g>`;
+    [pow.base, pow.over] = pow.svg.children;
+
+    // Cameras: the rack of the card's PDU from top to bottom, with its neighbors' near sides; then closer, on its cords.
+    const lay = PR.layout(example, POW_ROW, 'rear');
+    const rack = lay.racks.find((l) => l.rack.id === pow.pdu.pdu.loc.rack);
+    const cx = rack.x + PR.geometry.RACK_W / 2;
+    const tall = { cx, top: rack.top - 50, w: (rack.bottom - rack.top + 58) * ASPECT };
+    const near = { cx, top: rack.top - 52, w: 900 };
+    pow.cam = [[CORD_START + 0.1, tall], [CORD_START + 1.3, near]];
+
+    // The PDUs drop in, a grid at a time, rack by rack; a dashed slot waits for each.
+    const byId = new Map(example.devices.map((d) => [d.id, d]));
+    const grids = (example.powerGrids || []).map((g) => g.id);
+    const names = [...pow.base.children].filter((el) => el.tagName.toLowerCase() === 'text' && el.hasAttribute('transform'));
+    for (const g of pow.base.querySelectorAll('g.pw-pdu')) {
+      const pdu = byId.get(g.getAttribute('data-pdu'));
+      const strip = g.firstElementChild;
+      const box = boxOf(strip);
+      const slot = `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="2" fill="none" stroke="${T.slotDash}" stroke-width="1" stroke-dasharray="4 3"/>`;
+      g.insertAdjacentHTML('beforebegin', slot);
+      const start = PDU_START + Math.max(0, grids.indexOf(pdu.grid)) * PDU_GRID + lay.racks.findIndex((l) => l.rack.id === pdu.loc.rack) * PDU_STEP;
+      pow.pdus.push({ g, box, start, color: strip.getAttribute('stroke'), name: names.find((n) => n.textContent.includes(` · ${pdu.name} · `)) });
+    }
+
+    // Each cord sets off with its grid, top to bottom; its inlet lights up as it leaves, its outlet as it arrives.
+    const cordById = new Map(example.powerCords.map((c) => [c.id, c]));
+    const inlets = new Map([...pow.base.querySelectorAll('rect.pw-inlet')].map((el) => [el.getAttribute('data-inlet'), el]));
+    const outlets = new Map([...pow.base.querySelectorAll('rect.pw-outlet')].map((el) => [el.getAttribute('data-outlet'), el]));
+    const cords = [...pow.base.querySelectorAll('path.pw-cord-hit')].map((hit) => {
+      const c = cordById.get(hit.getAttribute('data-cord'));
+      const path = hit.previousElementSibling;
+      return { c, path, from: startOf(path.getAttribute('d')), color: path.getAttribute('stroke'), w: pow.loads.cords.get(c.id).w };
+    });
+    grids.forEach((grid, gi) => {
+      const list = cords.filter((q) => byId.get(q.c.outlet.device).grid === grid).sort((a, b) => a.from.y - b.from.y || a.from.x - b.from.x);
+      list.forEach((q, i) => {
+        q.start = CORD_START + gi * CORD_GRID + (list.length > 1 ? (CORD_SPREAD * i) / (list.length - 1) : 0);
+        q.len = q.path.getTotalLength();
+        q.path.style.strokeDasharray = `${r2(q.len + 1)} ${r2(q.len + 1)}`;
+        pow.cords.push(q);
+        const ends = [[inlets.get(`${q.c.inlet.device}|${q.c.inlet.inlet}`), q.start + 0.04], [outlets.get(`${q.c.outlet.device}|${q.c.outlet.outlet}`), q.start + DRAW]];
+        for (const [el, at] of ends) if (el) pow.ends.push({ el, at, color: q.color, rect: boxOf(el) });
+      });
+    });
+  }
+
+  function drawPower(s) {
+    let rings = '';
+    const ring = (r, grow, at, dur, color) => {
+      const g = 1 + grow * prog(s, at, dur);
+      return (
+        `<rect x="${r2(r.x - g)}" y="${r2(r.y - g)}" width="${r2(r.w + 2 * g)}" height="${r2(r.h + 2 * g)}" rx="${r2(1.5 + g / 2)}" ` +
+        `fill="none" stroke="${color}" stroke-width="1.6" opacity="${r2(1 - prog(s, at, dur, (x) => x))}"/>`
+      );
+    };
+    for (const p of pow.pdus) {
+      const k = prog(s, p.start, 0.45, ease.back);
+      p.g.setAttribute('opacity', r2(clamp(k * 2.5)));
+      p.g.setAttribute('transform', `translate(0 ${r2((k - 1) * 60)})`);
+      if (p.name) p.name.setAttribute('opacity', r2(prog(s, p.start + 0.2, 0.3)));
+      if (s > p.start + 0.3 && s < p.start + 0.85) rings += ring(p.box, 10, p.start + 0.3, 0.55, p.color);
+    }
+    for (const q of pow.cords) {
+      const k = prog(s, q.start, DRAW, ease.inOut);
+      q.path.style.visibility = k > 0 ? 'visible' : 'hidden';
+      const off = r2((q.len + 1) * (1 - k));
+      if (q.off !== off) {
+        q.off = off;
+        q.path.style.strokeDashoffset = off;
+      }
+    }
+    for (const p of pow.ends) {
+      const k = prog(s, p.at, 0.25);
+      const f = k >= 1 ? '' : `grayscale(${r2(1 - k)}) brightness(${r2(0.55 + 0.45 * k)})`;
+      if (p.f !== f) {
+        p.f = f;
+        p.el.style.filter = f;
+      }
+      if (s > p.at && s < p.at + 0.45) rings += ring(p.rect, 7, p.at, 0.45, p.color);
+    }
+    pow.over.innerHTML = rings;
+    const cam = track(pow.cam, s);
+    pow.svg.setAttribute('viewBox', `${r2(cam.cx - cam.w / 2)} ${r2(cam.top)} ${r2(cam.w)} ${r2(cam.w / ASPECT)}`);
+  }
+
+  /** The Load view of Row B, after the app's own: its grids and PDUs, without their phases and fuse groups. */
+  function buildLoad() {
+    const row = M.locateRow(example, POW_ROW).row;
+    const racks = new Map(row.racks.map((r) => [r.id, r]));
+    const mine = pow.loads.pdus.filter((x) => racks.has(x.pdu.loc.rack));
+    const downs = pow.loads.scenarios.filter((x) => x.id !== P.UP);
+    const sum = (list, id) => list.reduce((n, x) => n + (x.total.w[id] || 0), 0);
+    const lines = [];
+    let html = '';
+    for (const grid of example.powerGrids || []) {
+      const list = mine.filter((x) => x.pdu.grid === grid.id);
+      if (!list.length) continue;
+      lines.push({ up: sum(list, P.UP), down: Math.max(...downs.map((d) => sum(list, d.id))) });
+      html +=
+        `<div class="ld-row ld-grid"><span><i class="sw" style="background:${grid.color}"></i><b>${grid.name}</b><small>${M.plural(list.length, 'PDU')} in ${row.name}</small></span>` +
+        `<span></span><span class="num up"></span><span class="num down"></span><span></span></div>`;
+      for (const x of list) {
+        lines.push({ up: x.total.upW, down: x.total.downW, cap: x.capacityW, worst: x.total.use });
+        html +=
+          `<div class="ld-row ld-pdu${x === pow.pdu ? ' sel' : ''}"><span><b>${x.pdu.name}</b><small>P${x.pdu.loc.at + 1} · ${racks.get(x.pdu.loc.rack).name}</small></span>` +
+          `<span class="num">${P.fmtKw(x.capacityW)}</span><span class="num up"></span><span class="num down"></span>` +
+          `<span class="ld-use"><span class="meter"><span></span><i style="left:${pow.limit * 100}%"></i></span><span class="pct"></span></span></div>`;
+      }
+    }
+    pow.load = $('#loadview');
+    pow.load.innerHTML =
+      `<div class="fm-head"><div><h3>Load of ${row.name}</h3><p>Worst case: one grid down at a time. The limit is ${Math.round(pow.limit * 100)} % of a rating.</p></div>` +
+      `<div class="seg"><span class="on">${row.name}</span><span>Floor</span><span>Plan</span></div></div>` +
+      `<div class="ld-table"><div class="ld-row ld-cols"><span>Grid, PDU</span><span>Rating</span><span>All up</span>` +
+      `<span class="late">One down</span><span class="late">Use at worst</span></div>${html}</div>` +
+      `<p class="ld-foot">“One down” is the highest load of a line with one grid down (${downs.map((d) => d.name).join(', ')}). The tick on a bar is the limit.</p>`;
+    pow.rows = [...pow.load.querySelectorAll('.ld-grid, .ld-pdu')].map((el, i) =>
+      Object.assign(lines[i], { el, downEl: $('.down', el), useEl: $('.ld-use', el), bar: $('.meter span', el), pctEl: $('.pct', el) })
+    );
+    for (const r of pow.rows) $('.up', r.el).textContent = P.fmtKw(r.up);
+    pow.late = [...pow.load.querySelectorAll('.ld-cols .late')];
+  }
+
+  function drawLoad(s) {
+    const f = s - LOAD;
+    pow.load.style.transform = `scale(${Math.round((1.04 - 0.04 * prog(f, 0, 0.5, ease.expo)) * 1e4) / 1e4})`;
+    // The rows come in with their load with all grids up; then one grid goes down.
+    for (const el of pow.late) el.classList.toggle('on', s >= ONE_DOWN);
+    pow.rows.forEach((row, i) => {
+      const k = prog(f, 0.1 + i * 0.05, 0.45, ease.expo);
+      row.el.style.opacity = r2(k);
+      row.el.style.transform = `translateY(${r2((1 - k) * 24)}px)`;
+      const d = prog(s, ONE_DOWN + i * 0.03, 0.7, ease.inOut);
+      row.downEl.textContent = P.fmtKw(lerp(row.up, row.down, d));
+      row.downEl.style.opacity = r2(clamp(d * 4));
+      if (!row.useEl) return;
+      const use = lerp(row.up / row.cap, row.worst, d);
+      row.bar.style.width = `${(100 * use).toFixed(2)}%`;
+      row.pctEl.textContent = `${Math.round(100 * use)} %`;
+      row.useEl.style.opacity = r2(clamp(d * 4));
+    });
+  }
+
   // ------------------------------------------------------ share, export
 
   // The export menu opens; each pick drops its file on the desk, the last copies a link.
@@ -845,12 +1078,18 @@
     ['SVG drawing', 'This row, opens in vector editors'],
     ['Print or PDF…', 'One sheet per row, with title blocks'],
     ['CSV inventory', 'Every device with location and fields'],
+    ['Cable schedule (CSV)', 'Every cable and breakout leg with both ends'],
+    ['Cable order list (CSV)', 'Cables by type and length, and transceivers'],
+    ['Power cord schedule (CSV)', 'Every power cord with both ends'],
+    ['PDU outlet plan (CSV)', 'Every outlet of every PDU, free ones too'],
+    ['Power load (CSV)', 'Load of every PDU, phase and fuse group'],
+    ['Cord order list (CSV)', 'Power cords by type, length and color'],
     null,
     ['Plan file (.json)', 'Re-open it later with Open'],
     ['Copy plan as JSON', 'Paste it into Open elsewhere'],
     ['Share link…', 'The plan travels inside the link'],
   ];
-  const PICKS = [[0.3, 0], [0.65, 2], [1.0, 3], [1.35, 7]];
+  const PICKS = [[0.3, 0], [0.65, 2], [1.0, 3], [1.35, MENU.length - 1]]; // when, and which line of MENU
   const MENU_CLOSE = 1.6;
   const LINK_IN = 1.75;
   const COPIED = 2.6;
@@ -860,7 +1099,7 @@
   function buildShare() {
     share.menu = $('#menu');
     share.menu.innerHTML = MENU.map((m) => (m ? `<div class="mi"><b>${m[0]}</b><small>${m[1]}</small></div>` : '<hr>')).join('');
-    share.items = [...share.menu.children].filter((e) => e.classList.contains('mi'));
+    share.items = [...share.menu.children]; // one per line of MENU, the separator too
     const sheet = (rowId, index) => {
       const sc = R.renderScene(FINAL, { rowId, theme: 'light', measure, date: DATE, sheet: { index, count: 3 } });
       return { html: svgOf(sc, 470), w: 470, h: Math.round((470 * sc.height) / sc.width) };
@@ -901,8 +1140,7 @@
     fade(share.menu, inMain && s > 0 ? open * (1 - close) : 0);
     pose(share.menu, share.menuX, share.menuY + r2((1 - open) * -10), r2(0.96 + 0.04 * open));
     const pick = PICKS.filter(([at]) => s >= at).pop();
-    // Menu items skip the separator in MENU.
-    share.items.forEach((it, i) => it.classList.toggle('hot', !!pick && pick[1] === (i < 4 ? i : i + 1)));
+    share.items.forEach((it, i) => it.classList.toggle('hot', !!pick && pick[1] === i));
     for (const p of share.outputs) {
       const k = prog(s, p.at, 0.7, ease.out);
       const on = inMain && s >= p.at;
@@ -1013,37 +1251,52 @@
         sheets.B.svg.style.transform = `translateX(${r2(SHEET_W * (1 - slide))}px) scale(${r2(1 - 0.3 * mapIn)})`;
       }
       fade(sheets.B.svg, slide > 0 ? 1 - mapIn : 0);
-      // Cabling: Row A's cables over the floor map, then the fabric; the floor map is back for the share.
+      // Cabling: Row A's cables over the floor map, then the fabric. Power:
+      // Row B's PDUs and cords, then its load. Each view fades in over the
+      // one before; the floor map is back for the share.
       const s = t - CABLING;
+      const p = t - POWER;
       const cabIn = prog(s, CAB_FLIP, 0.35, ease.inOut);
       const fabIn = prog(s, FABRIC, 0.35, ease.inOut);
-      const cabOut = prog(s, CAB_OUT, 0.3, ease.inOut);
+      const powIn = prog(p, POW_FLIP, 0.35, ease.inOut);
+      const loadIn = prog(p, LOAD, 0.35, ease.inOut);
+      const powOut = prog(p, POW_OUT, 0.3, ease.inOut);
       fade(cab.svg, fabIn < 1 ? cabIn : 0);
       if (cabIn > 0 && fabIn < 1) drawCabling(s);
-      fade(cab.fsvg, fabIn * (1 - cabOut));
+      fade(cab.fsvg, powIn < 1 ? fabIn : 0);
       cab.fsvg.style.transform = `scale(${r2(1.04 - 0.04 * fabIn)})`;
-      if (fabIn > 0 && cabOut < 1) drawFabric(s);
-      fade(floorMap.el, cabIn >= 1 && cabOut <= 0 ? 0 : prog(t, 12.6, 0.3, ease.inOut));
+      if (fabIn > 0 && powIn < 1) drawFabric(s);
+      fade(pow.svg, loadIn < 1 ? powIn : 0);
+      if (powIn > 0 && loadIn < 1) drawPower(p);
+      fade(pow.load, loadIn * (1 - powOut));
+      if (loadIn > 0 && powOut < 1) drawLoad(p);
+      fade(floorMap.el, cabIn >= 1 && powOut <= 0 ? 0 : prog(t, 12.6, 0.3, ease.inOut));
       drawSearch(t);
       if (t > 12.5) {
         floorMap.el.style.transform = `scale(${r2(1.12 - 0.12 * prog(t, 12.6, 0.6, ease.expo))})`;
         drawFloorMap(t);
       }
       // Toolbar follows: Row A → Row B, Elevation → Floor map; the Cabling
-      // workspace with its own views, on Row A, and back.
-      const rk = prog(t, 9.45, 0.35, ease.inOut) - prog(s, CAB_FLIP, 0.35, ease.inOut) + prog(s, CAB_OUT, 0.35, ease.inOut);
+      // workspace with its own views, on Row A; the Power workspace with
+      // its own, on Row B; and back.
+      const rk = prog(t, 9.45, 0.35, ease.inOut) - prog(s, CAB_FLIP, 0.35, ease.inOut) + prog(p, POW_FLIP, 0.35, ease.inOut);
       els.rowA.style.transform = `translateY(${r2(-rk * 36)}px)`;
       els.rowB.style.transform = `translateY(${r2((1 - rk) * 36)}px)`;
       const map = t >= 12.55;
       els.segElev.classList.toggle('on', !map);
       els.segMap.classList.toggle('on', map);
-      const cabling = s >= CAB_FLIP && s < CAB_OUT;
-      els.wsRacks.classList.toggle('on', !cabling);
+      const cabling = s >= CAB_FLIP && p < POW_FLIP;
+      const power = p >= POW_FLIP && p < POW_OUT;
+      els.wsRacks.classList.toggle('on', !cabling && !power);
       els.wsCab.classList.toggle('on', cabling);
-      els.segRacks.style.display = cabling ? 'none' : '';
+      els.wsPow.classList.toggle('on', power);
+      els.segRacks.style.display = cabling || power ? 'none' : '';
       els.segCab.style.display = cabling ? '' : 'none';
+      els.segPow.style.display = power ? '' : 'none';
       els.cabElev.classList.toggle('on', s < FABRIC);
       els.cabFab.classList.toggle('on', s >= FABRIC);
+      els.powElev.classList.toggle('on', p < LOAD);
+      els.powLoad.classList.toggle('on', p >= LOAD);
     }
 
     for (const c of COPY) drawCopy(c, t);
@@ -1102,7 +1355,8 @@
     await Promise.all(faces.map((f) => document.fonts.load(f, 'Aa0·…›″').catch(() => null)));
     await document.fonts.ready;
 
-    for (const id of ['grid', 'tagline', 'underline', 'panel', 'toast', 'outro', 'strip', 'urlWrap', 'bandY', 'bandB', 'bandT', 'rowA', 'rowB', 'segElev', 'segMap', 'btnExport', 'wsRacks', 'wsCab', 'segRacks', 'segCab', 'cabElev', 'cabFab']) els[id] = $(`#${id}`);
+    for (const id of ['grid', 'tagline', 'underline', 'panel', 'toast', 'outro', 'strip', 'urlWrap', 'bandY', 'bandB', 'bandT', 'rowA', 'rowB', 'segElev', 'segMap', 'btnExport']) els[id] = $(`#${id}`);
+    for (const id of ['wsRacks', 'wsCab', 'wsPow', 'segRacks', 'segCab', 'segPow', 'cabElev', 'cabFab', 'powElev', 'powLoad']) els[id] = $(`#${id}`);
     share.href = `${URL_SCHEME}${URL_HOST}#plan=${await IO.encodeShare(FINAL)}`;
     els.try = $('#outro .try');
     els.note = $('#outro .note');
@@ -1115,6 +1369,8 @@
     buildCopy();
     buildCatalog();
     buildCabling();
+    buildPower();
+    buildLoad();
     buildShare();
     buildOutro();
 

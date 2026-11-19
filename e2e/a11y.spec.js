@@ -320,7 +320,7 @@ test('? and the help button open the how-tos and every shortcut of the workspace
   await expect(help.locator('.howto dt').first()).toHaveText('Place a device');
   await expect(help.locator('.keys')).toContainText('Rename the selected device');
   await expect(help.locator('.keys')).toContainText('Bare devices');
-  await expect(help.locator('a[href="media/"]')).toHaveText('Watch the 50-second intro video');
+  await expect(help.locator('a[href="media/"]')).toHaveText('Watch the 60-second intro video');
   await page.keyboard.press('Escape');
   await expect(help).toBeHidden();
 
