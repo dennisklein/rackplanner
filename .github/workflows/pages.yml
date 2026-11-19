@@ -76,19 +76,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  deploy:
+  # Builds the site and uploads it as the Pages artifact. A job of its own, so
+  # the artifact is complete before the deploy job looks for it, and so a
+  # re-run of a failed deploy does not upload a second copy of it.
+  site:
     needs: [test, video]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/configure-pages@v6
       - name: Collect the site files
         run: |
           mkdir -p _site/media
@@ -102,5 +97,26 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+
+  # Deploys the artifact of the site job. GitHub's artifact list can lag
+  # behind an upload, so a failed deploy is tried once more after a pause.
+  deploy:
+    needs: site
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.retry.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
       - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before trying again
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
