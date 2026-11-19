@@ -116,7 +116,7 @@ test('the inspector is quiet; a status line says what keys and clicks did', asyn
   await page.keyboard.press('m');
   await expect(status(page)).toHaveText('Floor map of Ground floor');
   await page.keyboard.press('c');
-  await expect(status(page)).toHaveText('Cabling workspace');
+  await expect(status(page)).toHaveText('Network workspace');
 });
 
 test('the status line names the view shown', async ({ page }) => {
@@ -333,7 +333,7 @@ test('? and the help button open the how-tos and every shortcut of the workspace
 
   await page.click('.ws-switch [data-workspace="cabling"]');
   await page.click('#btn-help');
-  await expect(page.locator('#help-title')).toHaveText('Cabling: how-tos and shortcuts');
+  await expect(page.locator('#help-title')).toHaveText('Network: how-tos and shortcuts');
   await expect(help.locator('.keys')).toContainText('Connect a breakout cable with the legs set so far');
   await expect(help.locator('.keys')).not.toContainText('Bare devices');
   await page.click('#dlg-help button[value="ok"]');

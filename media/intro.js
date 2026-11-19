@@ -422,7 +422,7 @@
     { tag: '03 · BUDGETS', lines: ['Stay within', '<em>budget.</em>'], sub: 'Space, power and weight, tracked per rack.', in: 9.55, out: 12.3, extra: 'card' },
     { tag: '04 · OVERVIEW', lines: ['From floors', 'to <em>devices.</em>'], sub: 'Floors, rows, a live floor map and search across the whole plan.', in: 12.6, out: 14.85 },
     { tag: '05 · CATALOG', lines: ['Your hardware,', 'your <em>catalog.</em>'], sub: 'Edit device and rack types: height, drawing, power, weight and budgets.', in: CATALOG + 0.15, out: CABLING - 0.35 },
-    { tag: '06 · CABLING', lines: ['Every port,', 'every <em>cable.</em>'], sub: 'Ports on every device. Cables routed, measured, checked and counted.', in: CABLING + 0.05, out: POWER - 0.35 },
+    { tag: '06 · NETWORK', lines: ['Every port,', 'every <em>cable.</em>'], sub: 'Ports on every device. Cables routed, measured, checked and counted.', in: CABLING + 0.05, out: POWER - 0.35 },
     { tag: '07 · POWER', lines: ['Lose a grid,', 'keep <em>running.</em>'], sub: 'PDUs on two grids, a cord for every inlet, and the load with one grid down.', in: POWER + 0.05, out: SHARE - 0.35, extra: 'load' },
     { tag: '08 · SHARE', lines: ['Print it.', '<em>Share it.</em>'], sub: 'Export PNG, SVG and PDF, CSV lists of devices, cables and power cords, or send a link that carries the whole plan.', in: SHARE + 0.05, out: SHARE + 3.15 },
     { tag: '09 · AND MORE', lines: ['Everything', '<em>built in.</em>'], in: SHARE + 3.45, out: Infinity, extra: 'chips' },

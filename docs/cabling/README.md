@@ -1,7 +1,7 @@
 # Cabling: design
 
 Rackplanner plans the physical network cabling of a plan in its own
-**Cabling** workspace, next to the **Racks** workspace that places devices.
+**Network** workspace (called Cabling at first), next to the **Racks** workspace that places devices.
 Device types get named **ports** with a connector and a speed; **cables**
 join two ports, or one port to several in the case of breakout cables;
 **transceivers** and fiber join cages that need optics; **networks** color

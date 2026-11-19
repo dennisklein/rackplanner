@@ -33,7 +33,7 @@ async function toPower(page) {
 }
 
 test('the switch has three workspaces: C steps through them and P goes to Power', async ({ page }) => {
-  await expect(page.locator('.ws-switch [data-workspace]')).toHaveText(['Racks', 'Cabling', 'Power']);
+  await expect(page.locator('.ws-switch [data-workspace]')).toHaveText(['Racks', 'Network', 'Power']);
   await page.keyboard.press('c');
   await expect(page.locator('#cab-toggle')).toBeVisible();
   await page.keyboard.press('c');
@@ -86,7 +86,7 @@ test('the help lists the how-tos and shortcuts of Power; the status line names t
   const help = page.locator('#dlg-help');
   await expect(page.locator('#help-title')).toHaveText('Power: how-tos and shortcuts');
   await expect(help.locator('.howto dt')).toHaveText(['Hang PDUs', 'Connect', 'Connect many at once', 'Check the load', 'Order']);
-  await expect(help.locator('.keys')).toContainText('Next workspace: Racks, Cabling, Power');
+  await expect(help.locator('.keys')).toContainText('Next workspace: Racks, Network, Power');
   await expect(help.locator('.keys')).toContainText('The Power workspace');
   await expect(help.locator('.keys')).not.toContainText('Bare devices');
   await page.keyboard.press('Escape');

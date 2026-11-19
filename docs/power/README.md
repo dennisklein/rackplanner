@@ -2,7 +2,7 @@
 
 Rackplanner plans the power cabling of a plan in its own **Power**
 workspace, next to the **Racks** workspace that places devices and the
-**Cabling** workspace that connects their network ports. Device types get
+**Network** workspace that connects their network ports. Device types get
 named **inlets** with a power connector; **vertical PDUs** hang in the
 **PDU slots** of the racks, with outlets in fuse groups and meter groups;
 each PDU is fed by a **power grid**; **power cords** join an inlet of a
@@ -15,7 +15,7 @@ are built, on Row B of the example plan; the
 [README](../../README.md#planning-the-power) says how to use them.
 
 Network cabling and power cabling stay apart. They share the devices, the
-racks and the views; the Cabling workspace, its cables and its CSVs do not
+racks and the views; the Network workspace, its cables and its CSVs do not
 show power cords.
 
 ## 1. Data model
@@ -308,7 +308,7 @@ check on a grid.
 
 ## 2. The Power workspace
 
-The switch in the top bar is **Racks | Cabling | Power**. <kbd>C</kbd> steps
+The switch in the top bar is **Racks | Network | Power**. <kbd>C</kbd> steps
 through the three workspaces and <kbd>P</kbd> goes to Power. Floor tabs and
 the row picker are shared; everything else is the workspace's own.
 

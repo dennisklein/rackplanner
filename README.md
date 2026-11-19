@@ -19,7 +19,7 @@ else from a catalog you can extend, and track space, power and weight against
 each rack's budget. Devices get their own names and belong to color-coded
 clusters, so the equipment that works together stands out.
 
-Device types have ports, and the **Cabling** workspace connects them: cables
+Device types have ports, and the **Network** workspace connects them: cables
 from port to port, in networks with their own colors and labels, with
 lengths estimated from where the racks stand. It shows the racks from the
 rear with every cable run, each switch's ports, a cable schedule with the
@@ -127,7 +127,7 @@ Rear**); otherwise they ask how it is **Mounted**.
   free slot of the row, and its **Rack** and **Position** fields pick another.
   The list button beside **Catalog** makes the list compact, one line per
   device type without drawings, so that more types fit on a small screen.
-  Drag the top edge of the Clusters list (the Networks list in Cabling, the
+  Drag the top edge of the Clusters list (the Networks list in Network, the
   Power grids list in Power), or press the arrow keys on it, to share the panel between the two lists;
   double-click it to reset.
 - **Name and cluster**: the placement dialog asks for a name and a cluster
@@ -208,7 +208,7 @@ Rear**); otherwise they ask how it is **Mounted**.
   same in every view. Open **Views** (the button next to **Clusters**)
   to add a view, copy the one shown, rename or delete one. Views have names
   of their own: a second copy of Lustre is Lustre (copy 2). With two or more
-  views, a menu next to **Racks** and **Cabling** picks the view shown, and
+  views, a menu next to **Racks** and **Network** picks the view shown, and
   <kbd>V</kbd> steps to the next one. The view shown colors the devices and
   fills the cluster list, the legend, the search and the fabric groups. The
   cluster fields then say which view they are for (**Cluster in
@@ -238,8 +238,8 @@ Rear**); otherwise they ask how it is **Mounted**.
   delete it. The dashed **Add rack** slot at the end of a row adds one. Row
   and floor settings (from the row picker, the pencil on the floor map, or a
   click on the active floor tab) rename, reorder, move and delete them, and
-  show their totals. From Cabling they open in Racks, and the toast's **Back
-  to Cabling** returns.
+  show their totals. From Network they open in Racks, and the toast's **Back
+  to Network** returns.
 - **Catalog**: the **Catalog** button above the devices edits device types,
   rack types, cable types and transceivers. Changes apply at once and are
   checked: a type can't grow if its devices would then overlap or stick out
@@ -285,31 +285,31 @@ Rear**); otherwise they ask how it is **Mounted**.
 | <kbd>?</kbd> | Help: every shortcut of the workspace shown |
 | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | Search |
 | <kbd>[</kbd> <kbd>]</kbd> | Previous, next row |
-| <kbd>C</kbd> | Next workspace: Racks, Cabling, Power |
+| <kbd>C</kbd> | Next workspace: Racks, Network, Power |
 | <kbd>P</kbd> | Power workspace |
 | <kbd>M</kbd> | Floor map on or off (Racks) |
 | <kbd>B</kbd> | Bare devices on or off: names only, without drawn fronts (Racks) |
 | <kbd>V</kbd>, <kbd>Shift</kbd>+<kbd>V</kbd> | Next, previous view, in a plan with more than one |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move the selected devices to the next free position (Racks) |
 | <kbd>←</kbd> <kbd>→</kbd> | Move them to the neighbouring rack (Racks) |
-| <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Cabling and Power, add or remove a cable or cord, or in the schedule select a range |
-| <kbd>Ctrl</kbd>+click | In Cabling and Power, add or remove a cable or cord |
-| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device shown in the row; in Cabling, the cables shown; in Power, the cords |
+| <kbd>Shift</kbd>+click, <kbd>Shift</kbd>+drag | Add to the selection, select an area; in Network and Power, add or remove a cable or cord, or in the schedule select a range |
+| <kbd>Ctrl</kbd>+click | In Network and Power, add or remove a cable or cord |
+| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select every device shown in the row; in Network, the cables shown; in Power, the cords |
 | <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate the selected devices, rack, row or floor (Racks) |
 | <kbd>Enter</kbd> on a device type | Place one: the placement dialog picks its rack and position (Racks) |
-| <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Cabling and Power, edit the label of the selected cable or cord |
-| <kbd>Del</kbd> or <kbd>Backspace</kbd> | Delete; several devices that take cables or power cords, or 10 devices or more, ask first; in Cabling, delete the selected cables or unplug the selected port; in Power, unplug the selected cords |
+| <kbd>Enter</kbd> or <kbd>F2</kbd> | Rename the selected device; in Network and Power, edit the label of the selected cable or cord |
+| <kbd>Del</kbd> or <kbd>Backspace</kbd> | Delete; several devices that take cables or power cords, or 10 devices or more, ask first; in Network, delete the selected cables or unplug the selected port; in Power, unplug the selected cords |
 | <kbd>Tab</kbd> | Walk through rack labels and devices, top to bottom (Racks) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo, redo |
 | <kbd>0</kbd> / <kbd>1</kbd> / <kbd>+</kbd> / <kbd>−</kbd> | Fit sheet / 100% / zoom |
 | <kbd>Ctrl</kbd>+scroll | Zoom at the pointer |
-| <kbd>Enter</kbd> or <kbd>Esc</kbd> | In Cabling, connect a breakout cable with the legs set so far |
-| <kbd>Esc</kbd> | Cancel placing, dragging or connecting, deselect, clear the search; in Cabling, end a network's highlight |
+| <kbd>Enter</kbd> or <kbd>Esc</kbd> | In Network, connect a breakout cable with the legs set so far |
+| <kbd>Esc</kbd> | Cancel placing, dragging or connecting, deselect, clear the search; in Network, end a network's highlight |
 
 On a Mac, use <kbd>⌘</kbd> for <kbd>Ctrl</kbd>. Drag the empty sheet to pan.
 <kbd>[</kbd> and <kbd>]</kbd> also work where the keyboard types them with
 <kbd>AltGr</kbd> or <kbd>Option</kbd>.
-In Cabling, the zoom keys work in the elevation and the fabric, in Power in
+In Network, the zoom keys work in the elevation and the fabric, in Power in
 the elevation.
 On a touch screen, pinch the drawing with two fingers to zoom it. The racks
 open at 100% there, so that a unit is big enough to tap.
@@ -318,10 +318,10 @@ open at 100% there, so that a unit is big enough to tap.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/cabling-elevation-dark.png">
-  <img src="docs/screenshots/cabling-elevation.png" alt="The Cabling workspace on Row A seen from the rear at 100%: compute node cn-004 is selected, its three cables are drawn bold from its rear ports into the cable managers, up to the two switches at the top of the rack and to the BMC switch in its side slot, each far end named; the tray above the racks leads to an exit to Row B. On the left the cable types and networks, on the right the node's mounting, slack, ports and where each one goes.">
+  <img src="docs/screenshots/cabling-elevation.png" alt="The Network workspace on Row A seen from the rear at 100%: compute node cn-004 is selected, its three cables are drawn bold from its rear ports into the cable managers, up to the two switches at the top of the rack and to the BMC switch in its side slot, each far end named; the tray above the racks leads to an exit to Row B. On the left the cable types and networks, on the right the node's mounting, slack, ports and where each one goes.">
 </picture>
 
-The **Racks | Cabling | Power** switch in the top bar changes the workspace
+The **Racks | Network | Power** switch in the top bar changes the workspace
 (<kbd>C</kbd> steps through the three). The floor tabs and the row picker stay; the left panel lists cable
 types and networks instead of devices and clusters, and the bar above the
 drawing switches between four views:
@@ -377,7 +377,7 @@ beside a free port in a device's inspector. While connecting, the first
 port's inspector offers to pick the other end there (**Or select the other
 end here**), with the cable type armed and a port that it fits. A
 connection goes on from the elevation to the port map and back; another
-view cancels it, with a toast that says so. In Cabling, messages show at the
+view cancels it, with a toast that says so. In Network, messages show at the
 foot of the left panel, off the drawing and the inspector (on a narrow screen,
 over the stage's nav bar), and each new connection's or unplug's message
 replaces the one before.
@@ -437,14 +437,14 @@ switch's SFP+ cages). Nothing is connected until you confirm.
   to see its cable, or to connect it. With nothing selected it sums up the
   row's cabling, lists what to check, shows the ports in use per rack and
   sets the floor's row pitch.
-- **Search**, in Cabling, finds cables too, by label, ends, network, cable
+- **Search**, in Network, finds cables too, by label, ends, network, cable
   type and notes, and highlights them in the drawings.
 
 **Lengths** are estimated from the way a cable runs. Within a rack it is the
 height between the two ports, plus the rack's depth when one faces the front
 and the other the rear. Otherwise both ends go up to the top of their rack
 and on to the tray, then along it: the racks' widths along the row, and the
-floor's **Row pitch** (3 m unless set in the floor's settings, or in Cabling
+floor's **Row pitch** (3 m unless set in the floor's settings, or in Network
 with nothing selected) for each step from one end's row to the other's.
 Each end adds its rack's slack and its device's slack. The cable's
 length is that rounded up to the type's next stock length, or to 0.1 m for
@@ -608,7 +608,7 @@ Moving a device or a PDU within its rack keeps its cords, and their
 estimated lengths follow. Moving one to another rack unplugs its cords,
 after asking. Deleting devices deletes their cords, and a copy of devices
 with their PDUs copies the cords between them; the questions and messages
-count power cords next to cables. The Cabling workspace, its cables and their CSVs do not show
+count power cords next to cables. The Network workspace, its cables and their CSVs do not show
 power cords. The design, with the data model, the rules and the checks, is
 in [docs/power](docs/power/README.md).
 
@@ -644,7 +644,7 @@ closing the tab asks first.
 **Export** offers:
 
 - **PNG image** and **SVG drawing** of the current row, with cluster legend and
-  title block, always in the light theme. In Cabling they give the cabling
+  title block, always in the light theme. In Network they give the cabling
   elevation from the side shown, or the fabric of the network shown (from
   the port map or the schedule, the row's Racks sheet). In Power they give
   the row's power cabling from the rear, with a legend of the grids, in
@@ -656,7 +656,7 @@ closing the tab asks first.
   The Export menu says how many are hidden; printing does the same.
 - **Print or PDF**: one sheet per row, for the current row, floor or the whole
   plan, on A4, A3, Letter, Legal or Tabloid, with its **Racks**, its
-  cabling (**Cabling front**, **Cabling rear**) or its power cabling
+  cabling (**Network front**, **Network rear**) or its power cabling
   (**Power rear**). The title block names the site,
   floor and row, author, revision, date and sheet number; fill these in on the
   plan overview (click the empty sheet to see it).
@@ -764,7 +764,7 @@ in its own window.
 ```
 index.html           page shell, icons and dialogs
 css/app.css          styles, light and dark themes, print layout
-css/cabling.css      styles of the Cabling workspace
+css/cabling.css      styles of the Network workspace
 css/power.css        styles of the Power workspace and of PDUs in the catalog and the inspectors
 css/fonts.css        the bundled web fonts
 fonts/               Barlow, Barlow Condensed, IBM Plex Mono (SIL OFL 1.1)
@@ -776,7 +776,7 @@ js/render.js         SVG drawing of a row, device fronts and rears, sheet geomet
 js/cabling-render.js SVG drawing of the cabling elevation, the port map and the fabric
 js/power-render.js   SVG drawing of the power elevation
 js/library.js        plans saved in the browser
-js/cabling-ui.js     the Cabling workspace: its panel, views, inspectors, connecting and dialogs
+js/cabling-ui.js     the Network workspace: its panel, views, inspectors, connecting and dialogs
 js/power-ui.js       the Power workspace: its panel, views, inspectors, connecting and dialogs
 js/app.js            UI state, undo history, navigation, drag and drop, dialogs, export
 sw.js                service worker for offline use
@@ -1250,7 +1250,7 @@ spreading, navigation and search, the floor map, the catalog editor, rack
 types and budgets, selecting and moving several devices, reserved space, the
 plan list, share links, CSV and plan file import, printing, exports, offline
 caching, the theme switch, the panel layout and the phone layout, and in
-the Cabling workspace connecting ports by clicks and drags, breakout cables,
+the Network workspace connecting ports by clicks and drags, breakout cables,
 Connect series, the cable inspector, networks and labels, the schedule and
 its order list, the elevation from both sides, the port map, the fabric,
 cable schedule export and import, the ports, cable type and transceiver

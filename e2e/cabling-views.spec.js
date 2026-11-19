@@ -355,7 +355,7 @@ test('a cable, a cabled port and a device are selected by a click; Shift adds; D
   const svg = await page.locator('#scene').boundingBox();
   await page.mouse.click(svg.x + 4, svg.y + 4);
   expect((await ui(page)).cabSel).toBeNull();
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   // A drag on the sheet pans it and selects nothing.
   await page.click('#btn-zoom-reset');
   await page.locator('#canvas').evaluate((c) => (c.scrollTop = c.scrollLeft = 0));
@@ -1007,7 +1007,7 @@ test('the Export menu says what PNG, SVG and Print give in Cabling', async ({ pa
   const hint = (kind) => page.locator(`#menu-export [data-export="${kind}"] small`);
   await page.click('#btn-export');
   await expect(hint('png')).toHaveText('This row’s cabling from the rear, for docs, tickets and chat');
-  await expect(hint('print')).toHaveText('One sheet per row, its cabling from the rear');
+  await expect(hint('print')).toHaveText('One sheet per row, its network cabling from the rear');
   await page.keyboard.press('Escape');
   await page.click('#cab-toggle [data-cab-view="fabric"]');
   await page.click('#btn-export');
@@ -1407,7 +1407,7 @@ test('the elevation exports without the networks it hides, and the Export menu s
   const hint = (kind) => page.locator(`#menu-export [data-export="${kind}"] small`);
   await page.click('#btn-export');
   await expect(hint('svg')).toHaveText('This row’s cabling from the rear, opens in vector editors · 2 networks hidden');
-  await expect(hint('print')).toHaveText('One sheet per row, its cabling from the rear · 2 networks hidden');
+  await expect(hint('print')).toHaveText('One sheet per row, its network cabling from the rear · 2 networks hidden');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="svg"]')]);
   const text = fs.readFileSync(await dl.path(), 'utf8');
   const ids = await plan(page, (p) => p.cables.filter((c) => c.network === 'n-sas' || c.network === 'n-bmc').map((c) => c.id));

@@ -1545,7 +1545,7 @@
           ? `<ul class="port-list">${info.inlets.map((x) => inletRow(d, x, load)).join('')}</ul>`
           : `<p class="empty-note"><button type="button" class="btn sm" id="pow-dev-add-inlets">Add psu[1-2] C14</button></p>`) +
         `</section>` +
-        `<section class="insp-sec"><h3>Power</h3><dl class="stats">${stat('Draw', P.fmtW(info.powerW))}${stat('Inlets', `${info.corded} / ${n}`, 'with a cord')}${stat('Network ports', String(ports), 'in Cabling')}</dl></section>` +
+        `<section class="insp-sec"><h3>Power</h3><dl class="stats">${stat('Draw', P.fmtW(info.powerW))}${stat('Inlets', `${info.corded} / ${n}`, 'with a cord')}${stat('Network ports', String(ports), 'in Network')}</dl></section>` +
         `<div class="insp-actions is-pinned">${showButton()}<button type="button" class="btn" id="pow-dev-series"${info.inlets.some((x) => !x.cord) ? '' : ' disabled'}>${icon('swap')}Connect series…</button>` +
         `<button type="button" class="btn danger-text" id="pow-dev-unplug"${info.corded ? '' : ' disabled'}>${icon('unplug')}Unplug all</button></div>`;
       const id = d.id;

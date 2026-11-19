@@ -182,7 +182,7 @@ test('on laptop screens the toolbar names the workspaces and the view shown, and
     await expect(page.getByRole('button', { name: 'Export', exact: true })).toHaveAttribute('title', /^Export: /);
     await expect(page.getByRole('button', { name: 'New plan', exact: true })).toHaveAttribute('title', 'New plan');
     await expect(page.getByRole('button', { name: 'Plans', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cabling', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Network', exact: true })).toBeVisible();
   }
 });
 

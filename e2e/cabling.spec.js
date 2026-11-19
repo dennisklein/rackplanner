@@ -55,7 +55,7 @@ test('the workspace switches with its button and with C; the Racks workspace sta
   await expect(page.locator('.cab-card[data-cab-type="auto"]')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#networks .cl-name')).toHaveText(['Management', 'BMC', 'InfiniBand', 'Storage 25G', 'SAS']);
   // Nothing is selected in Cabling: the row's cabling.
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   // Arrows and M do nothing here; the device selected in Racks is not moved.
   const loc = await plan(page, (p) => JSON.stringify(p.devices.find((d) => d.name === 'cn-001').loc));
   await page.keyboard.press('ArrowDown');
@@ -105,7 +105,7 @@ test('floor and row settings open in Racks from Cabling, which says so and leads
   await expect(tab).toHaveAttribute('title', /floor settings \(opens Racks\)$/);
   await tab.click();
   await expect(page.locator('.ws-switch [data-workspace="racks"]')).toHaveAttribute('aria-pressed', 'true');
-  const back = page.locator('.toast', { hasText: 'Floor settings open in Racks' }).locator('button', { hasText: 'Back to Cabling' });
+  const back = page.locator('.toast', { hasText: 'Floor settings open in Racks' }).locator('button', { hasText: 'Back to Network' });
   await back.click();
   await expect(page.locator('.ws-switch [data-workspace="cabling"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#sc-body tr[data-cable]').first()).toBeVisible();
@@ -317,7 +317,7 @@ test('Delete removes the selected cables, with Undo; Shift and Ctrl clicks and t
   await expect(page.locator('.toast').last()).toContainText('Deleted 3 cables');
   expect(await plan(page, (p) => p.cables.length)).toBe(count - 3);
   await expect(row(page, 'MGT-0002')).toHaveCount(0);
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   await undoToast(page).click();
   expect(await plan(page, (p) => p.cables.length)).toBe(count);
   await expect(row(page, 'MGT-0002')).toHaveCount(1);
@@ -735,7 +735,7 @@ test('a cable chosen in search, To check or a port list shows in the schedule, w
 
   // A To check link: every group folded, a text filter and another network in focus hide its cable; they give way.
   await page.keyboard.press('Escape');
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   const link = page.locator('#inspector .check-link').first();
   const label = await link.locator('b').textContent();
   const net = (await cableBy(page, label)).network;
@@ -799,7 +799,7 @@ test('Esc clears the selection from the schedule’s checkboxes too', async ({ p
   await expect(page.locator('#sc-all')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('#sc-body tr.is-selected')).toHaveCount(0);
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   // A row's checkbox reached with Tab.
   await row(page, 'MGT-0001').locator('input').focus();
   await page.keyboard.press('Space');
@@ -1075,7 +1075,7 @@ test('the inspector follows a label, a length, a slack and a row pitch as they c
 
   // The row's pitch: To check follows.
   await page.keyboard.press('Escape');
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   const toCheck = () => plan(page, (p, a, RP) => RP.cabling.cablesWithin(p, 'row1').filter((c) => RP.cabling.describe(p, c).issues.length).length);
   const was = await toCheck();
   await page.locator('#cab-pitch').fill('50');
@@ -1114,7 +1114,7 @@ test('a length typed with a decimal comma is read as the CSV reads it, and one f
   expect(await plan(page, (p, id) => p.devices.find((d) => d.id === id).slackM, (await cableBy(page, 'IB-0031')).a.device)).toBe(0.25);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  await expect(page.locator('#inspector .kicker')).toHaveText('Cabling · Row A');
+  await expect(page.locator('#inspector .kicker')).toHaveText('Network · Row A');
   await page.locator('#cab-pitch').fill('2,5');
   await page.keyboard.press('Tab');
   expect(await plan(page, (p) => p.floors[0].rowPitchM)).toBe(2.5);

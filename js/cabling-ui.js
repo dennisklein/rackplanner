@@ -471,7 +471,7 @@
         shown: shownAnyway(),
       });
       Object.assign(elev, { layout: out.layout, rowId: out.rowId, side: out.side });
-      setScene(out, `Cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
+      setScene(out, `Network cabling of ${pos.floor.name}, ${pos.row.name}, seen from the ${out.side}`);
       markLegs(el.svg);
     }
 
@@ -3515,7 +3515,7 @@
         .join('');
       const floor = pos.floor;
       el.inspector.innerHTML =
-        `<div class="insp-head"><div class="kicker">Cabling · ${esc(pos.row.name)}</div>` +
+        `<div class="insp-head"><div class="kicker">Network · ${esc(pos.row.name)}</div>` +
         `<p class="insp-note">${(OVERVIEW_NOTES[ui.cabView] || OVERVIEW_NOTES.schedule).map((t, i) => `<span class="${i ? 'hint-touch' : 'hint-pointer'}">${esc(t)}</span>`).join('')}</p></div>` +
         `<section class="insp-sec"><dl class="stats"><div><dt>Cables</dt><dd>${cables.length}</dd></div><div><dt>To other rows</dt><dd>${toOther}</dd></div>` +
         `<div><dt>Networks</dt><dd>${[...nets].filter((n) => n !== NONE).length}</dd></div><div><dt>To check</dt><dd>${bad.length}</dd></div></dl></section>` +
@@ -3526,7 +3526,7 @@
         `</div><p class="sec-hint">From one row of ${esc(floor.name)} to the next. Racks set their way up to the tray and their slack.</p></section>` +
         `<section class="insp-sec keys-sec"><h3>Shortcuts</h3><dl class="keys">` +
         `<dt><kbd>?</kbd></dt><dd>Every shortcut, and help</dd>` +
-        `<dt><kbd>C</kbd></dt><dd>Racks or Cabling</dd>` +
+        `<dt><kbd>C</kbd></dt><dd>Next workspace: Racks, Network, Power</dd>` +
         // The schedule selects ranges of its rows; the drawings add or remove what is clicked.
         (ui.cabView === 'schedule'
           ? `<dt><kbd>Shift</kbd> + click</dt><dd>Select a range of cables</dd><dt><kbd>Ctrl</kbd> + click</dt><dd>Add or remove a cable</dd>`

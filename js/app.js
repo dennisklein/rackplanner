@@ -571,7 +571,7 @@
   const cab = window.RP.cablingUI.create(wsContext);
   const pow = window.RP.powerUI.create(wsContext);
   const wsUI = () => (ui.workspace === 'cabling' ? cab : ui.workspace === 'power' ? pow : null);
-  const WS_NAMES = { racks: 'Racks', cabling: 'Cabling', power: 'Power' };
+  const WS_NAMES = { racks: 'Racks', cabling: 'Network', power: 'Power' };
 
   // ------------------------------------------------------------ selection
 
@@ -2411,7 +2411,7 @@
       `<dt><kbd>/</kbd></dt><dd>Search</dd>` +
       `<dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous, next row</dd>` +
       `<dt><kbd>M</kbd></dt><dd>Floor map</dd>` +
-      `<dt><kbd>C</kbd></dt><dd>Cabling</dd>` +
+      `<dt><kbd>C</kbd></dt><dd>Network</dd>` +
       (project.views.length > 1 ? `<dt><kbd>V</kbd></dt><dd>Next view</dd>` : '') +
       `<dt><kbd>Shift</kbd> + click</dt><dd>Add to selection</dd>` +
       `<dt><kbd>Shift</kbd> + drag</dt><dd>Select an area</dd>` +
@@ -5834,7 +5834,7 @@
       ['<kbd>?</kbd>', 'This help'],
       ['<kbd>/</kbd> or <kbd>Ctrl</kbd> <kbd>K</kbd>', 'Search'],
       ['<kbd>[</kbd> <kbd>]</kbd>', 'Previous, next row'],
-      ['<kbd>C</kbd>', 'Next workspace: Racks, Cabling, Power'],
+      ['<kbd>C</kbd>', 'Next workspace: Racks, Network, Power'],
       ['<kbd>P</kbd>', 'The Power workspace'],
       ['<kbd>V</kbd>, <kbd>Shift</kbd> <kbd>V</kbd>', 'Next, previous view, in a plan with more than one'],
       ['<kbd>Ctrl</kbd> <kbd>Z</kbd>, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd>', 'Undo, redo'],
@@ -6293,7 +6293,7 @@
     const note = hidden ? ` · ${plural(hidden, elevation ? 'network' : power ? 'grid' : 'cluster')} hidden` : '';
     hint('png', `${what}, for docs, tickets and chat${note}`);
     hint('svg', `${what}, opens in vector editors${note}`);
-    hint('print', (elevation ? `One sheet per row, its cabling from the ${prefs.cabSide}` : power ? 'One sheet per row, its power cabling from the rear' : 'One sheet per row, with title blocks') + note);
+    hint('print', (elevation ? `One sheet per row, its network cabling from the ${prefs.cabSide}` : power ? 'One sheet per row, its power cabling from the rear' : 'One sheet per row, with title blocks') + note);
   }
 
   $('#menu-export').addEventListener('click', (e) => {

@@ -54,6 +54,7 @@
   <symbol id="i-theme-dark" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
   <symbol id="i-select" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></symbol>
   <symbol id="i-cable" viewBox="0 0 24 24"><path d="M5 3v3M9 3v3"/><path d="M3 6h8v3a4 4 0 0 1-8 0z"/><path d="M7 13v2.5a4.5 4.5 0 0 0 9 0V9a3 3 0 0 1 6 0"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><path d="M4 4.5h16v11.5h-4v3.5H8V16H4z"/><path d="M8 8v3M10.67 8v3M13.33 8v3M16 8v3"/></symbol>
   <symbol id="i-ports" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="1.5"/><path d="M6 10h2.5v4H6zM10.75 10h2.5v4h-2.5zM15.5 10H18v4h-2.5z"/></symbol>
   <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/></symbol>
   <symbol id="i-fabric" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="17" width="5" height="4" rx="1"/><rect x="9.5" y="17" width="5" height="4" rx="1"/><rect x="16" y="17" width="5" height="4" rx="1"/><path d="M12 7v10M10.5 7 5.5 17M13.5 7l5 10"/></symbol>
@@ -86,8 +87,8 @@
     </h1>
     <div class="seg ws-switch" role="group" aria-label="Workspace">
       <button type="button" data-workspace="racks" aria-pressed="true" title="Racks: place devices (C)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-rack"/></svg><span class="ws-label">Racks</span></button>
-      <button type="button" data-workspace="cabling" aria-pressed="false" title="Cabling: connect ports (C)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-cable"/></svg><span class="ws-label">Cabling</span></button>
-      <button type="button" data-workspace="power" aria-pressed="false" title="Power: connect inlets to PDUs (P)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-power"/></svg><span class="ws-label">Power</span></button>
+      <button type="button" data-workspace="cabling" aria-pressed="false" title="Network: connect ports (C)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-network"/></svg><span class="ws-label">Network</span></button>
+      <button type="button" data-workspace="power" aria-pressed="false" title="Power: connect inlets to PDUs (P)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-cable"/></svg><span class="ws-label">Power</span></button>
     </div>
     <div class="menu-wrap view-switch" id="view-switch" hidden>
       <button class="btn" id="btn-cluster-view" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-views"><svg class="ic"><use href="#i-layers"/></svg><span class="vw-label" id="view-label"></span><svg class="ic ic-sm"><use href="#i-chevron"/></svg></button>
@@ -237,7 +238,7 @@
         <button type="button" data-view="sheet" aria-pressed="true" title="Rack elevation of this row"><svg class="ic ic-sm"><use href="#i-rack"/></svg>Elevation</button>
         <button type="button" data-view="map" aria-pressed="false" title="All rows of this floor (M)"><svg class="ic ic-sm"><use href="#i-map"/></svg>Floor map</button>
       </div>
-      <div class="seg cab-toggle" id="cab-toggle" role="group" aria-label="Cabling view" hidden>
+      <div class="seg cab-toggle" id="cab-toggle" role="group" aria-label="Network view" hidden>
         <button type="button" data-cab-view="elevation" aria-pressed="false" title="Racks from the front or the rear with ports and cable runs"><svg class="ic ic-sm"><use href="#i-rack"/></svg>Elevation</button>
         <button type="button" data-cab-view="ports" aria-pressed="false" title="Faceplates of a rack’s devices with what each port connects to"><svg class="ic ic-sm"><use href="#i-ports"/></svg>Port map</button>
         <button type="button" data-cab-view="schedule" aria-pressed="true" title="Every cable as a table, with lengths and what to order"><svg class="ic ic-sm"><use href="#i-table"/></svg>Schedule</button>
@@ -518,8 +519,8 @@
         <span class="label" id="print-drawing-label">Drawing</span>
         <div class="seg seg-fill" role="radiogroup" aria-labelledby="print-drawing-label">
           <label><input type="radio" name="print-drawing" value="racks" checked><span>Racks</span></label>
-          <label><input type="radio" name="print-drawing" value="front"><span>Cabling front</span></label>
-          <label><input type="radio" name="print-drawing" value="rear"><span>Cabling rear</span></label>
+          <label><input type="radio" name="print-drawing" value="front"><span>Network front</span></label>
+          <label><input type="radio" name="print-drawing" value="rear"><span>Network rear</span></label>
           <label><input type="radio" name="print-drawing" value="power"><span>Power rear</span></label>
         </div>
       </div>
