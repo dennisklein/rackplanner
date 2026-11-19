@@ -117,6 +117,10 @@
           <button type="button" role="menuitem" data-export="csv"><span>CSV inventory</span><small>Every device with location and fields</small></button>
           <button type="button" role="menuitem" data-export="cables-csv"><span>Cable schedule (CSV)</span><small>Every cable and breakout leg with both ends</small></button>
           <button type="button" role="menuitem" data-export="order-csv"><span>Cable order list (CSV)</span><small>Cables by type and length, and transceivers</small></button>
+          <button type="button" role="menuitem" data-export="cords-csv"><span>Power cord schedule (CSV)</span><small>Every power cord with both ends</small></button>
+          <button type="button" role="menuitem" data-export="outlets-csv"><span>PDU outlet plan (CSV)</span><small>Every outlet of every PDU, free ones too</small></button>
+          <button type="button" role="menuitem" data-export="load-csv"><span>Power load (CSV)</span><small>Load of every PDU, phase and fuse group</small></button>
+          <button type="button" role="menuitem" data-export="cord-order-csv"><span>Cord order list (CSV)</span><small>Power cords by type, length and color</small></button>
           <hr>
           <button type="button" role="menuitem" data-export="json"><span>Plan file (.json)</span><small>Re-open it later with Open</small></button>
           <button type="button" role="menuitem" data-export="copy"><span>Copy plan as JSON</span><small>Paste it into Open elsewhere</small></button>
@@ -448,7 +452,7 @@
     <header class="dlg-head">
       <span class="tape">Open</span>
       <h2 id="open-title">Open a plan or import a CSV</h2>
-      <p class="dlg-sub">A plan file (.json) opens as a new plan next to your others. A CSV inventory needs Rack, Position and Name or Type columns, like the CSV export. A cable schedule CSV (A and B device and port columns) adds its cables to the current plan.</p>
+      <p class="dlg-sub">A plan file (.json) opens as a new plan next to your others. A CSV inventory needs Rack, Position and Name or Type columns, like the CSV export. A cable schedule CSV (A and B device and port columns) adds its cables to the current plan, and a power cord schedule CSV (Device, Inlet, PDU and Outlet columns) its power cords.</p>
     </header>
     <div class="dlg-body">
       <div><button type="button" class="btn" id="open-file"><svg class="ic"><use href="#i-upload"/></svg>Choose a .json or .csv file…</button></div>

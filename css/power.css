@@ -177,6 +177,9 @@ button.om-fuse-head:hover { background: var(--surface-2); }
 
 .ld-grid .sw, .bom-item .sw, #ps-table .sc-fold .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: -1px; }
 
+/* The Export menu is long with the power CSVs: in a short window it scrolls. */
+#menu-export { max-height: calc(100vh - 60px); max-height: calc(100dvh - 60px); overflow-y: auto; overscroll-behavior: contain; }
+
 /* ------------------------------------------------------------ responsive */
 
 /*

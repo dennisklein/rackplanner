@@ -19,6 +19,7 @@
 
   const M = window.RP.model;
   const P = window.RP.power;
+  const IO = window.RP.io;
   const PR = window.RP.powerRender;
 
   const NONE = ''; // the PDUs without a grid, as a grid to hide or count
@@ -38,11 +39,7 @@
   const MAX_ROWS = 1500;
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  /**
-   * Builds the workspace. `ctx` (from app.js) is what the Cabling
-   * workspace gets (see js/cabling-ui.js), and doExport(kind) for the
-   * buttons that export a CSV.
-   */
+  /** Builds the workspace. `ctx` (from app.js) is what the Cabling workspace gets (see js/cabling-ui.js). */
   function create(ctx) {
     const { ui, prefs, el, esc, icon, plural, toast } = ctx;
     const project = () => ctx.project();
@@ -710,7 +707,10 @@
       if (step) return stepRack(Number(step.dataset.omStep));
       if (t.closest('[data-pow-go-racks]')) return ctx.setWorkspace('racks');
       if (t.closest('#ps-series')) return openSeries(seriesDevices());
-      if (t.closest('#ps-order')) return ctx.doExport('cord-order-csv');
+      if (t.closest('#ps-order')) return exportCSV('order');
+      if (t.closest('#ps-csv')) return exportCSV('cords');
+      if (t.closest('#ld-csv')) return exportCSV('load');
+      if (t.closest('#om-csv')) return exportCSV('outlets');
       if (t.closest('#ps-all')) return selectCords(t.closest('#ps-all').checked ? sched.visible.slice() : []);
       const tr = t.closest('tr[data-cord]');
       if (tr) return clickRow(tr.dataset.cord, e, !!t.closest('.sc-check'));
@@ -858,6 +858,7 @@
         `<label class="pm-pick">${icon('rack', 'ic-sm')}<span class="sr-only">Rack</span><select id="om-rack">${options}</select>${icon('chevron', 'ic-sm')}</label>` +
         `<button type="button" class="btn icon sm" data-om-step="1" aria-label="Next rack" title="Next rack"${i >= row.racks.length - 1 ? ' disabled' : ''}>${icon('right')}</button>` +
         (load.scenarios.length > 1 ? `<div class="seg om-scen" role="group" aria-label="Scenario">${scens}</div>` : '') +
+        (list.length ? `<button type="button" class="btn sm" id="om-csv" title="Every outlet of this rack’s PDUs, as CSV">${icon('download', 'ic-sm')}Outlet plan (CSV)</button>` : '') +
         `</div></div>` +
         (list.length
           ? `<div class="om-cols">${cols}</div><p class="sec-hint">Bars: the load of each fuse group against its rating; the tick is the limit, ${pct(load.limit)}. ${CLICK} a free outlet to connect it, a used one to select its cord.</p>`
@@ -905,7 +906,8 @@
           `<div class="sc-filters"><label class="sc-search">${icon('filter', 'ic-sm')}<span class="sr-only">Filter the cords</span>` +
           `<input id="ps-filter" type="search" placeholder="Filter by device, PDU, label" autocomplete="off" spellcheck="false"></label><span class="spacer"></span>` +
           `<label class="sc-group-by"><span class="sr-only">Group the cords</span><select id="ps-group">${GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>` +
-          `<button type="button" class="btn sm" id="ps-order" title="The cords to order, by type, length and color">${icon('download', 'ic-sm')}Order list (CSV)</button></div>` +
+          `<button type="button" class="btn sm" id="ps-csv" title="These cords with their inlets and outlets, as CSV">${icon('download', 'ic-sm')}Schedule (CSV)</button>` +
+          `<button type="button" class="btn sm" id="ps-order" title="The cords to order, by type, length and color, as CSV">${icon('download', 'ic-sm')}Order list (CSV)</button></div>` +
           `<div class="sc-scroll" id="ps-scroll"><table class="sched" id="ps-table" aria-label="Power cord schedule"><thead><tr>` +
           `<th class="sc-check"><input type="checkbox" id="ps-all" aria-label="Select every cord shown"></th>` +
           `<th>Label</th><th>Device · inlet</th><th>PDU</th><th class="sc-num">Outlet</th><th>Fuse</th><th>Phase</th><th>Meter</th>` +
@@ -953,7 +955,7 @@
       const box = $('#ps-all');
       box.checked = visible.length > 0 && visible.every((id) => sel.has(id));
       box.indeterminate = !box.checked && visible.some((id) => sel.has(id));
-      $('#ps-bom').innerHTML = orderHTML(shown);
+      $('#ps-bom').innerHTML = orderHTML(all);
     }
 
     function cordRow(cord, load, selected) {
@@ -1084,7 +1086,9 @@
         : `<div class="cab-empty">${icon('power')}<h2>No PDUs in ${esc(scopeName(prefs.powScope))}</h2><p>Place vertical PDUs in the Racks workspace, or fill the PDU slots of a rack, row or floor there. Their load shows here.</p>` +
           `<div class="cab-empty-actions"><button type="button" class="btn" data-pow-go-racks>Go to Racks</button></div></div>`;
       const html2 =
-        `<div class="sc ld"><div class="sc-tools"><div class="fm-title"><h2>Load of ${esc(scopeName(prefs.powScope))}</h2><p>${esc(sub)}</p></div><span class="spacer"></span>${scopeSeg()}</div>${body}</div>`;
+        `<div class="sc ld"><div class="sc-tools"><div class="fm-title"><h2>Load of ${esc(scopeName(prefs.powScope))}</h2><p>${esc(sub)}</p></div><span class="spacer"></span>${scopeSeg()}` +
+        (rows.length ? `<button type="button" class="btn sm" id="ld-csv" title="Grid, PDU, phase and fuse group in every scenario, as CSV">${icon('download', 'ic-sm')}Load (CSV)</button>` : '') +
+        `</div>${body}</div>`;
       const scroll = host.querySelector('.sc-scroll');
       const at = scroll && host.dataset.view === 'load' ? scroll.scrollTop : 0;
       ctx.keepFocus(host, () => (host.innerHTML = html2));
@@ -1880,10 +1884,62 @@
       };
     }
     const drawingName = () => 'This row’s power cabling from the rear';
-    /** The cords an export of the schedule holds: those of its scope, in its order. */
-    function exportScope() {
-      const scope = ui.powView === 'schedule' || ui.powView === 'load' ? prefs.powScope : 'row';
-      return { racks: scopeRacks(scope), name: scopeName(scope), scope };
+    /**
+     * Exports a CSV of what a view shows: the cord schedule ('cords') or
+     * the order list ('order') of the schedule's scope, the load ('load')
+     * of the Load view's, or the outlet plan ('outlets') of the rack of the
+     * outlet map. The file is named after the plan and the row, floor or
+     * rack.
+     */
+    function exportCSV(what) {
+      const p = project();
+      const pos = ctx.currentRow();
+      const scope = prefs.powScope;
+      const file = scope === 'plan' ? ctx.fileBase() : scope === 'floor' ? `${ctx.fileBase()}-${M.slug(pos.floor.name)}`.slice(0, 100) : ctx.fileBase(true);
+      try {
+        let name;
+        let text;
+        if (what === 'outlets') {
+          const rack = omRack();
+          name = `${ctx.fileBase(true)}-${M.slug(rack.name)}`.slice(0, 110) + '-pdu-outlets.csv';
+          text = IO.exportOutletsCSV(p, new Set([rack.id]));
+        } else if (what === 'load') {
+          name = `${file}-power-load.csv`;
+          text = IO.exportLoadCSV(p, scopeRacks(scope));
+        } else {
+          const cords = P.cordsWithin(p, scopeRacks(scope), pctx());
+          name = `${file}-${what === 'order' ? 'cord-order' : 'power-cords'}.csv`;
+          text = what === 'order' ? IO.exportCordOrderCSV(p, cords) : IO.exportCordsCSV(p, cords);
+        }
+        ctx.download(name, new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' }));
+        toast(`Exported ${name}`);
+      } catch (err) {
+        toast(`Export failed: ${err.message}`, { warn: true });
+      }
+    }
+
+    /** Adds the cords of a power cord schedule CSV to the plan. Returns an error message for the Open dialog, or null. */
+    function importCordsText(text) {
+      let result = null;
+      try {
+        ctx.commit((p) => {
+          result = IO.importCordsCSV(p, text);
+          return result.added ? undefined : false;
+        });
+      } catch (err) {
+        return err.message;
+      }
+      $('#dlg-open').close('ok');
+      const sub = `${plural(result.warnings.length, 'line')} or detail${result.warnings.length === 1 ? '' : 's'} needed attention:`;
+      if (!result.added) {
+        toast('The CSV added no power cords', { warn: true });
+        ctx.reportWarnings('No power cords added', sub, result.warnings);
+        return null;
+      }
+      if (ui.workspace !== 'power') ctx.setWorkspace('power');
+      toast(`Added ${plural(result.added, 'power cord')} from the CSV`, { action: 'Undo', onAction: ctx.undo });
+      ctx.reportWarnings(`Added ${plural(result.added, 'power cord')}`, sub, result.warnings);
+      return null;
     }
 
     /** Opens the workspace's view of a device or a PDU: for the Racks inspector's "Open in Power". */
@@ -1917,7 +1973,7 @@
       chooseResult,
       exportDrawing,
       drawingName,
-      exportScope,
+      importCordsText,
       hiddenGridIds: () => [...ui.hiddenGrids],
       afterFit: () => {},
       fitStage,

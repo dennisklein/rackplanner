@@ -567,7 +567,6 @@
     esc,
     icon,
     plural,
-    doExport: (kind) => doExport(kind),
   };
   const cab = window.RP.cablingUI.create(wsContext);
   const pow = window.RP.powerUI.create(wsContext);
@@ -6108,11 +6107,17 @@
 
   function openText(text, fileName) {
     const csv = /\.(csv|tsv|txt)$/i.test(fileName) || !/^\s*[[{]/.test(text);
-    // A cable schedule always adds its cables to the plan open.
+    // A cable schedule always adds its cables to the plan open, and a power cord schedule its cords.
     if (csv && IO.isCablesCSV(text)) {
       const err = cab.importCablesText(text);
       return err ? showError('#open-error', err) : undefined;
     }
+    if (csv && IO.isCordsCSV(text)) {
+      const err = pow.importCordsText(text);
+      return err ? showError('#open-error', err) : undefined;
+    }
+    // A PDU outlet plan has the columns of a cord schedule, and is written only.
+    if (csv && IO.isOutletsCSV(text)) return showError('#open-error', IO.OUTLET_PLAN_NOTE);
     if (csv) return importCSVText(text, fileName);
     let raw;
     try {
@@ -6385,6 +6390,14 @@
     return `Exported ${name}. ${plural(n, 'cable')} on it still ${n === 1 ? 'needs' : 'need'} a type or a length to buy.`;
   }
 
+  /** The power CSVs of the Export menu, of the whole plan: kind → [end of the file name, what writes it]. */
+  const POWER_CSV = {
+    'cords-csv': ['power-cords', (p) => IO.exportCordsCSV(p)],
+    'outlets-csv': ['pdu-outlets', (p) => IO.exportOutletsCSV(p)],
+    'load-csv': ['power-load', (p) => IO.exportLoadCSV(p)],
+    'cord-order-csv': ['cord-order', (p) => IO.exportCordOrderCSV(p)],
+  };
+
   async function doExport(kind) {
     try {
       if (kind === 'copy') return copyJSON();
@@ -6398,6 +6411,9 @@
         download((name = `${fileBase()}-cable-order.csv`), new Blob(['﻿' + IO.exportOrderCSV(project)], { type: 'text/csv;charset=utf-8' }));
         const left = C.billOfMaterials(project).unresolved;
         if (left) return toast(orderLeftOut(name, left), { warn: true });
+      } else if (POWER_CSV[kind]) {
+        const [suffix, write] = POWER_CSV[kind];
+        download((name = `${fileBase()}-${suffix}.csv`), new Blob(['\ufeff' + write(project)], { type: 'text/csv;charset=utf-8' }));
       } else if (kind === 'svg') {
         const d = exportDrawing();
         download((name = `${d.file}.svg`), new Blob([d.svg], { type: 'image/svg+xml' }));
